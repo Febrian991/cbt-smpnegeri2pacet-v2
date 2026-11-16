@@ -2757,6 +2757,146 @@ document.addEventListener('DOMContentLoaded', () => {
     return { cls: getItemAnalysisBadgeClass('slate'), icon: '⏳' };
   }
 
+  let activeItemAnalysisMode = 'pre_exam';
+
+  function setItemAnalysisMode(mode) {
+    activeItemAnalysisMode = mode === 'empirical' ? 'empirical' : 'pre_exam';
+    const preSec = document.getElementById('preExamAuditSection');
+    const empSec = document.getElementById('empiricalAnalysisSection');
+    const btnPre = document.getElementById('btnModePreExamAudit');
+    const btnEmp = document.getElementById('btnModeEmpiricalAnalysis');
+    const titleEl = document.getElementById('itemAnalysisPanelTitle');
+
+    if (activeItemAnalysisMode === 'pre_exam') {
+      if (preSec) preSec.classList.remove('hidden');
+      if (empSec) empSec.classList.add('hidden');
+      if (btnPre) btnPre.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-white text-teal-800 shadow-xs';
+      if (btnEmp) btnEmp.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900';
+      if (titleEl) titleEl.innerText = '🛡️ Cek Kelayakan Teknis Pra-Ujian (Sebelum Ujian Dimulai)';
+      renderPreExamAuditPanel();
+    } else {
+      if (preSec) preSec.classList.add('hidden');
+      if (empSec) empSec.classList.remove('hidden');
+      if (btnPre) btnPre.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900';
+      if (btnEmp) btnEmp.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-white text-indigo-800 shadow-xs';
+      if (titleEl) titleEl.innerText = '📈 Analisis Kualitas Butir Soal (Tingkat Kesukaran P & Daya Pembeda D)';
+      renderItemAnalysisPanel();
+    }
+  }
+
+  function renderPreExamAuditPanel(precomputed = null) {
+    const panel = document.getElementById('itemAnalysisPanel');
+    if (!panel) return;
+
+    const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+    const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const statusFilter = document.getElementById('filterPreExamStatus')?.value || 'ALL';
+
+    const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter) : [];
+    const audit = precomputed || (window.cbtAdmin && typeof window.cbtAdmin.auditQuestionsPreExam === 'function'
+      ? window.cbtAdmin.auditQuestionsPreExam(questions)
+      : null);
+    if (!audit) return;
+
+    const { items, summary } = audit;
+    const subjLabel = subjFilter === 'ALL' ? 'Semua Mapel' : (subjFilter === 'UMUM' ? 'Umum / Demo' : subjFilter);
+    const clsLabel = classFilter === 'ALL' ? 'Semua Kelas' : classFilter;
+
+    if (activeItemAnalysisMode === 'pre_exam') {
+      const subtitleEl = document.getElementById('itemAnalysisSubtitle');
+      if (subtitleEl) {
+        subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel} — Pemeriksaan teknis otomatis ${summary.totalQuestions} butir soal sebelum dikerjakan siswa.`;
+      }
+    }
+
+    const peReady = document.getElementById('peKpiReady');
+    const peReadyPct = document.getElementById('peKpiReadyPercent');
+    const peWarn = document.getElementById('peKpiWarning');
+    const peErr = document.getElementById('peKpiError');
+    const peWeight = document.getElementById('peKpiTotalWeight');
+
+    if (peReady) peReady.innerText = `${summary.readyCount} / ${summary.totalQuestions}`;
+    if (peReadyPct) peReadyPct.innerText = `${summary.readyPercent}% soal lolos cek teknis`;
+    if (peWarn) peWarn.innerText = String(summary.warningCount);
+    if (peErr) peErr.innerText = String(summary.errorCount);
+    if (peWeight) peWeight.innerText = String(summary.totalWeight);
+
+    const tbody = document.getElementById('preExamAuditTbody');
+    if (!tbody) return;
+
+    const filteredItems = statusFilter === 'ALL'
+      ? items
+      : items.filter(it => it.status === statusFilter);
+
+    if (filteredItems.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="p-6 text-center text-slate-500 text-xs font-medium">
+            ${items.length === 0
+              ? 'Belum ada butir soal pada filter mata pelajaran/kelas ini.'
+              : 'Tidak ada butir soal yang cocok dengan filter status teknis ini.'}
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const typeShort = (t) => t === 'multiple' ? 'PG Kompleks' : (t === 'true_false' ? 'Benar/Salah' : 'PG Tunggal');
+
+    tbody.innerHTML = filteredItems.map(it => {
+      const qSnippetRaw = String(it.questionText || '').replace(/\s+/g, ' ').trim();
+      const qSnippet = qSnippetRaw.length > 90 ? `${qSnippetRaw.slice(0, 90)}…` : qSnippetRaw;
+
+      let statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${getItemAnalysisBadgeClass('emerald')}">✅ Siap Diujikan</span>`;
+      if (it.status === 'error') {
+        statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${getItemAnalysisBadgeClass('rose')}">🚨 Perlu Perbaikan</span>`;
+      } else if (it.status === 'warning') {
+        statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${getItemAnalysisBadgeClass('amber')}">⚠️ Perlu Dicek</span>`;
+      }
+
+      const findingsList = [
+        ...it.errors.map(msg => `<div class="text-rose-700 font-semibold">• ${escapeHtmlSafe(msg)}</div>`),
+        ...it.warnings.map(msg => `<div class="text-amber-700">• ${escapeHtmlSafe(msg)}</div>`)
+      ];
+      const findingsHtml = findingsList.length > 0
+        ? `<div class="space-y-0.5 text-[11px] leading-snug">${findingsList.join('')}</div>`
+        : `<span class="text-[11px] text-emerald-700 font-medium">Kunci jawaban, opsi, bobot, dan redaksi sudah lengkap.</span>`;
+
+      const fixBtnHtml = it.status !== 'ready'
+        ? `<button type="button" class="btn-pre-exam-fix mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold cursor-pointer transition" data-q-index="${it.index - 1}">✏️ Perbaiki Soal No. ${it.index}</button>`
+        : '';
+
+      return `
+        <tr class="border-b border-slate-100 hover:bg-slate-50/80 transition">
+          <td class="p-2.5 text-center font-black text-slate-700 align-top">${it.index}</td>
+          <td class="p-2.5 align-top">
+            <div class="font-semibold text-slate-800 leading-snug">${escapeHtmlSafe(qSnippet || '(Soal bergambar / tanpa teks)')}</div>
+            <div class="flex flex-wrap items-center gap-1 mt-1 text-[10px] text-slate-500">
+              <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold">${escapeHtmlSafe(it.subject)}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">${escapeHtmlSafe(it.classLevel)}</span>
+              ${it.hasImage ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 font-semibold">🖼️ Gambar</span>' : ''}
+            </div>
+          </td>
+          <td class="p-2.5 text-center align-top text-[11px] font-semibold text-slate-700 whitespace-nowrap">${typeShort(it.type)}</td>
+          <td class="p-2.5 text-center align-top font-bold ${it.weight > 0 ? 'text-slate-700' : 'text-rose-600'}">${it.weight}</td>
+          <td class="p-2.5 text-center align-top whitespace-nowrap">${statusBadge}</td>
+          <td class="p-2.5 align-top">
+            ${findingsHtml}
+            ${fixBtnHtml}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('.btn-pre-exam-fix').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-q-index'), 10);
+        const targetQ = questions[idx];
+        if (targetQ) openQuestionModal(targetQ, idx + 1);
+      });
+    });
+  }
+
   function renderItemAnalysisPanel(precomputed = null) {
     const panel = document.getElementById('itemAnalysisPanel');
     if (!panel) return;
@@ -2776,9 +2916,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const subjLabel = subjFilter === 'ALL' ? 'Semua Mapel' : (subjFilter === 'UMUM' ? 'Umum / Demo' : subjFilter);
     const clsLabel = classFilter === 'ALL' ? 'Semua Kelas' : classFilter;
 
-    const subtitleEl = document.getElementById('itemAnalysisSubtitle');
-    if (subtitleEl) {
-      subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel} — Dihitung dari ${summary.totalUniqueRespondents} hasil ujian siswa yang memiliki rincian jawaban.`;
+    if (activeItemAnalysisMode === 'empirical') {
+      const subtitleEl = document.getElementById('itemAnalysisSubtitle');
+      if (subtitleEl) {
+        subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel} — Dihitung dari ${summary.totalUniqueRespondents} hasil ujian siswa yang memiliki rincian jawaban.`;
+      }
     }
 
     const kpiAnalyzed = document.getElementById('iaKpiAnalyzed');
@@ -2877,6 +3019,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const analysisResult = (window.cbtAdmin && typeof window.cbtAdmin.computeItemAnalysis === 'function')
       ? window.cbtAdmin.computeItemAnalysis(questions)
       : { items: [], summary: null };
+    const preExamResult = (window.cbtAdmin && typeof window.cbtAdmin.auditQuestionsPreExam === 'function')
+      ? window.cbtAdmin.auditQuestionsPreExam(questions)
+      : { items: [], summary: null };
 
     const subjLabel = subjFilter === 'ALL'
       ? 'Semua Mapel'
@@ -2889,7 +3034,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const panel = document.getElementById('itemAnalysisPanel');
     if (panel && !panel.classList.contains('hidden')) {
-      renderItemAnalysisPanel(analysisResult);
+      if (activeItemAnalysisMode === 'pre_exam') {
+        renderPreExamAuditPanel(preExamResult);
+      } else {
+        renderItemAnalysisPanel(analysisResult);
+      }
     }
 
     if (!listContainer) return;
@@ -2913,6 +3062,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const qSubj = q.subject && String(q.subject).trim() !== '' ? q.subject : 'Umum / Demo';
       const qClass = q.classLevel && String(q.classLevel).trim() !== '' ? q.classLevel : 'Semua Kelas';
       const itemStat = analysisResult.items[index] || null;
+      const preExamStat = preExamResult.items[index] || null;
       const card = document.createElement('div');
       card.className = "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition";
 
@@ -2958,12 +3108,24 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
+      let preExamBadgeHtml = '';
+      if (preExamStat) {
+        if (preExamStat.status === 'error') {
+          preExamBadgeHtml = `<span class="px-2 py-0.5 rounded-md border font-bold ${getItemAnalysisBadgeClass('rose')}" title="${escapeHtmlSafe(preExamStat.errors.join(' | '))}">🚨 Teknis: ${escapeHtmlSafe(preExamStat.errors[0])}</span>`;
+        } else if (preExamStat.status === 'warning') {
+          preExamBadgeHtml = `<span class="px-2 py-0.5 rounded-md border font-bold ${getItemAnalysisBadgeClass('amber')}" title="${escapeHtmlSafe(preExamStat.warnings.join(' | '))}">⚠️ Pra-Ujian: ${escapeHtmlSafe(preExamStat.warnings[0])}</span>`;
+        } else {
+          preExamBadgeHtml = `<span class="px-2 py-0.5 rounded-md border font-bold ${getItemAnalysisBadgeClass('emerald')}">🛡️ Teknis: Siap Diujikan</span>`;
+        }
+      }
+
       let analysisStripHtml = '';
-      if (itemStat) {
-        if (itemStat.n === 0) {
+      if (itemStat || preExamStat) {
+        if (!itemStat || itemStat.n === 0) {
           analysisStripHtml = `
-            <div class="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
-              <span>📊 Analisis Butir: Belum ada data jawaban siswa</span>
+            <div class="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <div>${preExamBadgeHtml}</div>
+              <span class="text-slate-400">📊 P &amp; D: Menunggu jawaban siswa</span>
             </div>
           `;
         } else {
@@ -2975,6 +3137,7 @@ document.addEventListener('DOMContentLoaded', () => {
           analysisStripHtml = `
             <div class="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px]" title="${escapeHtmlSafe(itemStat.recommendation)}">
               <div class="flex flex-wrap items-center gap-1.5">
+                ${preExamBadgeHtml}
                 <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold">
                   👥 N=${itemStat.n} (B:${itemStat.correctCount}${itemStat.partialCount > 0 ? ` · P:${itemStat.partialCount}` : ''} · S:${itemStat.incorrectCount})
                 </span>
@@ -3310,30 +3473,76 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Kontrol Panel Analisis Butir Soal (Tingkat Kesukaran P & Daya Pembeda D)
+  // Kontrol Panel Cek Pra-Ujian & Analisis Butir Soal (Tingkat Kesukaran P & Daya Pembeda D)
   const itemAnalysisPanel = document.getElementById('itemAnalysisPanel');
+  const btnTogglePreExamAudit = document.getElementById('btnTogglePreExamAudit');
   const btnToggleItemAnalysis = document.getElementById('btnToggleItemAnalysis');
+  const btnModePreExamAudit = document.getElementById('btnModePreExamAudit');
+  const btnModeEmpiricalAnalysis = document.getElementById('btnModeEmpiricalAnalysis');
   const btnCloseItemAnalysis = document.getElementById('btnCloseItemAnalysis');
+  const filterPreExamStatus = document.getElementById('filterPreExamStatus');
+  const btnExportPreExamAuditExcel = document.getElementById('btnExportPreExamAuditExcel');
   const filterItemAnalysisQuality = document.getElementById('filterItemAnalysisQuality');
   const btnSyncItemAnalysisCloud = document.getElementById('btnSyncItemAnalysisCloud');
   const btnExportItemAnalysisExcel = document.getElementById('btnExportItemAnalysisExcel');
 
-  if (btnToggleItemAnalysis && itemAnalysisPanel) {
-    btnToggleItemAnalysis.addEventListener('click', () => {
-      const willShow = itemAnalysisPanel.classList.contains('hidden');
-      if (willShow) {
-        itemAnalysisPanel.classList.remove('hidden');
-        renderItemAnalysisPanel();
-        itemAnalysisPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
+  if (btnTogglePreExamAudit && itemAnalysisPanel) {
+    btnTogglePreExamAudit.addEventListener('click', () => {
+      const isHidden = itemAnalysisPanel.classList.contains('hidden');
+      if (!isHidden && activeItemAnalysisMode === 'pre_exam') {
         itemAnalysisPanel.classList.add('hidden');
+      } else {
+        itemAnalysisPanel.classList.remove('hidden');
+        setItemAnalysisMode('pre_exam');
+        itemAnalysisPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     });
+  }
+
+  if (btnToggleItemAnalysis && itemAnalysisPanel) {
+    btnToggleItemAnalysis.addEventListener('click', () => {
+      const isHidden = itemAnalysisPanel.classList.contains('hidden');
+      if (!isHidden && activeItemAnalysisMode === 'empirical') {
+        itemAnalysisPanel.classList.add('hidden');
+      } else {
+        itemAnalysisPanel.classList.remove('hidden');
+        setItemAnalysisMode('empirical');
+        itemAnalysisPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+
+  if (btnModePreExamAudit) {
+    btnModePreExamAudit.addEventListener('click', () => setItemAnalysisMode('pre_exam'));
+  }
+
+  if (btnModeEmpiricalAnalysis) {
+    btnModeEmpiricalAnalysis.addEventListener('click', () => setItemAnalysisMode('empirical'));
   }
 
   if (btnCloseItemAnalysis && itemAnalysisPanel) {
     btnCloseItemAnalysis.addEventListener('click', () => {
       itemAnalysisPanel.classList.add('hidden');
+    });
+  }
+
+  if (filterPreExamStatus) {
+    filterPreExamStatus.addEventListener('change', () => {
+      renderPreExamAuditPanel();
+    });
+  }
+
+  if (btnExportPreExamAuditExcel) {
+    btnExportPreExamAuditExcel.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      const { items } = window.cbtAdmin.auditQuestionsPreExam(questions);
+      window.cbtAdmin.exportPreExamAuditExcel(items, {
+        subject: subjFilter === 'ALL' ? 'Semua_Mapel' : subjFilter,
+        classLevel: classFilter
+      });
     });
   }
 

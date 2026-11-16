@@ -2542,6 +2542,219 @@ class CBTAdmin {
     const slug = String(meta.subject || schoolCfg.schoolName || 'Bank_Soal').replace(/[^a-z0-9]+/gi, '_');
     XLSX.writeFile(wb, `Analisis_Butir_Soal_${slug}_${Date.now()}.xlsx`);
   }
+
+  // ===================== CEK KELAYAKAN TEKNIS PRA-UJIAN =====================
+  auditQuestionsPreExam(questionsList = []) {
+    const normalizeText = (txt) => String(txt || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    // Deteksi duplikat teks soal pada mapel yang sama
+    const questionTextCounts = new Map();
+    (questionsList || []).forEach(q => {
+      const qNorm = normalizeText(q.question);
+      if (qNorm.length >= 15) {
+        const key = `${normalizeText(q.subject || 'umum')}__${qNorm}`;
+        questionTextCounts.set(key, (questionTextCounts.get(key) || 0) + 1);
+      }
+    });
+
+    const items = (questionsList || []).map((q, idx) => {
+      const errors = [];
+      const warnings = [];
+      const type = q.type || 'single';
+      const qText = String(q.question || '').trim();
+      const hasImage = Boolean(q.image && String(q.image).trim() !== '');
+
+      if (!qText && !hasImage) {
+        errors.push('Teks pertanyaan dan gambar sama-sama kosong.');
+      } else if (qText && qText.length < 8 && !hasImage) {
+        warnings.push('Teks pertanyaan terlalu singkat (< 8 karakter).');
+      }
+
+      const weight = Number(q.weight);
+      if (!Number.isFinite(weight) || weight <= 0) {
+        errors.push('Bobot nilai soal harus lebih dari 0.');
+      }
+
+      if (type === 'single' || type === 'multiple') {
+        const opts = Array.isArray(q.options) ? q.options : [];
+        if (opts.length < 2) {
+          errors.push('Opsi pilihan jawaban kurang dari 2.');
+        }
+
+        const emptyKeys = opts
+          .filter(o => !o || String(o.text || '').trim() === '')
+          .map(o => o?.key || '?');
+        if (emptyKeys.length > 0) {
+          errors.push(`Teks opsi ${emptyKeys.join(', ')} masih kosong.`);
+        }
+
+        const seenOptTexts = new Map();
+        const dupPairs = [];
+        opts.forEach(o => {
+          const t = normalizeText(o?.text);
+          if (!t) return;
+          if (seenOptTexts.has(t)) {
+            dupPairs.push(`${seenOptTexts.get(t)} & ${o.key || '?'}`);
+          } else {
+            seenOptTexts.set(t, o.key || '?');
+          }
+        });
+        if (dupPairs.length > 0) {
+          errors.push(`Opsi jawaban kembar (${dupPairs.join(', ')}).`);
+        }
+
+        const validKeys = opts.map(o => String(o?.key || '').trim().toUpperCase()).filter(Boolean);
+        if (type === 'single') {
+          const ansKey = String(q.correctAnswer || '').trim().toUpperCase();
+          if (!ansKey) {
+            errors.push('Kunci jawaban PG Tunggal belum dipilih.');
+          } else if (!validKeys.includes(ansKey)) {
+            errors.push(`Kunci jawaban "${ansKey}" tidak cocok dengan opsi tersedia.`);
+          }
+        } else {
+          const ansKeys = Array.isArray(q.correctAnswer)
+            ? q.correctAnswer.map(k => String(k || '').trim().toUpperCase()).filter(Boolean)
+            : (q.correctAnswer ? [String(q.correctAnswer).trim().toUpperCase()] : []);
+          if (ansKeys.length === 0) {
+            errors.push('Kunci jawaban PG Kompleks belum dipilih.');
+          } else {
+            const missingKeys = ansKeys.filter(k => !validKeys.includes(k));
+            if (missingKeys.length > 0) {
+              errors.push(`Kunci "${missingKeys.join(', ')}" tidak ditemukan di opsi.`);
+            }
+            if (ansKeys.length === 1) {
+              warnings.push('PG Kompleks hanya memiliki 1 kunci benar (sebaiknya ≥ 2).');
+            }
+          }
+        }
+      } else if (type === 'true_false') {
+        const stmts = Array.isArray(q.statements) ? q.statements : [];
+        if (stmts.length === 0) {
+          errors.push('Belum ada pernyataan Benar/Salah.');
+        } else {
+          if (stmts.length < 2) {
+            warnings.push('Pernyataan Benar/Salah baru 1 (disarankan minimal 2).');
+          }
+          const emptyStmtCount = stmts.filter(s => !s || String(s.text || '').trim() === '').length;
+          if (emptyStmtCount > 0) {
+            errors.push(`Ada ${emptyStmtCount} pernyataan yang teksnya masih kosong.`);
+          }
+          const invalidCorrectCount = stmts.filter(s => !s || !['B', 'S'].includes(String(s.correct || '').trim().toUpperCase())).length;
+          if (invalidCorrectCount > 0) {
+            errors.push(`Ada ${invalidCorrectCount} pernyataan yang belum punya kunci B/S.`);
+          }
+          const stmtNormSet = new Set();
+          let hasDupStmt = false;
+          stmts.forEach(s => {
+            const t = normalizeText(s?.text);
+            if (!t) return;
+            if (stmtNormSet.has(t)) hasDupStmt = true;
+            stmtNormSet.add(t);
+          });
+          if (hasDupStmt) {
+            warnings.push('Ada pernyataan Benar/Salah yang redaksinya kembar.');
+          }
+        }
+      } else {
+        errors.push(`Tipe soal "${type}" tidak dikenal.`);
+      }
+
+      const subjClean = String(q.subject || '').trim();
+      if (!subjClean || subjClean.toLowerCase() === 'umum') {
+        warnings.push('Mata pelajaran masih Umum/belum ditentukan.');
+      }
+
+      const qNorm = normalizeText(q.question);
+      if (qNorm.length >= 15) {
+        const dupKey = `${normalizeText(q.subject || 'umum')}__${qNorm}`;
+        if ((questionTextCounts.get(dupKey) || 0) > 1) {
+          warnings.push('Redaksi pertanyaan terindikasi duplikat dengan soal lain.');
+        }
+      }
+
+      let status = 'ready';
+      let statusLabel = 'Siap Diujikan';
+      if (errors.length > 0) {
+        status = 'error';
+        statusLabel = 'Perlu Perbaikan';
+      } else if (warnings.length > 0) {
+        status = 'warning';
+        statusLabel = 'Perlu Dicek';
+      }
+
+      return {
+        index: idx + 1,
+        questionId: q.id,
+        subject: q.subject || 'Umum',
+        classLevel: q.classLevel || 'Semua Kelas',
+        type,
+        weight: Number.isFinite(weight) ? weight : 0,
+        questionText: q.question || '',
+        hasImage,
+        errors,
+        warnings,
+        status,
+        statusLabel
+      };
+    });
+
+    const totalQuestions = items.length;
+    const readyCount = items.filter(it => it.status === 'ready').length;
+    const warningCount = items.filter(it => it.status === 'warning').length;
+    const errorCount = items.filter(it => it.status === 'error').length;
+    const totalWeight = items.reduce((acc, it) => acc + (it.weight > 0 ? it.weight : 0), 0);
+    const readyPercent = totalQuestions > 0 ? Math.round((readyCount / totalQuestions) * 100) : 0;
+
+    return {
+      items,
+      summary: {
+        totalQuestions,
+        readyCount,
+        warningCount,
+        errorCount,
+        totalWeight,
+        readyPercent
+      }
+    };
+  }
+
+  exportPreExamAuditExcel(auditItems = [], meta = {}) {
+    if (typeof XLSX === 'undefined') {
+      alert("Library Excel belum dimuat. Pastikan koneksi internet aktif.");
+      return;
+    }
+    if (!auditItems || auditItems.length === 0) {
+      alert("Belum ada butir soal untuk diekspor.");
+      return;
+    }
+
+    const schoolCfg = this.getSchoolConfig();
+    const typeLabel = (t) => t === 'multiple' ? 'PG Kompleks' : (t === 'true_false' ? 'Benar/Salah' : 'PG Tunggal');
+
+    const rows = auditItems.map(it => ({
+      'No': it.index,
+      'Mata Pelajaran': it.subject,
+      'Tingkat/Kelas': it.classLevel,
+      'Tipe Soal': typeLabel(it.type),
+      'Bobot': it.weight,
+      'Ringkasan Soal': String(it.questionText || '').replace(/\s+/g, ' ').slice(0, 140),
+      'Status Kelayakan': it.statusLabel,
+      'Temuan Kritis (Wajib Perbaiki)': it.errors.length > 0 ? it.errors.join(' | ') : '-',
+      'Catatan Tambahan': it.warnings.length > 0 ? it.warnings.join(' | ') : '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
+      { wch: 46 }, { wch: 18 }, { wch: 42 }, { wch: 38 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Cek Kelayakan Pra-Ujian');
+
+    const slug = String(meta.subject || schoolCfg.schoolName || 'Bank_Soal').replace(/[^a-z0-9]+/gi, '_');
+    XLSX.writeFile(wb, `Cek_Pra_Ujian_${slug}_${Date.now()}.xlsx`);
+  }
 }
 
 window.cbtAdmin = new CBTAdmin();

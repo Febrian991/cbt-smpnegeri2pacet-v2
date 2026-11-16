@@ -991,6 +991,9 @@
               <button id="btnExportQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
                 📤 Ekspor JSON
               </button>
+              <button id="btnTogglePreExamAudit" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition cursor-pointer flex items-center gap-1">
+                <span>🛡️ Cek Pra-Ujian</span>
+              </button>
               <button id="btnToggleItemAnalysis" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer flex items-center gap-1">
                 <span>📈 Analisis Butir Soal</span>
               </button>
@@ -1023,80 +1026,159 @@
           </div>
         </div>
 
-        <!-- Panel Analisis Butir Soal (Tingkat Kesukaran P & Daya Pembeda D) -->
+        <!-- Panel Cek Pra-Ujian & Analisis Butir Soal -->
         <div id="itemAnalysisPanel" class="hidden bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 flex flex-col gap-4 shadow-xs">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 class="text-sm sm:text-base font-bold text-slate-900">📈 Analisis Kualitas Butir Soal (Tingkat Kesukaran &amp; Daya Pembeda)</h3>
-              <p id="itemAnalysisSubtitle" class="text-[11px] text-slate-500 mt-0.5">Menghitung indeks kesukaran (P) dan daya pembeda kelompok atas vs bawah (D) dari hasil jawaban siswa.</p>
+              <h3 id="itemAnalysisPanelTitle" class="text-sm sm:text-base font-bold text-slate-900">📈 Analisis Kualitas Butir Soal</h3>
+              <p id="itemAnalysisSubtitle" class="text-[11px] text-slate-500 mt-0.5">Validasi teknis sebelum ujian maupun analisis kesukaran (P) &amp; daya pembeda (D) sesudah dikerjakan siswa.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <button id="btnSyncItemAnalysisCloud" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1">
-                <span>🔄 Tarik Nilai Cloud</span>
-              </button>
-              <button id="btnExportItemAnalysisExcel" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-xs cursor-pointer flex items-center gap-1">
-                <span>📥 Ekspor Analisis (.xlsx)</span>
-              </button>
               <button id="btnCloseItemAnalysis" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
-                Tutup
+                ✕ Tutup
               </button>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Soal Teranalisis</p>
-              <div id="iaKpiAnalyzed" class="text-lg sm:text-xl font-black text-slate-900 mt-0.5">0 / 0</div>
-              <p id="iaKpiRespondents" class="text-[10px] text-slate-500">0 peserta tercatat</p>
+          <!-- Switcher Mode Pra-Ujian vs Pasca-Ujian -->
+          <div class="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-100 border border-slate-200 w-fit">
+            <button id="btnModePreExamAudit" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-white text-teal-800 shadow-xs">
+              🛡️ Cek Kelayakan Pra-Ujian (Sebelum Ujian)
+            </button>
+            <button id="btnModeEmpiricalAnalysis" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-slate-600 hover:text-slate-900">
+              📈 Analisis P &amp; D (Sesudah Dikerjakan)
+            </button>
+          </div>
+
+          <!-- MODE 1: CEK KELAYAKAN TEKNIS PRA-UJIAN -->
+          <div id="preExamAuditSection" class="flex flex-col gap-4">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Siap Diujikan</p>
+                <div id="peKpiReady" class="text-lg sm:text-xl font-black text-emerald-700 mt-0.5">0 / 0</div>
+                <p id="peKpiReadyPercent" class="text-[10px] text-emerald-700/80">0% soal lolos cek teknis</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
+                <p class="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Perlu Dicek</p>
+                <div id="peKpiWarning" class="text-lg sm:text-xl font-black text-amber-700 mt-0.5">0</div>
+                <p class="text-[10px] text-amber-800/80">Indikasi duplikat / mapel umum</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
+                <p class="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Perlu Perbaikan</p>
+                <div id="peKpiError" class="text-lg sm:text-xl font-black text-rose-700 mt-0.5">0</div>
+                <p class="text-[10px] text-rose-700/80">Kunci/opsi/bobot bermasalah</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Bobot Soal</p>
+                <div id="peKpiTotalWeight" class="text-lg sm:text-xl font-black text-slate-900 mt-0.5">0</div>
+                <p class="text-[10px] text-slate-500">Akumulasi bobot filter aktif</p>
+              </div>
             </div>
-            <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
-              <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Layak / Baik</p>
-              <div id="iaKpiGood" class="text-lg sm:text-xl font-black text-emerald-700 mt-0.5">0</div>
-              <p class="text-[10px] text-emerald-700/80">D ≥ 0,30 &amp; P ideal</p>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+              <div class="flex flex-wrap items-center gap-2">
+                <label for="filterPreExamStatus" class="font-bold text-slate-700">Filter Status:</label>
+                <select id="filterPreExamStatus" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 outline-none">
+                  <option value="ALL">Semua Butir Soal</option>
+                  <option value="error">Perlu Perbaikan (Kritis)</option>
+                  <option value="warning">Perlu Dicek (Peringatan)</option>
+                  <option value="ready">Siap Diujikan</option>
+                </select>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-slate-500 font-medium hidden md:inline">Memeriksa kunci jawaban, opsi kosong/kembar, bobot, dan duplikat soal sebelum ujian dimulai.</span>
+                <button id="btnExportPreExamAuditExcel" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-xs cursor-pointer flex items-center gap-1">
+                  <span>📥 Ekspor Cek Pra-Ujian (.xlsx)</span>
+                </button>
+              </div>
             </div>
-            <div class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
-              <p class="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Perlu Revisi</p>
-              <div id="iaKpiRevise" class="text-lg sm:text-xl font-black text-amber-700 mt-0.5">0</div>
-              <p class="text-[10px] text-amber-800/80">D 0,20–0,29 / ekstrem</p>
-            </div>
-            <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
-              <p class="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Bermasalah</p>
-              <div id="iaKpiBad" class="text-lg sm:text-xl font-black text-rose-700 mt-0.5">0</div>
-              <p class="text-[10px] text-rose-700/80">D &lt; 0,20 (cek kunci/ganti)</p>
+
+            <div class="overflow-x-auto max-h-[380px] rounded-2xl border border-slate-200">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[10px]">
+                  <tr>
+                    <th class="p-2.5 text-center w-10">No</th>
+                    <th class="p-2.5 min-w-[210px]">Cuplikan Soal &amp; Mapel</th>
+                    <th class="p-2.5 text-center">Tipe</th>
+                    <th class="p-2.5 text-center">Bobot</th>
+                    <th class="p-2.5 text-center">Status Teknis</th>
+                    <th class="p-2.5 min-w-[230px]">Catatan Pemeriksaan</th>
+                  </tr>
+                </thead>
+                <tbody id="preExamAuditTbody"></tbody>
+              </table>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
-            <div class="flex flex-wrap items-center gap-2">
-              <label for="filterItemAnalysisQuality" class="font-bold text-slate-700">Filter Kualitas:</label>
-              <select id="filterItemAnalysisQuality" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 outline-none">
-                <option value="ALL">Semua Butir Soal</option>
-                <option value="bad">Bermasalah (D &lt; 0,20)</option>
-                <option value="revise">Perlu Revisi</option>
-                <option value="good">Layak / Baik</option>
-                <option value="no_data">Belum Ada Data</option>
-              </select>
+          <!-- MODE 2: ANALISIS EMPIRIS P & D (SESUDAH DIKERJAKAN SISWA) -->
+          <div id="empiricalAnalysisSection" class="hidden flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-[11px] text-slate-500 font-medium">Dihitung dari lembar jawaban siswa yang sudah menyelesaikan ujian.</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <button id="btnSyncItemAnalysisCloud" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1">
+                  <span>🔄 Tarik Nilai Cloud</span>
+                </button>
+                <button id="btnExportItemAnalysisExcel" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-xs cursor-pointer flex items-center gap-1">
+                  <span>📥 Ekspor Analisis (.xlsx)</span>
+                </button>
+              </div>
             </div>
-            <div class="text-slate-500 font-medium">
-              <strong>P:</strong> &lt;0,30 Sukar · 0,30–0,70 Sedang · &gt;0,70 Mudah &nbsp;|&nbsp; <strong>D:</strong> ≥0,40 Sangat Baik · 0,30–0,39 Baik · 0,20–0,29 Cukup · &lt;0,20 Revisi
-            </div>
-          </div>
 
-          <div class="overflow-x-auto max-h-[380px] rounded-2xl border border-slate-200">
-            <table class="w-full text-left border-collapse text-xs">
-              <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[10px]">
-                <tr>
-                  <th class="p-2.5 text-center w-10">No</th>
-                  <th class="p-2.5 min-w-[210px]">Cuplikan Soal &amp; Mapel</th>
-                  <th class="p-2.5 text-center">N</th>
-                  <th class="p-2.5 text-center">B / S / K</th>
-                  <th class="p-2.5 text-center">Kesukaran (P)</th>
-                  <th class="p-2.5 text-center">Daya Pembeda (D)</th>
-                  <th class="p-2.5 min-w-[200px]">Status &amp; Rekomendasi</th>
-                </tr>
-              </thead>
-              <tbody id="itemAnalysisTbody"></tbody>
-            </table>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Soal Teranalisis</p>
+                <div id="iaKpiAnalyzed" class="text-lg sm:text-xl font-black text-slate-900 mt-0.5">0 / 0</div>
+                <p id="iaKpiRespondents" class="text-[10px] text-slate-500">0 peserta tercatat</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Layak / Baik</p>
+                <div id="iaKpiGood" class="text-lg sm:text-xl font-black text-emerald-700 mt-0.5">0</div>
+                <p class="text-[10px] text-emerald-700/80">D ≥ 0,30 &amp; P ideal</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
+                <p class="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Perlu Revisi</p>
+                <div id="iaKpiRevise" class="text-lg sm:text-xl font-black text-amber-700 mt-0.5">0</div>
+                <p class="text-[10px] text-amber-800/80">D 0,20–0,29 / ekstrem</p>
+              </div>
+              <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
+                <p class="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Bermasalah</p>
+                <div id="iaKpiBad" class="text-lg sm:text-xl font-black text-rose-700 mt-0.5">0</div>
+                <p class="text-[10px] text-rose-700/80">D &lt; 0,20 (cek kunci/ganti)</p>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+              <div class="flex flex-wrap items-center gap-2">
+                <label for="filterItemAnalysisQuality" class="font-bold text-slate-700">Filter Kualitas:</label>
+                <select id="filterItemAnalysisQuality" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 outline-none">
+                  <option value="ALL">Semua Butir Soal</option>
+                  <option value="bad">Bermasalah (D &lt; 0,20)</option>
+                  <option value="revise">Perlu Revisi</option>
+                  <option value="good">Layak / Baik</option>
+                  <option value="no_data">Belum Ada Data</option>
+                </select>
+              </div>
+              <div class="text-slate-500 font-medium">
+                <strong>P:</strong> &lt;0,30 Sukar · 0,30–0,70 Sedang · &gt;0,70 Mudah &nbsp;|&nbsp; <strong>D:</strong> ≥0,40 Sangat Baik · 0,30–0,39 Baik · 0,20–0,29 Cukup · &lt;0,20 Revisi
+              </div>
+            </div>
+
+            <div class="overflow-x-auto max-h-[380px] rounded-2xl border border-slate-200">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[10px]">
+                  <tr>
+                    <th class="p-2.5 text-center w-10">No</th>
+                    <th class="p-2.5 min-w-[210px]">Cuplikan Soal &amp; Mapel</th>
+                    <th class="p-2.5 text-center">N</th>
+                    <th class="p-2.5 text-center">B / S / K</th>
+                    <th class="p-2.5 text-center">Kesukaran (P)</th>
+                    <th class="p-2.5 text-center">Daya Pembeda (D)</th>
+                    <th class="p-2.5 min-w-[200px]">Status &amp; Rekomendasi</th>
+                  </tr>
+                </thead>
+                <tbody id="itemAnalysisTbody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
