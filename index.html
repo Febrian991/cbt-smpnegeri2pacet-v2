@@ -60,9 +60,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=3.19">
 </head>
-<body class="bg-gradient-to-br from-[#dbe3ef] via-[#e4ebf5] to-[#d4dfee] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
+<body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
   <!-- ======================== TOP NAVBAR (Tampil Saat Ujian & Panel Admin) ======================== -->
   <header id="appTopHeader" class="hidden bg-gradient-to-r from-[#0c2e6e] via-[#124196] to-[#1a56c4] dark:from-slate-900/95 dark:via-slate-900/95 dark:to-slate-900/95 backdrop-blur-md border-b border-blue-900/50 dark:border-slate-800 sticky top-0 z-30 shadow-md no-print transition-colors">
@@ -616,7 +616,7 @@
       </div>
 
       <!-- Admin Tabs Navigation (7 Tabs dengan Gradasi Nyaman di Pandang) -->
-      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#eef3f9] via-[#e9f0fa] to-[#e2eaf7] dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-slate-300/80 dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
+      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#dde6f3] via-[#d6e1f1] to-[#cddbef] dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-[#b4c4da] dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
         <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/25 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
           <span>📊 Rekap Nilai (Ranking)</span>
         </button>
@@ -991,6 +991,9 @@
               <button id="btnExportQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
                 📤 Ekspor JSON
               </button>
+              <button id="btnToggleItemAnalysis" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer flex items-center gap-1">
+                <span>📈 Analisis Butir Soal</span>
+              </button>
               <button id="btnOpenPrintQuestions" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer flex items-center gap-1">
                 <span>📄 Download Naskah Soal</span>
               </button>
@@ -1017,6 +1020,83 @@
                 <option value="Kelas 9">Kelas 9</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        <!-- Panel Analisis Butir Soal (Tingkat Kesukaran P & Daya Pembeda D) -->
+        <div id="itemAnalysisPanel" class="hidden bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 flex flex-col gap-4 shadow-xs">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900">📈 Analisis Kualitas Butir Soal (Tingkat Kesukaran &amp; Daya Pembeda)</h3>
+              <p id="itemAnalysisSubtitle" class="text-[11px] text-slate-500 mt-0.5">Menghitung indeks kesukaran (P) dan daya pembeda kelompok atas vs bawah (D) dari hasil jawaban siswa.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="btnSyncItemAnalysisCloud" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1">
+                <span>🔄 Tarik Nilai Cloud</span>
+              </button>
+              <button id="btnExportItemAnalysisExcel" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-xs cursor-pointer flex items-center gap-1">
+                <span>📥 Ekspor Analisis (.xlsx)</span>
+              </button>
+              <button id="btnCloseItemAnalysis" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                Tutup
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Soal Teranalisis</p>
+              <div id="iaKpiAnalyzed" class="text-lg sm:text-xl font-black text-slate-900 mt-0.5">0 / 0</div>
+              <p id="iaKpiRespondents" class="text-[10px] text-slate-500">0 peserta tercatat</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+              <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Layak / Baik</p>
+              <div id="iaKpiGood" class="text-lg sm:text-xl font-black text-emerald-700 mt-0.5">0</div>
+              <p class="text-[10px] text-emerald-700/80">D ≥ 0,30 &amp; P ideal</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
+              <p class="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Perlu Revisi</p>
+              <div id="iaKpiRevise" class="text-lg sm:text-xl font-black text-amber-700 mt-0.5">0</div>
+              <p class="text-[10px] text-amber-800/80">D 0,20–0,29 / ekstrem</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
+              <p class="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Bermasalah</p>
+              <div id="iaKpiBad" class="text-lg sm:text-xl font-black text-rose-700 mt-0.5">0</div>
+              <p class="text-[10px] text-rose-700/80">D &lt; 0,20 (cek kunci/ganti)</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+            <div class="flex flex-wrap items-center gap-2">
+              <label for="filterItemAnalysisQuality" class="font-bold text-slate-700">Filter Kualitas:</label>
+              <select id="filterItemAnalysisQuality" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 outline-none">
+                <option value="ALL">Semua Butir Soal</option>
+                <option value="bad">Bermasalah (D &lt; 0,20)</option>
+                <option value="revise">Perlu Revisi</option>
+                <option value="good">Layak / Baik</option>
+                <option value="no_data">Belum Ada Data</option>
+              </select>
+            </div>
+            <div class="text-slate-500 font-medium">
+              <strong>P:</strong> &lt;0,30 Sukar · 0,30–0,70 Sedang · &gt;0,70 Mudah &nbsp;|&nbsp; <strong>D:</strong> ≥0,40 Sangat Baik · 0,30–0,39 Baik · 0,20–0,29 Cukup · &lt;0,20 Revisi
+            </div>
+          </div>
+
+          <div class="overflow-x-auto max-h-[380px] rounded-2xl border border-slate-200">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[10px]">
+                <tr>
+                  <th class="p-2.5 text-center w-10">No</th>
+                  <th class="p-2.5 min-w-[210px]">Cuplikan Soal &amp; Mapel</th>
+                  <th class="p-2.5 text-center">N</th>
+                  <th class="p-2.5 text-center">B / S / K</th>
+                  <th class="p-2.5 text-center">Kesukaran (P)</th>
+                  <th class="p-2.5 text-center">Daya Pembeda (D)</th>
+                  <th class="p-2.5 min-w-[200px]">Status &amp; Rekomendasi</th>
+                </tr>
+              </thead>
+              <tbody id="itemAnalysisTbody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -2007,8 +2087,8 @@
   <script src="js/default-students.js?v=3.18"></script>
   <script src="js/supabase-config.js?v=3.18"></script>
   <script src="js/exam-engine.js?v=3.18"></script>
-  <script src="js/admin.js?v=3.18"></script>
-  <script src="js/app.js?v=3.18"></script>
+  <script src="js/admin.js?v=3.19"></script>
+  <script src="js/app.js?v=3.19"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

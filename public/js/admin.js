@@ -2298,6 +2298,250 @@ class CBTAdmin {
       }, 1000);
     }, 250);
   }
+
+  // ===================== ANALISIS BUTIR SOAL (TINGKAT KESUKARAN & DAYA PEMBEDA) =====================
+  computeItemAnalysis(questionsList = []) {
+    const rawResults = JSON.parse(localStorage.getItem('cbt_exam_results') || '[]');
+    const validResults = Array.isArray(rawResults)
+      ? rawResults.filter(r => r && r.student?.nisn !== '__CBT_STATE__' && r.examTitle !== '__CBT_LIVE_SESSION__' && Array.isArray(r.detailedAnswers) && r.detailedAnswers.length > 0)
+      : [];
+
+    // Ambil 1 entri paling relevan (terbaru) per kombinasi siswa + mapel agar peserta pengulang tidak menggandakan bobot
+    const uniqueResultMap = new Map();
+    validResults.forEach(r => {
+      const nisn = String(r.student?.nisn || r.student?.name || '').trim().toUpperCase();
+      const subj = String(r.subject || '').trim().toLowerCase();
+      const key = `${nisn}__${subj}`;
+      if (!uniqueResultMap.has(key)) {
+        uniqueResultMap.set(key, r);
+      }
+    });
+    const dedupedResults = Array.from(uniqueResultMap.values());
+
+    const normalizeText = (txt) => String(txt || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const items = (questionsList || []).map((q, idx) => {
+      const qId = q.id;
+      const qTextNorm = normalizeText(q.question);
+      const qSubjNorm = String(q.subject || '').trim().toLowerCase();
+
+      const observations = [];
+
+      dedupedResults.forEach(res => {
+        const resSubjNorm = String(res.subject || '').trim().toLowerCase();
+        const details = res.detailedAnswers || [];
+        let matchedDetail = details.find(d => d && d.questionId && qId && String(d.questionId) === String(qId));
+
+        if (!matchedDetail && qTextNorm) {
+          const sameSubject = !qSubjNorm || qSubjNorm === 'umum' || resSubjNorm === qSubjNorm || resSubjNorm.includes(qSubjNorm) || qSubjNorm.includes(resSubjNorm);
+          if (sameSubject) {
+            matchedDetail = details.find(d => d && normalizeText(d.questionText) === qTextNorm);
+          }
+        }
+
+        if (!matchedDetail) return;
+
+        const maxScore = Number(matchedDetail.maxScore || q.weight || 10);
+        let itemScore = 0;
+        if (maxScore > 0 && matchedDetail.earnedScore !== undefined && matchedDetail.earnedScore !== null) {
+          itemScore = Math.min(1, Math.max(0, Number(matchedDetail.earnedScore) / maxScore));
+        } else {
+          itemScore = (matchedDetail.isFullyCorrect || matchedDetail.status === 'correct') ? 1 : 0;
+        }
+
+        observations.push({
+          nisn: String(res.student?.nisn || ''),
+          totalScore: Number(res.finalScore || 0),
+          itemScore,
+          status: matchedDetail.status || (itemScore >= 0.999 ? 'correct' : 'incorrect')
+        });
+      });
+
+      const n = observations.length;
+      const correctCount = observations.filter(o => o.itemScore >= 0.999 || o.status === 'correct').length;
+      const partialCount = observations.filter(o => o.itemScore > 0 && o.itemScore < 0.999).length;
+      const unattemptedCount = observations.filter(o => o.status === 'unattempted').length;
+      const incorrectCount = Math.max(0, n - correctCount - partialCount - unattemptedCount);
+
+      let difficulty = null;
+      let difficultyLabel = 'Belum Ada Data';
+      let difficultyTone = 'slate';
+
+      if (n > 0) {
+        const sumScore = observations.reduce((acc, o) => acc + o.itemScore, 0);
+        difficulty = Math.round((sumScore / n) * 100) / 100;
+        if (difficulty < 0.30) {
+          difficultyLabel = 'Sukar';
+          difficultyTone = 'rose';
+        } else if (difficulty <= 0.70) {
+          difficultyLabel = 'Sedang';
+          difficultyTone = 'emerald';
+        } else {
+          difficultyLabel = 'Mudah';
+          difficultyTone = 'sky';
+        }
+      }
+
+      let discrimination = null;
+      let discriminationLabel = n === 1 ? 'Min. 2 Siswa' : 'Belum Ada Data';
+      let discriminationTone = 'slate';
+      let upperRate = null;
+      let lowerRate = null;
+      let groupSize = 0;
+
+      if (n >= 2) {
+        const sorted = [...observations].sort((a, b) => {
+          if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+          return b.itemScore - a.itemScore;
+        });
+        groupSize = n >= 20 ? Math.max(1, Math.round(n * 0.27)) : Math.max(1, Math.floor(n / 2));
+        const upperGroup = sorted.slice(0, groupSize);
+        const lowerGroup = sorted.slice(sorted.length - groupSize);
+
+        upperRate = upperGroup.reduce((acc, o) => acc + o.itemScore, 0) / groupSize;
+        lowerRate = lowerGroup.reduce((acc, o) => acc + o.itemScore, 0) / groupSize;
+        discrimination = Math.round((upperRate - lowerRate) * 100) / 100;
+
+        if (discrimination < 0) {
+          discriminationLabel = 'Negatif';
+          discriminationTone = 'red';
+        } else if (discrimination < 0.20) {
+          discriminationLabel = 'Jelek';
+          discriminationTone = 'orange';
+        } else if (discrimination < 0.30) {
+          discriminationLabel = 'Cukup';
+          discriminationTone = 'amber';
+        } else if (discrimination < 0.40) {
+          discriminationLabel = 'Baik';
+          discriminationTone = 'blue';
+        } else {
+          discriminationLabel = 'Sangat Baik';
+          discriminationTone = 'emerald';
+        }
+      }
+
+      let qualityStatus = 'no_data';
+      let qualityLabel = 'Belum Ada Data';
+      let recommendation = 'Belum ada data hasil ujian siswa yang memuat butir soal ini.';
+
+      if (n === 1) {
+        qualityStatus = 'no_data';
+        qualityLabel = 'Data Minim (1 Siswa)';
+        recommendation = 'Butuh minimal 2 siswa menyelesaikan ujian untuk menghitung daya pembeda.';
+      } else if (n >= 2) {
+        if (discrimination < 0) {
+          qualityStatus = 'bad';
+          qualityLabel = 'Bermasalah (D < 0)';
+          recommendation = 'Periksa kunci jawaban atau redaksi soal — kelompok nilai rendah justru lebih banyak benar.';
+        } else if (discrimination < 0.20) {
+          qualityStatus = 'bad';
+          qualityLabel = 'Revisi / Ganti';
+          recommendation = 'Daya pembeda rendah (< 0,20). Soal belum mampu membedakan siswa paham dan belum paham.';
+        } else if (discrimination < 0.30 || difficulty < 0.15 || difficulty > 0.90) {
+          qualityStatus = 'revise';
+          qualityLabel = 'Perlu Revisi';
+          if (difficulty > 0.90) {
+            recommendation = 'Soal terlalu mudah (P > 0,90). Pertajam opsi pengecoh agar lebih menantang.';
+          } else if (difficulty < 0.15) {
+            recommendation = 'Soal terlalu sukar (P < 0,15). Periksa kejelasan kalimat soal atau kesesuaian materi.';
+          } else {
+            recommendation = 'Daya pembeda cukup (0,20–0,29). Perbaiki pengecoh agar mendekati ≥ 0,30.';
+          }
+        } else {
+          qualityStatus = 'good';
+          qualityLabel = 'Layak / Baik';
+          recommendation = 'Kualitas butir soal baik: tingkat kesukaran dan daya pembeda sudah ideal.';
+        }
+      }
+
+      return {
+        index: idx + 1,
+        questionId: qId,
+        subject: q.subject || 'Umum',
+        classLevel: q.classLevel || 'Semua Kelas',
+        type: q.type || 'single',
+        questionText: q.question || '',
+        n,
+        correctCount,
+        partialCount,
+        incorrectCount,
+        unattemptedCount,
+        difficulty,
+        difficultyLabel,
+        difficultyTone,
+        discrimination,
+        discriminationLabel,
+        discriminationTone,
+        groupSize,
+        upperRate: upperRate !== null ? Math.round(upperRate * 100) / 100 : null,
+        lowerRate: lowerRate !== null ? Math.round(lowerRate * 100) / 100 : null,
+        qualityStatus,
+        qualityLabel,
+        recommendation
+      };
+    });
+
+    const summary = {
+      totalQuestions: items.length,
+      analyzedCount: items.filter(it => it.n >= 2).length,
+      goodCount: items.filter(it => it.qualityStatus === 'good').length,
+      reviseCount: items.filter(it => it.qualityStatus === 'revise').length,
+      badCount: items.filter(it => it.qualityStatus === 'bad').length,
+      noDataCount: items.filter(it => it.qualityStatus === 'no_data').length,
+      totalUniqueRespondents: dedupedResults.length
+    };
+
+    return { items, summary };
+  }
+
+  exportItemAnalysisExcel(analysisItems = [], meta = {}) {
+    if (typeof XLSX === 'undefined') {
+      alert("Library Excel belum dimuat. Pastikan koneksi internet aktif.");
+      return;
+    }
+    if (!analysisItems || analysisItems.length === 0) {
+      alert("Belum ada butir soal untuk diekspor.");
+      return;
+    }
+
+    const schoolCfg = this.getSchoolConfig();
+    const typeLabel = (t) => t === 'multiple' ? 'PG Kompleks' : (t === 'true_false' ? 'Benar/Salah' : 'PG Tunggal');
+
+    const rows = analysisItems.map(it => ({
+      'No': it.index,
+      'Mata Pelajaran': it.subject,
+      'Tingkat/Kelas': it.classLevel,
+      'Tipe Soal': typeLabel(it.type),
+      'Ringkasan Soal': String(it.questionText || '').replace(/\s+/g, ' ').slice(0, 140),
+      'Responden (N)': it.n,
+      'Benar': it.correctCount,
+      'Parsial': it.partialCount,
+      'Salah': it.incorrectCount,
+      'Kosong': it.unattemptedCount,
+      'Tingkat Kesukaran (P)': it.difficulty !== null ? it.difficulty.toFixed(2) : '-',
+      'Kategori Kesukaran': it.difficultyLabel,
+      'Proporsi Kelompok Atas (PA)': it.upperRate !== null ? it.upperRate.toFixed(2) : '-',
+      'Proporsi Kelompok Bawah (PB)': it.lowerRate !== null ? it.lowerRate.toFixed(2) : '-',
+      'Daya Pembeda (D)': it.discrimination !== null ? it.discrimination.toFixed(2) : '-',
+      'Kategori Daya Pembeda': it.discriminationLabel,
+      'Status Kualitas': it.qualityLabel,
+      'Rekomendasi Evaluasi': it.recommendation
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 46 },
+      { wch: 13 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+      { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
+      { wch: 20 }, { wch: 20 }, { wch: 45 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Analisis Butir Soal');
+
+    const slug = String(meta.subject || schoolCfg.schoolName || 'Bank_Soal').replace(/[^a-z0-9]+/gi, '_');
+    XLSX.writeFile(wb, `Analisis_Butir_Soal_${slug}_${Date.now()}.xlsx`);
+  }
 }
 
 window.cbtAdmin = new CBTAdmin();

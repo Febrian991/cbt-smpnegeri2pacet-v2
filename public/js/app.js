@@ -2721,6 +2721,151 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function escapeHtmlSafe(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getItemAnalysisBadgeClass(tone) {
+    switch (tone) {
+      case 'emerald':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60';
+      case 'sky':
+        return 'bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60';
+      case 'blue':
+        return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60';
+      case 'amber':
+        return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60';
+      case 'orange':
+        return 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950/60 dark:text-orange-300 dark:border-orange-800/60';
+      case 'rose':
+      case 'red':
+        return 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60';
+      default:
+        return 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+    }
+  }
+
+  function getQualityStatusBadgeInfo(status) {
+    if (status === 'good') return { cls: getItemAnalysisBadgeClass('emerald'), icon: '✅' };
+    if (status === 'revise') return { cls: getItemAnalysisBadgeClass('amber'), icon: '⚠️' };
+    if (status === 'bad') return { cls: getItemAnalysisBadgeClass('rose'), icon: '🚨' };
+    return { cls: getItemAnalysisBadgeClass('slate'), icon: '⏳' };
+  }
+
+  function renderItemAnalysisPanel(precomputed = null) {
+    const panel = document.getElementById('itemAnalysisPanel');
+    if (!panel) return;
+
+    const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+    const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const qualityFilter = document.getElementById('filterItemAnalysisQuality')?.value || 'ALL';
+
+    let analysis = precomputed;
+    if (!analysis && window.cbtAdmin) {
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      analysis = window.cbtAdmin.computeItemAnalysis(questions);
+    }
+    if (!analysis) return;
+
+    const { items, summary } = analysis;
+    const subjLabel = subjFilter === 'ALL' ? 'Semua Mapel' : (subjFilter === 'UMUM' ? 'Umum / Demo' : subjFilter);
+    const clsLabel = classFilter === 'ALL' ? 'Semua Kelas' : classFilter;
+
+    const subtitleEl = document.getElementById('itemAnalysisSubtitle');
+    if (subtitleEl) {
+      subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel} — Dihitung dari ${summary.totalUniqueRespondents} hasil ujian siswa yang memiliki rincian jawaban.`;
+    }
+
+    const kpiAnalyzed = document.getElementById('iaKpiAnalyzed');
+    const kpiRespondents = document.getElementById('iaKpiRespondents');
+    const kpiGood = document.getElementById('iaKpiGood');
+    const kpiRevise = document.getElementById('iaKpiRevise');
+    const kpiBad = document.getElementById('iaKpiBad');
+
+    if (kpiAnalyzed) kpiAnalyzed.innerText = `${summary.analyzedCount} / ${summary.totalQuestions}`;
+    if (kpiRespondents) kpiRespondents.innerText = `${summary.totalUniqueRespondents} lembar jawaban terekam`;
+    if (kpiGood) kpiGood.innerText = String(summary.goodCount);
+    if (kpiRevise) kpiRevise.innerText = String(summary.reviseCount);
+    if (kpiBad) kpiBad.innerText = String(summary.badCount);
+
+    const tbody = document.getElementById('itemAnalysisTbody');
+    if (!tbody) return;
+
+    const filteredItems = qualityFilter === 'ALL'
+      ? items
+      : items.filter(it => it.qualityStatus === qualityFilter);
+
+    if (filteredItems.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="p-6 text-center text-slate-500 text-xs font-medium">
+            ${items.length === 0
+              ? 'Belum ada butir soal pada filter mata pelajaran/kelas ini.'
+              : 'Tidak ada butir soal yang cocok dengan filter kualitas ini.'}
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const typeShort = (t) => t === 'multiple' ? 'PG Kompleks' : (t === 'true_false' ? 'Benar/Salah' : 'PG Tunggal');
+
+    tbody.innerHTML = filteredItems.map(it => {
+      const qSnippetRaw = String(it.questionText || '').replace(/\s+/g, ' ').trim();
+      const qSnippet = qSnippetRaw.length > 95 ? `${qSnippetRaw.slice(0, 95)}…` : qSnippetRaw;
+      const pBadgeCls = getItemAnalysisBadgeClass(it.difficultyTone);
+      const dBadgeCls = getItemAnalysisBadgeClass(it.discriminationTone);
+      const qBadgeInfo = getQualityStatusBadgeInfo(it.qualityStatus);
+      const pText = it.difficulty !== null ? it.difficulty.toFixed(2) : '-';
+      const dText = it.discrimination !== null ? it.discrimination.toFixed(2) : '-';
+      const groupHint = (it.upperRate !== null && it.lowerRate !== null)
+        ? `<div class="text-[10px] text-slate-400 mt-0.5">PA: ${it.upperRate.toFixed(2)} · PB: ${it.lowerRate.toFixed(2)}</div>`
+        : '';
+
+      return `
+        <tr class="border-b border-slate-100 hover:bg-slate-50/80 transition">
+          <td class="p-2.5 text-center font-black text-slate-700 align-top">${it.index}</td>
+          <td class="p-2.5 align-top">
+            <div class="font-semibold text-slate-800 leading-snug">${escapeHtmlSafe(qSnippet || '(Soal bergambar / tanpa teks)')}</div>
+            <div class="flex flex-wrap items-center gap-1 mt-1 text-[10px] text-slate-500">
+              <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold">${escapeHtmlSafe(it.subject)}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">${escapeHtmlSafe(it.classLevel)}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">${typeShort(it.type)}</span>
+            </div>
+          </td>
+          <td class="p-2.5 text-center font-bold text-slate-700 align-top">${it.n}</td>
+          <td class="p-2.5 text-center align-top whitespace-nowrap">
+            <span class="text-emerald-700 font-bold">${it.correctCount}</span> /
+            <span class="text-rose-600 font-bold">${it.incorrectCount}</span> /
+            <span class="text-slate-500 font-semibold">${it.unattemptedCount}</span>
+            ${it.partialCount > 0 ? `<div class="text-[10px] text-amber-700 font-semibold">Parsial: ${it.partialCount}</div>` : ''}
+          </td>
+          <td class="p-2.5 text-center align-top">
+            <div class="font-black text-slate-800">${pText}</div>
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded-md border text-[10px] font-bold ${pBadgeCls}">${escapeHtmlSafe(it.difficultyLabel)}</span>
+          </td>
+          <td class="p-2.5 text-center align-top">
+            <div class="font-black text-slate-800">${dText}</div>
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded-md border text-[10px] font-bold ${dBadgeCls}">${escapeHtmlSafe(it.discriminationLabel)}</span>
+            ${groupHint}
+          </td>
+          <td class="p-2.5 align-top">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${qBadgeInfo.cls}">
+              <span>${qBadgeInfo.icon}</span>
+              <span>${escapeHtmlSafe(it.qualityLabel)}</span>
+            </span>
+            <p class="text-[11px] text-slate-600 mt-1 leading-snug">${escapeHtmlSafe(it.recommendation)}</p>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
   function renderAdminQuestionList() {
     const listContainer = document.getElementById('adminQuestionList');
     const totalCountEl = document.getElementById('adminTotalQuestionsCount');
@@ -2729,6 +2874,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
     const totalAll = window.cbtAdmin.getAllQuestions().length;
+    const analysisResult = (window.cbtAdmin && typeof window.cbtAdmin.computeItemAnalysis === 'function')
+      ? window.cbtAdmin.computeItemAnalysis(questions)
+      : { items: [], summary: null };
 
     const subjLabel = subjFilter === 'ALL'
       ? 'Semua Mapel'
@@ -2738,6 +2886,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (totalCountEl) {
       totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}) — Total Bank: ${totalAll}`;
     }
+
+    const panel = document.getElementById('itemAnalysisPanel');
+    if (panel && !panel.classList.contains('hidden')) {
+      renderItemAnalysisPanel(analysisResult);
+    }
+
     if (!listContainer) return;
 
     listContainer.innerHTML = '';
@@ -2758,6 +2912,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const type = q.type || 'single';
       const qSubj = q.subject && String(q.subject).trim() !== '' ? q.subject : 'Umum / Demo';
       const qClass = q.classLevel && String(q.classLevel).trim() !== '' ? q.classLevel : 'Semua Kelas';
+      const itemStat = analysisResult.items[index] || null;
       const card = document.createElement('div');
       card.className = "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition";
 
@@ -2803,6 +2958,42 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
+      let analysisStripHtml = '';
+      if (itemStat) {
+        if (itemStat.n === 0) {
+          analysisStripHtml = `
+            <div class="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+              <span>📊 Analisis Butir: Belum ada data jawaban siswa</span>
+            </div>
+          `;
+        } else {
+          const pCls = getItemAnalysisBadgeClass(itemStat.difficultyTone);
+          const dCls = getItemAnalysisBadgeClass(itemStat.discriminationTone);
+          const qInfo = getQualityStatusBadgeInfo(itemStat.qualityStatus);
+          const pStr = itemStat.difficulty !== null ? itemStat.difficulty.toFixed(2) : '-';
+          const dStr = itemStat.discrimination !== null ? itemStat.discrimination.toFixed(2) : '-';
+          analysisStripHtml = `
+            <div class="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px]" title="${escapeHtmlSafe(itemStat.recommendation)}">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold">
+                  👥 N=${itemStat.n} (B:${itemStat.correctCount}${itemStat.partialCount > 0 ? ` · P:${itemStat.partialCount}` : ''} · S:${itemStat.incorrectCount})
+                </span>
+                <span class="px-2 py-0.5 rounded-md border font-bold ${pCls}">
+                  P: ${pStr} (${escapeHtmlSafe(itemStat.difficultyLabel)})
+                </span>
+                <span class="px-2 py-0.5 rounded-md border font-bold ${dCls}">
+                  D: ${dStr} (${escapeHtmlSafe(itemStat.discriminationLabel)})
+                </span>
+              </div>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border font-bold ${qInfo.cls}">
+                <span>${qInfo.icon}</span>
+                <span>${escapeHtmlSafe(itemStat.qualityLabel)}</span>
+              </span>
+            </div>
+          `;
+        }
+      }
+
       card.innerHTML = `
         <div class="flex items-start justify-between gap-3">
           <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -2833,6 +3024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <p class="text-slate-800 text-xs sm:text-sm font-medium mt-2.5 whitespace-pre-line leading-relaxed">${q.question}</p>
         ${q.image ? `<div class="mt-2.5 p-1.5 bg-slate-50 rounded-xl border border-slate-200 inline-block max-w-xs"><img src="${q.image}" alt="Gambar Soal" class="rounded-lg max-h-28 object-contain"></div>` : ''}
         ${answerDetailsHtml}
+        ${analysisStripHtml}
       `;
 
       card.querySelector('.btn-edit-q').addEventListener('click', () => {
@@ -3115,6 +3307,83 @@ document.addEventListener('DOMContentLoaded', () => {
       const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
       const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
       window.cbtAdmin.exportQuestionsJSON(subjFilter, classFilter);
+    });
+  }
+
+  // Kontrol Panel Analisis Butir Soal (Tingkat Kesukaran P & Daya Pembeda D)
+  const itemAnalysisPanel = document.getElementById('itemAnalysisPanel');
+  const btnToggleItemAnalysis = document.getElementById('btnToggleItemAnalysis');
+  const btnCloseItemAnalysis = document.getElementById('btnCloseItemAnalysis');
+  const filterItemAnalysisQuality = document.getElementById('filterItemAnalysisQuality');
+  const btnSyncItemAnalysisCloud = document.getElementById('btnSyncItemAnalysisCloud');
+  const btnExportItemAnalysisExcel = document.getElementById('btnExportItemAnalysisExcel');
+
+  if (btnToggleItemAnalysis && itemAnalysisPanel) {
+    btnToggleItemAnalysis.addEventListener('click', () => {
+      const willShow = itemAnalysisPanel.classList.contains('hidden');
+      if (willShow) {
+        itemAnalysisPanel.classList.remove('hidden');
+        renderItemAnalysisPanel();
+        itemAnalysisPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        itemAnalysisPanel.classList.add('hidden');
+      }
+    });
+  }
+
+  if (btnCloseItemAnalysis && itemAnalysisPanel) {
+    btnCloseItemAnalysis.addEventListener('click', () => {
+      itemAnalysisPanel.classList.add('hidden');
+    });
+  }
+
+  if (filterItemAnalysisQuality) {
+    filterItemAnalysisQuality.addEventListener('change', () => {
+      renderItemAnalysisPanel();
+    });
+  }
+
+  if (btnSyncItemAnalysisCloud) {
+    btnSyncItemAnalysisCloud.addEventListener('click', async () => {
+      if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+        alert("Supabase Cloud belum dikonfigurasi. Pastikan koneksi Cloud sudah aktif di menu Pengaturan.");
+        return;
+      }
+      const origHtml = btnSyncItemAnalysisCloud.innerHTML;
+      btnSyncItemAnalysisCloud.disabled = true;
+      btnSyncItemAnalysisCloud.innerHTML = '<span>⏳ Menarik Data...</span>';
+      try {
+        const res = await window.supabaseSync.fetchCloudResults();
+        if (res && res.success) {
+          renderAdminQuestionList();
+          renderItemAnalysisPanel();
+          if (typeof renderAdminAnalyticsAndResults === 'function') {
+            renderAdminAnalyticsAndResults();
+          }
+          alert(`Berhasil menarik ${res.count || 0} data hasil ujian dari Cloud. Analisis butir soal telah diperbarui.`);
+        } else {
+          alert(`Gagal menarik data cloud: ${(res && res.message) || 'Terjadi kesalahan'}`);
+        }
+      } catch (err) {
+        alert(`Gagal menarik data cloud: ${err.message || err}`);
+      } finally {
+        btnSyncItemAnalysisCloud.disabled = false;
+        btnSyncItemAnalysisCloud.innerHTML = origHtml;
+      }
+    });
+  }
+
+  if (btnExportItemAnalysisExcel) {
+    btnExportItemAnalysisExcel.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      const { items } = window.cbtAdmin.computeItemAnalysis(questions);
+      window.cbtAdmin.exportItemAnalysisExcel(items, {
+        subject: subjFilter === 'ALL' ? 'Semua_Mapel' : subjFilter,
+        classLevel: classFilter
+      });
     });
   }
 
