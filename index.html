@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CBT Computer Based Test - SMP NEGERI 2 PACET</title>
+  <meta name="description" content="Aplikasi Ujian Sekolah Berbasis Komputer (CBT) SMP Negeri 2 Pacet untuk 13 Guru Mapel & 250 Siswa.">
+  <meta property="og:title" content="CBT Computer Based Test - SMP NEGERI 2 PACET">
+  <meta property="og:description" content="Aplikasi Ujian Sekolah Berbasis Komputer (CBT) SMP Negeri 2 Pacet.">
+  <meta property="og:type" content="website">
+
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CBT SMPN 2 Pacet">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+
+  <!-- Anti-Flash Dark Mode Init -->
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('cbt_dark_mode') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- SheetJS (XLSX) untuk Impor & Ekspor Format Excel Asli (.xlsx) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- html2pdf.js untuk Ekspor Format PDF Resmi (.pdf) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <!-- Supabase JS Client CDN (Sinkronisasi Cloud Real-Time Gratis) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="bg-gradient-to-br from-[#eef4ff] via-[#f6f9ff] to-[#e4eeff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
+
+  <!-- ======================== TOP NAVBAR (Tampil Saat Ujian & Panel Admin) ======================== -->
+  <header id="appTopHeader" class="hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-xs no-print transition-colors">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+
+      <!-- Brand Logo & Title -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <div id="headerLogoBox" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md flex-shrink-0 overflow-hidden">
+          CBT
+        </div>
+        <div>
+          <h1 class="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">CBT Computer Based Test</h1>
+          <p id="headerSchoolName" class="text-[11px] sm:text-xs font-extrabold text-blue-700 dark:text-sky-400 tracking-wide leading-tight">SMP NEGERI 2 PACET</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons Right (Dark Mode Toggle + Cloud Status) -->
+      <div class="flex items-center gap-2">
+        <button id="btnDarkModeHeader" type="button" title="Aktifkan / Matikan Mode Gelap" aria-label="Ganti Mode Tampilan" class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-amber-300 dark:border-slate-700 transition cursor-pointer">
+          <span id="darkModeIconHeader" class="flex items-center">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </span>
+          <span id="darkModeLabelHeader" class="hidden xs:inline">Mode Gelap</span>
+        </button>
+
+        <div id="cloudStatusBadge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+          <span class="w-2 h-2 rounded-full bg-slate-400" id="cloudStatusDot"></span>
+          <span id="cloudStatusText">Mode Lokal</span>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ======================== MAIN CONTAINER ======================== -->
+  <main class="flex-1 flex flex-col justify-center max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8">
+
+    <!-- VIEW 1: PORTAL LOGIN CBT (2 KOLOM: INFO SEKOLAH + LOGIN SISWA / ADMIN & GURU) -->
+    <section id="viewLogin" class="w-full max-w-[960px] mx-auto my-auto">
+      <div class="bg-white dark:bg-slate-900 rounded-[28px] shadow-[0_24px_60px_-15px_rgba(15,43,107,0.18)] dark:shadow-[0_24px_60px_-15px_rgba(0,0,0,0.6)] border border-slate-200/70 dark:border-slate-800 overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch">
+
+        <!-- Kolom Kiri: Panel Informasi Sekolah & Ilustrasi CBT -->
+        <div class="lg:col-span-6 bg-gradient-to-br from-[#00349a] via-[#0052cc] to-[#0073e6] text-white p-6 sm:p-8 lg:p-10 flex flex-col justify-between relative overflow-hidden">
+          <!-- Soft Ambient Glow -->
+          <div class="pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full bg-sky-400/20 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-blue-950/40 blur-3xl"></div>
+
+          <div class="relative z-10">
+            <!-- Brand Sekolah & Logo CBT -->
+            <div class="flex items-center gap-3.5 mb-5 sm:mb-7">
+              <div id="loginLogoBox" class="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-white flex-shrink-0 overflow-hidden shadow-inner">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 14l9-5-9-5-9 5 9 5z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
+              </div>
+              <div class="min-w-0">
+                <p id="loginSchoolName" class="text-base sm:text-lg font-extrabold text-white tracking-tight leading-tight uppercase truncate">SMP NEGERI 2 PACET</p>
+                <p class="text-xs font-medium text-blue-100/90 leading-snug truncate">Computer Based Test</p>
+              </div>
+            </div>
+
+            <!-- Judul Ujian (1 Baris) & Jadwal Aktif -->
+            <div class="space-y-2.5">
+              <h2 id="loginExamTitle" class="text-[clamp(13.5px,3.8vw,18.5px)] lg:text-[clamp(16px,1.45vw,19px)] font-extrabold text-white tracking-tight leading-tight whitespace-nowrap">
+                Asesmen Sumatif Akhir Semester I
+              </h2>
+              <p class="text-xs sm:text-sm text-blue-100/90 leading-relaxed max-w-md">
+                Sistem <strong>Computer Based Test</strong> untuk mendukung proses evaluasi pembelajaran secara digital.
+              </p>
+              <div id="loginScheduleBadge" class="hidden inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-xl bg-white/15 border border-white/20 text-[11px] font-semibold text-white mt-1">
+                <span>📅</span>
+                <span id="loginScheduleText">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ilustrasi Laptop, Buku & Perisai Keamanan (Tampil rapi di Tablet/Desktop) -->
+          <div class="hidden sm:flex relative z-10 my-6 items-center justify-center">
+            <svg viewBox="0 0 360 205" class="w-full max-w-[300px] h-auto drop-shadow-[0_18px_28px_rgba(0,20,70,0.35)]" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <ellipse cx="176" cy="182" rx="126" ry="12" fill="#001F6B" fill-opacity="0.45"/>
+              <!-- Stacked Books Right -->
+              <rect x="230" y="138" width="92" height="17" rx="4" fill="#DCE8FF"/>
+              <rect x="234" y="142" width="82" height="9" rx="2" fill="#FFFFFF"/>
+              <rect x="224" y="156" width="98" height="18" rx="4" fill="#C4DAFF"/>
+              <rect x="228" y="160" width="88" height="10" rx="2" fill="#EFF6FF"/>
+              <!-- Laptop Screen -->
+              <g transform="rotate(-3 155 110)">
+                <rect x="64" y="42" width="176" height="114" rx="11" fill="#1E40AF" stroke="#93C5FD" stroke-width="2.5"/>
+                <rect x="74" y="52" width="156" height="94" rx="7" fill="#F8FAFC"/>
+                <!-- Checklist Lines inside Screen -->
+                <path d="M90 73 L97 80 L109 67" stroke="#0066EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="120" y="70" width="76" height="7" rx="3.5" fill="#CBD5E1"/>
+                <path d="M90 98 L97 105 L109 92" stroke="#0066EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="120" y="95" width="92" height="7" rx="3.5" fill="#CBD5E1"/>
+                <path d="M90 123 L97 130 L109 117" stroke="#0066EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="120" y="120" width="66" height="7" rx="3.5" fill="#CBD5E1"/>
+              </g>
+              <!-- Laptop Base -->
+              <path d="M40 156 H244 L258 171 C260 174 257 177 253 177 H36 C32 177 29 174 31 171 L40 156 Z" fill="#E2EEFF"/>
+              <rect x="124" y="161" width="42" height="4" rx="2" fill="#94A3B8"/>
+              <!-- Security Shield Badge -->
+              <path d="M222 30 L264 46 V82 C264 111 245 130 222 140 C199 130 180 111 180 82 V46 L222 30 Z" fill="url(#shieldGrad)" stroke="#E0F2FE" stroke-width="3"/>
+              <path d="M206 83 L218 95 L241 70" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+              <defs>
+                <linearGradient id="shieldGrad" x1="180" y1="30" x2="264" y2="140" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#38BDF8"/>
+                  <stop offset="1" stop-color="#0052CC"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+
+          <!-- 3 Keunggulan Sistem di Bagian Bawah Panel Biru -->
+          <div class="relative z-10 hidden sm:grid grid-cols-3 gap-3 pt-4 border-t border-white/15 text-[11px] font-semibold text-blue-50">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sky-300 flex-shrink-0">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
+              </span>
+              <span class="leading-tight">Akses<br>Cepat</span>
+            </div>
+            <div class="flex items-center gap-2 border-l border-white/15 pl-3">
+              <span class="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sky-300 flex-shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              </span>
+              <span class="leading-tight">Aman &amp;<br>Terpercaya</span>
+            </div>
+            <div class="flex items-center gap-2 border-l border-white/15 pl-3">
+              <span class="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sky-300 flex-shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+              </span>
+              <span class="leading-tight">Hasil<br>Real-Time</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kolom Kanan: Formulir Login Putih (Siswa | Admin / Guru) -->
+        <div class="lg:col-span-6 p-6 sm:p-8 lg:p-10 flex flex-col justify-center bg-white dark:bg-slate-900 transition-colors">
+          <div class="flex items-start justify-between gap-2 mb-5">
+            <div>
+              <h2 class="text-2xl sm:text-[26px] font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">Selamat Datang 👋</h2>
+              <p id="loginRoleSubtitle" class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Masuk ke akun Anda untuk melanjutkan ujian</p>
+            </div>
+            <button id="btnDarkModeLogin" type="button" title="Ganti Mode Gelap / Terang" aria-label="Ganti Mode Tampilan" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-amber-300 dark:border-slate-700 transition cursor-pointer flex-shrink-0">
+              <span id="darkModeIconLogin" class="flex items-center">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+              </span>
+              <span id="darkModeLabelLogin">Gelap</span>
+            </button>
+          </div>
+
+          <!-- Switcher Tab: Siswa | Admin / Guru -->
+          <div class="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200/70 dark:border-slate-700 mb-5">
+            <button id="tabLoginStudent" type="button" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer bg-[#0066eb] text-white shadow-md shadow-blue-600/20">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 2h2m2-2v4m-2-2h4"/></svg>
+              <span>Siswa</span>
+            </button>
+            <button id="tabLoginAdmin" type="button" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span>Admin / Guru</span>
+            </button>
+          </div>
+
+          <!-- FORM 1: LOGIN SISWA -->
+          <form id="studentLoginForm" class="space-y-3.5">
+            <div>
+              <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5" for="studentNisn">
+                <svg class="w-3.5 h-3.5 text-blue-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+                <span>NISN / Nomor Peserta</span>
+              </label>
+              <div class="relative">
+                <input type="text" id="studentNisn" required placeholder="Contoh: 0081234501" class="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0h4v4h-4v-4z"/></svg>
+                </span>
+              </div>
+              <p id="studentFoundHint" class="hidden text-[11px] text-emerald-600 font-bold mt-1">✓ Siswa Ditemukan: <span id="studentFoundName">-</span> (<span id="studentFoundClass">-</span>)</p>
+            </div>
+
+            <div>
+              <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5" for="studentPassword">
+                <svg class="w-3.5 h-3.5 text-blue-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                <span>Kata Sandi</span>
+              </label>
+              <div class="relative">
+                <input type="password" id="studentPassword" required placeholder="Masukkan kata sandi Anda" class="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition outline-none">
+                <button type="button" id="btnToggleStudentPass" aria-label="Tampilkan kata sandi" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer p-0.5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div id="loginScheduleSelectGroup" class="hidden">
+              <label class="block text-xs font-bold text-slate-700 mb-1.5" for="studentScheduleSelect">Pilih Mata Pelajaran Ujian Aktif</label>
+              <select id="studentScheduleSelect" class="w-full px-3.5 py-2.5 rounded-xl border border-blue-300 bg-blue-50/60 text-blue-900 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500 transition"></select>
+            </div>
+
+            <div>
+              <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5" for="studentToken">
+                <svg class="w-3.5 h-3.5 text-blue-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>
+                <span>Token Masuk Ujian</span>
+              </label>
+              <input type="text" id="studentToken" required placeholder="Masukkan Token Ujian" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-bold tracking-widest text-blue-700 uppercase transition outline-none">
+              <p id="loginTokenHint" class="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1 font-medium">
+                <svg class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>Token Ujian Aktif: CBT80M</span>
+              </p>
+            </div>
+
+            <div class="flex items-center justify-between text-xs pt-0.5">
+              <label class="inline-flex items-center gap-2 text-slate-600 font-medium cursor-pointer">
+                <input type="checkbox" id="chkRememberStudent" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                <span>Ingat saya</span>
+              </label>
+              <button type="button" id="btnForgotStudentPass" class="text-blue-600 hover:text-blue-700 font-semibold hover:underline cursor-pointer">
+                Lupa kata sandi?
+              </button>
+            </div>
+
+            <div id="loginRejectionBanner" class="hidden p-3 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 leading-relaxed font-medium"></div>
+
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#0066eb] hover:bg-[#0052cc] active:scale-[0.99] transition shadow-lg shadow-blue-600/25 cursor-pointer flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+              <span>Masuk ke Sistem</span>
+            </button>
+          </form>
+
+          <!-- FORM 2: LOGIN ADMIN / GURU -->
+          <form id="inlineAdminLoginForm" class="hidden space-y-4">
+            <div>
+              <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5" for="inlineAdminUsernameInput">
+                <svg class="w-3.5 h-3.5 text-blue-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+                <span>Username Admin/Guru</span>
+              </label>
+              <div class="relative">
+                <input type="text" id="inlineAdminUsernameInput" required placeholder="Masukkan Username atau NIP" autocomplete="username" class="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition outline-none">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0h4v4h-4v-4z"/></svg>
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5" for="inlineAdminPinInput">
+                <svg class="w-3.5 h-3.5 text-blue-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                <span>Kata Sandi</span>
+              </label>
+              <div class="relative">
+                <input type="password" id="inlineAdminPinInput" required placeholder="Masukkan kata sandi Anda" autocomplete="current-password" class="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition outline-none">
+                <button type="button" id="btnToggleInlineAdminPin" aria-label="Tampilkan kata sandi" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer p-0.5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs pt-0.5">
+              <label class="inline-flex items-center gap-2 text-slate-600 font-medium cursor-pointer">
+                <input type="checkbox" id="chkRememberAdmin" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                <span>Ingat saya</span>
+              </label>
+              <button type="button" id="btnForgotAdminPass" class="text-blue-600 hover:text-blue-700 font-semibold hover:underline cursor-pointer">
+                Lupa kata sandi?
+              </button>
+            </div>
+
+            <div id="inlineAdminErrorBanner" class="hidden p-3 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 leading-relaxed font-medium"></div>
+
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-[#0066eb] hover:bg-[#0052cc] active:scale-[0.99] transition shadow-lg shadow-blue-600/25 cursor-pointer flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+              <span>Masuk ke Sistem</span>
+            </button>
+          </form>
+
+          <!-- Footer Keamanan -->
+          <div class="mt-5 pt-4 border-t border-slate-100 flex items-center gap-2 text-slate-500 text-[11px] font-medium">
+            <svg class="w-4 h-4 text-[#0052cc] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+            <span>Sistem CBT ini aman dan dilindungi dengan protokol keamanan.</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- VIEW 2: KONFIRMASI PESERTA -->
+    <section id="viewExamConfirm" class="hidden w-full max-w-lg mx-auto my-auto">
+      <div class="bg-white rounded-3xl shadow-xl border border-slate-200/80 p-5 sm:p-8">
+        <div class="flex items-center gap-3 border-b border-slate-100 pb-4 mb-4">
+          <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          </div>
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">Konfirmasi Lembar Ujian</h2>
+            <p class="text-[11px] sm:text-xs text-slate-500">Periksa kembali data diri sebelum memulai pengerjaan</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 rounded-2xl p-4 space-y-2.5 mb-5 border border-slate-200/60 text-xs sm:text-sm">
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Nama Peserta:</span>
+            <span id="confirmName" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">NISN / No. Peserta:</span>
+            <span id="confirmNisn" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Kelas / Rombel:</span>
+            <span id="confirmClass" class="font-bold text-blue-700 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Mata Pelajaran:</span>
+            <span id="confirmSubject" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div id="confirmScheduleRow" class="hidden flex justify-between">
+            <span class="text-slate-500 font-medium">Jadwal Ujian:</span>
+            <span id="confirmSchedule" class="font-bold text-indigo-700 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Alokasi Waktu:</span>
+            <span id="confirmDuration" class="font-bold text-blue-700 text-right">80 Menit</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Jumlah Soal:</span>
+            <span id="confirmQuestionsCount" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+        </div>
+
+        <div class="bg-red-50 border border-red-200 rounded-xl p-3.5 mb-5 text-[11px] sm:text-xs text-red-900 leading-relaxed">
+          <p class="font-bold mb-1 flex items-center gap-1.5 text-red-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span>Aturan Anti Tab Switch:</span>
+          </p>
+          <ul class="list-disc pl-4 space-y-1 text-slate-700">
+            <li>Sistem wajib berjalan dalam <strong>Layar Penuh (Fullscreen)</strong>.</li>
+            <li><strong>Dilarang berpindah tab</strong> atau membuka aplikasi lain (maksimal toleransi 3 kali).</li>
+            <li><strong>Nilai dirahasiakan</strong> dan langsung direkap otomatis ke panel guru.</li>
+          </ul>
+        </div>
+
+        <div class="flex gap-2.5">
+          <button id="btnCancelConfirm" type="button" class="px-4 py-3.5 rounded-xl font-bold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Kembali
+          </button>
+          <button id="btnStartExam" type="button" class="flex-1 py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-green-600 hover:bg-green-700 active:scale-[0.99] transition shadow-md shadow-green-600/20 cursor-pointer flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Mulai Kerjakan Ujian</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: RUANG UJIAN UTAMA (EXAM ROOM) -->
+    <section id="viewExamRoom" class="hidden w-full flex flex-col gap-3 sm:gap-4">
+
+      <!-- Top Exam Bar -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-4 shadow-sm flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div class="hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-100 text-blue-700 items-center justify-center font-bold flex-shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          </div>
+          <div class="min-w-0 truncate">
+            <div id="examStudentNameHeader" class="text-xs sm:text-sm font-bold text-slate-900 leading-tight truncate">Nama Siswa</div>
+            <div id="examSubjectHeader" class="text-[10px] sm:text-xs text-slate-500 font-medium truncate">Mata Pelajaran</div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+          <div class="hidden md:flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200 text-xs font-bold text-slate-600">
+            <button id="btnFontDecrease" type="button" title="Perkecil Font" class="px-2 py-1 rounded hover:bg-white transition cursor-pointer">A-</button>
+            <button id="btnFontReset" type="button" title="Ukuran Normal" class="px-2 py-1 rounded hover:bg-white transition cursor-pointer">A</button>
+            <button id="btnFontIncrease" type="button" title="Perbesar Font" class="px-2 py-1 rounded hover:bg-white transition cursor-pointer">A+</button>
+          </div>
+
+          <div id="cheatCountBadge" class="hidden text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 flex items-center gap-1">
+            <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span class="hidden xs:inline">Pelanggaran:</span> 0/3
+          </div>
+
+          <div class="flex items-center gap-1.5 sm:gap-2 bg-slate-50 border border-slate-200 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl">
+            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="flex flex-col">
+              <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-400 -mb-0.5">Sisa Waktu</span>
+              <span id="examTimerDisplay" class="mono-font text-xs sm:text-base font-bold text-slate-800">01:20:00</span>
+            </div>
+          </div>
+
+          <button id="btnOpenQuestionDrawer" type="button" class="lg:hidden px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition cursor-pointer flex items-center gap-1 text-xs font-bold" title="Daftar Soal">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            <span class="hidden xs:inline">Soal</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Exam Content Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-start pb-20 sm:pb-0">
+
+        <!-- Left: Question & Options Card -->
+        <div class="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-4 sm:p-7 shadow-sm flex flex-col min-h-[460px]">
+
+          <div class="flex flex-wrap items-center justify-between pb-3 sm:pb-4 border-b border-slate-100 mb-4 sm:mb-5 gap-2">
+            <div class="flex items-center gap-1.5 sm:gap-2">
+              <span id="currentQuestionNumberBadge" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-blue-100 text-blue-700 font-bold text-xs sm:text-sm">
+                Soal No. 1 dari 8
+              </span>
+              <span id="questionTypeBadge" class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold bg-slate-100 text-slate-700">
+                Pilihan Ganda
+              </span>
+            </div>
+            <button id="btnTriggerFinish" type="button" class="text-xs font-bold text-slate-500 hover:text-red-600 px-2 sm:px-3 py-1 rounded-lg hover:bg-red-50 transition cursor-pointer">
+              Selesai Ujian
+            </button>
+          </div>
+
+          <div class="scalable-text flex-1">
+            <p id="questionText" class="text-slate-800 font-semibold leading-relaxed whitespace-pre-line text-sm sm:text-base">
+              Memuat butir soal ujian...
+            </p>
+
+            <!-- Lampiran Gambar Soal -->
+            <div id="questionImageContainer" class="hidden mt-3 sm:mt-4 max-w-lg mx-auto rounded-2xl overflow-hidden border border-slate-200 p-1 bg-slate-50 shadow-xs">
+              <img id="questionImage" src="" alt="Lampiran Soal" class="w-full object-contain max-h-72 sm:max-h-88 rounded-xl mx-auto">
+            </div>
+
+            <div id="optionsContainer" class="mt-5 sm:mt-6 space-y-2.5 sm:space-y-3"></div>
+          </div>
+
+          <!-- Action Bar -->
+          <div class="mt-6 sm:mt-8 pt-4 sm:pt-5 border-t border-slate-100 flex items-center justify-between gap-2">
+            <button id="btnPrevQuestion" type="button" class="flex items-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+              <span>Sebelumnya</span>
+              <span class="hidden md:inline-flex kbd-hint ml-1.5">←</span>
+            </button>
+
+            <button id="btnToggleDoubt" type="button" class="flex items-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer">
+              <input type="checkbox" id="chkDoubt" class="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded text-amber-500 mr-1.5 pointer-events-none">
+              <span>Ragu-ragu</span>
+              <span class="hidden md:inline-flex kbd-hint ml-1.5">R</span>
+            </button>
+
+            <button id="btnNextQuestion" type="button" class="flex items-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer">
+              <span>Berikutnya</span>
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              <span class="hidden md:inline-flex kbd-hint ml-1.5 text-blue-900 bg-blue-100 border-blue-200">→</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Right: Question Palette Desktop -->
+        <div class="hidden lg:flex lg:col-span-4 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex-col">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h3 class="font-bold text-sm text-slate-900">Daftar Nomor Soal</h3>
+            <span class="text-xs text-slate-500 font-medium">Klik untuk melompat</span>
+          </div>
+
+          <div id="questionPaletteDesktop" class="grid grid-cols-5 gap-2.5 max-h-[360px] overflow-y-auto p-1"></div>
+
+          <div class="mt-5 pt-4 border-t border-slate-100 space-y-2 text-xs">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3.5 h-3.5 rounded bg-green-600"></span>
+                <span class="text-slate-600 font-medium">Sudah Dijawab:</span>
+              </div>
+              <span id="statAnswered" class="font-bold text-slate-800">0</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3.5 h-3.5 rounded bg-amber-500"></span>
+                <span class="text-slate-600 font-medium">Ragu-ragu:</span>
+              </div>
+              <span id="statDoubt" class="font-bold text-slate-800">0</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3.5 h-3.5 rounded border border-slate-300 bg-white"></span>
+                <span class="text-slate-600 font-medium">Belum Dijawab:</span>
+              </div>
+              <span id="statUnanswered" class="font-bold text-slate-800">0</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- VIEW 4: HASIL UJIAN SISWA (NILAI DIRAHASIAKAN DARI SISWA) -->
+    <section id="viewResult" class="hidden w-full max-w-xl mx-auto my-auto">
+      <div id="printableResultArea" class="bg-white rounded-3xl shadow-xl border border-slate-200/80 p-5 sm:p-8">
+
+        <div class="text-center pb-4 sm:pb-5 border-b border-slate-100">
+          <div class="w-14 h-14 sm:w-16 sm:h-16 bg-emerald-100 text-emerald-600 rounded-3xl mx-auto flex items-center justify-center mb-2.5 sm:mb-3">
+            <svg class="w-8 h-8 sm:w-9 sm:h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h2 class="text-lg sm:text-2xl font-black text-slate-900">Ujian Telah Selesai</h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1">Lembar jawaban Anda telah berhasil diamankan oleh sistem.</p>
+        </div>
+
+        <div class="my-4 sm:my-5 bg-blue-50 border border-blue-200 rounded-2xl p-3.5 sm:p-4 text-center">
+          <p class="text-[11px] sm:text-xs font-bold text-blue-900 uppercase tracking-wide">Pemberitahuan Rekapitulasi</p>
+          <p class="text-xs text-blue-700 mt-1 leading-relaxed">
+            Sesuai regulasi sekolah, <strong>skor/nilai tidak ditampilkan kepada siswa</strong>. Rekapitulasi nilai langsung dihitung otomatis di panel guru pengampu.
+          </p>
+        </div>
+
+        <div class="bg-slate-50 rounded-2xl p-3.5 sm:p-4.5 space-y-2.5 sm:space-y-3 mb-5 border border-slate-200/60 text-xs sm:text-sm">
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Nama Peserta:</span>
+            <span id="resStudentName" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">NISN / No. Peserta:</span>
+            <span id="resStudentNisn" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Kelas / Rombel:</span>
+            <span id="resStudentClass" class="font-bold text-blue-700 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Mata Pelajaran:</span>
+            <span id="resSubject" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Waktu Pengumpulan:</span>
+            <span id="resCompletedAt" class="font-bold text-slate-800 text-right">-</span>
+          </div>
+          <div class="flex justify-between border-t border-slate-200 pt-2">
+            <span class="text-slate-500 font-medium">Jumlah Butir Soal:</span>
+            <span id="resTotalQuestions" class="font-bold text-slate-800">8 Butir</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500 font-medium">Catatan Anti-Curang:</span>
+            <span id="resCheatCount" class="font-bold text-slate-700">0 Kali Pelanggaran</span>
+          </div>
+          <div class="flex justify-between border-t border-slate-200 pt-2">
+            <span class="text-slate-500 font-medium">Status Verifikasi:</span>
+            <span class="text-emerald-700 font-bold bg-emerald-100 px-2.5 py-0.5 rounded-full text-[11px]">Terverifikasi Masuk Server</span>
+          </div>
+        </div>
+
+        <p id="resAutoPrintNote" class="cbt-print-footer-note mt-2 mb-4 pt-2 border-t border-slate-100 text-center" style="font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></p>
+
+        <div class="flex flex-col sm:flex-row gap-2.5 sm:gap-3 no-print">
+          <button id="btnPrintResult" type="button" class="flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            <span>Cetak / Simpan Bukti Ujian</span>
+          </button>
+          <button id="btnReturnHome" type="button" class="flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer flex items-center justify-center gap-2">
+            <span>Keluar / Selesai</span>
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- VIEW 5: PANEL GURU & ADMIN (13 GURU & 250 SISWA) -->
+    <section id="viewAdmin" class="hidden w-full flex flex-col gap-4 sm:gap-6">
+
+      <!-- Admin Top Banner -->
+      <div class="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black flex-shrink-0">
+            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="adminTeacherNameDisplay" class="text-base sm:text-lg font-bold text-slate-900">Panel Guru: Rekapitulasi Otomatis</h2>
+              <span id="adminRoleBadge" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700">Guru Mapel</span>
+            </div>
+            <p id="adminSubjectDisplay" class="text-[11px] sm:text-xs text-slate-500 font-medium">Panel Manajemen Ujian Sekolah</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnAdminLogout" type="button" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 transition cursor-pointer flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            <span>Keluar Panel</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Admin Tabs Navigation (7 Tabs dengan Gradasi Nyaman di Pandang) -->
+      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-slate-100/95 via-blue-50/80 to-indigo-100/85 dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-slate-200/80 dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
+        <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/25 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>📊 Rekap Nilai (Ranking)</span>
+        </button>
+        <button id="adminTabBtnMonitoring" type="button" data-tab="tabMonitoring" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-cyan-50 to-teal-100/80 text-teal-800 border-teal-200/80 dark:from-cyan-950/70 dark:to-teal-900/50 dark:text-teal-200 dark:border-teal-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>📡 Pantau Login Siswa</span>
+        </button>
+        <button id="adminTabBtnSchedules" type="button" data-tab="tabSchedules" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-indigo-50 to-violet-100/80 text-indigo-800 border-indigo-200/80 dark:from-indigo-950/70 dark:to-violet-900/50 dark:text-indigo-200 dark:border-indigo-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>📅 Jadwal &amp; Aktifkan Mapel</span>
+        </button>
+        <button id="adminTabBtnQuestions" type="button" data-tab="tabQuestions" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-emerald-50 to-teal-100/75 text-emerald-800 border-emerald-200/80 dark:from-emerald-950/70 dark:to-teal-900/50 dark:text-emerald-200 dark:border-emerald-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>📝 Bank Soal Ujian</span>
+        </button>
+        <button id="adminTabBtnStudents" type="button" data-tab="tabStudents" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-amber-50 to-orange-100/75 text-amber-900 border-amber-200/80 dark:from-amber-950/70 dark:to-orange-900/50 dark:text-amber-200 dark:border-amber-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>👥 Data Siswa</span>
+        </button>
+        <button id="adminTabBtnTeachers" type="button" data-tab="tabTeachers" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-rose-50 to-pink-100/75 text-rose-800 border-rose-200/80 dark:from-rose-950/70 dark:to-pink-900/50 dark:text-rose-200 dark:border-rose-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>👨‍🏫 Data Guru</span>
+        </button>
+        <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-slate-100 to-indigo-100/80 text-slate-800 border-slate-300/80 dark:from-slate-800 dark:to-indigo-950/60 dark:text-slate-200 dark:border-slate-700 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
+          <span>⚙️ Pengaturan, Kop &amp; Cloud</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: REKAP NILAI SISWA DENGAN DETAIL JAWABAN PER NOMOR -->
+      <div id="tabResults" class="admin-tab-pane flex flex-col gap-4">
+
+        <!-- Filter Bar: Mapel & Kelas -->
+        <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-bold text-slate-700 dark:text-slate-200">Filter Rekap:</span>
+            <select id="filterResultsSubject" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-blue-700 bg-white outline-none">
+              <option value="ALL">Semua Mata Pelajaran</option>
+            </select>
+            <select id="filterResultsClass" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-slate-700 bg-white outline-none">
+              <option value="ALL">Semua Kelas</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btnSyncCloudResults" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1" title="Tarik data terbaru yang disubmit 250 siswa">
+              <span>🔄 Sinkron Cloud</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 KPI Summary Cards (Gradasi Cerah Elegan & Nyaman di Mata) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div class="bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 dark:from-blue-700 dark:via-blue-600 dark:to-cyan-600 text-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-blue-400/40 dark:border-blue-400/20 shadow-lg shadow-blue-500/20 flex items-center gap-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center font-black text-lg sm:text-xl flex-shrink-0 shadow-inner">📊</div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-blue-100 uppercase tracking-wider">Rata-Rata</p>
+              <div id="kpiAvgScore" class="text-lg sm:text-2xl font-black text-white">0.0</div>
+              <p class="text-[10px] text-blue-50/90 font-medium">Skala 0-100</p>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-500 dark:from-emerald-700 dark:via-emerald-600 dark:to-teal-600 text-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-emerald-400/40 dark:border-emerald-400/20 shadow-lg shadow-emerald-500/20 flex items-center gap-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center font-black text-lg sm:text-xl flex-shrink-0 shadow-inner">🏆</div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Tertinggi</p>
+              <div id="kpiHighestScore" class="text-lg sm:text-2xl font-black text-white">0</div>
+              <p id="kpiHighestStudent" class="text-[10px] text-emerald-50/95 font-medium truncate">-</p>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 dark:from-amber-600 dark:via-orange-600 dark:to-rose-600 text-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-orange-400/40 dark:border-orange-400/20 shadow-lg shadow-orange-500/20 flex items-center gap-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center font-black text-lg sm:text-xl flex-shrink-0 shadow-inner">📉</div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-amber-50 uppercase tracking-wider">Terendah</p>
+              <div id="kpiLowestScore" class="text-lg sm:text-2xl font-black text-white">0</div>
+              <p id="kpiLowestStudent" class="text-[10px] text-amber-50/95 font-medium truncate">-</p>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-500 dark:from-indigo-700 dark:via-violet-700 dark:to-purple-600 text-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-violet-400/40 dark:border-violet-400/20 shadow-lg shadow-violet-500/20 flex items-center gap-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center font-black text-lg sm:text-xl flex-shrink-0 shadow-inner">👥</div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-indigo-100 uppercase tracking-wider">Total Peserta</p>
+              <div id="kpiTotalStudents" class="text-lg sm:text-2xl font-black text-white">0 Siswa</div>
+              <p id="kpiPassRate" class="text-[10px] text-indigo-50/95 font-semibold truncate">Ketuntasan: 0%</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Header: DUA TOMBOL DOWNLOAD (EXCEL & PDF) -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200">
+          <div>
+            <h3 class="font-bold text-slate-900 text-xs sm:text-sm">Peringkat &amp; Evaluasi Jawaban Siswa per Nomor Soal</h3>
+            <p class="text-[11px] text-slate-500">Menampilkan jawaban benar &amp; salah tiap nomor beserta kunci jawabannya untuk evaluasi guru mapel.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="btnClearAllResults" type="button" class="px-2.5 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition cursor-pointer">
+              🗑️ Hapus Rekap
+            </button>
+
+            <button id="btnExportExcel" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              <span>Download Excel (.xlsx)</span>
+            </button>
+
+            <button id="btnExportPDF" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition shadow-sm cursor-pointer flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+              <span>Download PDF (.pdf)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabel Peringkat & Evaluasi Jawaban Siswa -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] uppercase tracking-wider font-bold">
+                  <th class="p-3 text-center">Rank</th>
+                  <th class="p-3">Nama Siswa</th>
+                  <th class="p-3">NISN</th>
+                  <th class="p-3">Kelas</th>
+                  <th class="p-3 text-center">Nilai Akhir</th>
+                  <th class="p-3 min-w-[260px]">Jawaban Siswa (Benar &amp; Salah per Nomor)</th>
+                  <th class="p-3">Waktu Selesai</th>
+                  <th class="p-3 text-center">B / S / K</th>
+                  <th class="p-3">Keterangan Curang</th>
+                </tr>
+              </thead>
+              <tbody id="adminResultsTbody"></tbody>
+            </table>
+          </div>
+
+          <div id="adminResultsEmpty" class="hidden text-center py-10 text-slate-400">
+            <p class="font-semibold text-sm">Belum ada siswa yang menyelesaikan ujian.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB BARU (ADMIN & GURU MAPEL): PANTAU DAFTAR LOGIN SISWA & BATAS PERCOBAAN -->
+      <div id="tabMonitoring" class="admin-tab-pane hidden flex flex-col gap-4">
+
+        <!-- Pengaturan Batas Percobaan Ujian (Admin & Guru Mapel) -->
+        <div class="bg-indigo-50/70 border border-indigo-200 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-xs sm:text-sm font-bold text-indigo-950">🛡️ Batas Percobaan &amp; Penolakan Ujian Ulang</h3>
+            <p class="text-[11px] text-indigo-700">Atur berapa kali siswa diperbolehkan mengikuti ujian mapel yang sama (misal: 1x agar langsung ditolak jika sudah selesai, atau 2x jika boleh mengulang).</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <select id="attemptRuleSubject" class="px-3 py-2 rounded-xl border border-indigo-300 bg-white font-bold text-indigo-900 outline-none"></select>
+            <div class="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-indigo-300">
+              <span class="font-bold text-slate-600">Maks:</span>
+              <input type="number" id="attemptRuleMax" min="1" max="10" value="1" class="w-12 text-center font-black text-blue-700 outline-none">
+              <span class="font-semibold text-slate-500">Kali</span>
+            </div>
+            <button id="btnSaveAttemptRule" type="button" class="px-3.5 py-2 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition cursor-pointer shadow-xs">
+              💾 Simpan Batas
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 KPI Pemantauan -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black flex-shrink-0">🔑</div>
+            <div>
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sedang Login</p>
+              <div id="monKpiLoggedIn" class="text-lg sm:text-2xl font-black text-amber-600">0</div>
+              <p class="text-[10px] text-slate-400">Di lembar konfirmasi</p>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black flex-shrink-0">✍️</div>
+            <div>
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sedang Mengerjakan</p>
+              <div id="monKpiInProgress" class="text-lg sm:text-2xl font-black text-blue-600">0</div>
+              <p class="text-[10px] text-slate-400">Aktif di ruang ujian</p>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black flex-shrink-0">✅</div>
+            <div>
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sudah Selesai</p>
+              <div id="monKpiCompleted" class="text-lg sm:text-2xl font-black text-emerald-600">0</div>
+              <p class="text-[10px] text-slate-400">Mengumpulkan jawaban</p>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black flex-shrink-0">⏳</div>
+            <div>
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Belum Login</p>
+              <div id="monKpiNotLoggedIn" class="text-lg sm:text-2xl font-black text-slate-700">0</div>
+              <p class="text-[10px] text-slate-400">Dari daftar peserta</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Refresh Bar -->
+        <div class="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div class="flex flex-wrap items-center gap-2">
+            <select id="filterMonitoringSubject" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-blue-700 bg-white outline-none"></select>
+            <select id="filterMonitoringClass" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-slate-700 bg-white outline-none"></select>
+            <select id="filterMonitoringStatus" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-slate-700 bg-white outline-none">
+              <option value="ACTIVE">Sedang Login / Mengerjakan / Selesai</option>
+              <option value="logged_in">Hanya Sedang Login</option>
+              <option value="in_progress">Hanya Sedang Mengerjakan</option>
+              <option value="completed">Hanya Sudah Selesai</option>
+              <option value="not_logged_in">Belum Login</option>
+              <option value="ALL">Semua Siswa</option>
+            </select>
+            <input type="text" id="searchMonitoringInput" placeholder="Cari nama / NISN..." class="px-3 py-1.5 rounded-xl border border-slate-300 w-44 outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <button id="btnRefreshMonitoring" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1.5">
+            <span>🔄 Refresh Pantauan</span>
+          </button>
+        </div>
+
+        <!-- Tabel Status Login & Pengerjaan Siswa -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+          <div class="overflow-x-auto max-h-[520px]">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[11px]">
+                <tr>
+                  <th class="p-3 text-center w-10">No</th>
+                  <th class="p-3">Nama Siswa &amp; NISN</th>
+                  <th class="p-3">Kelas</th>
+                  <th class="p-3">Mata Pelajaran</th>
+                  <th class="p-3 text-center">Status Ujian</th>
+                  <th class="p-3 text-center">Progres &amp; Percobaan</th>
+                  <th class="p-3 text-center">Sisa Waktu / Curang</th>
+                  <th class="p-3">Aktivitas Terakhir</th>
+                  <th class="p-3 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="adminMonitoringTbody"></tbody>
+            </table>
+          </div>
+          <div id="adminMonitoringEmpty" class="hidden text-center py-10 text-slate-400">
+            <p class="font-semibold text-sm">Belum ada aktivitas login siswa sesuai filter.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB BARU (KHUSUS ADMIN): JADWAL UJIAN & AKTIFKAN MAPEL -->
+      <div id="tabSchedules" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-900">Jadwal Ujian &amp; Aktivasi Multi-Mapel</h3>
+            <p class="text-xs text-slate-500">Anda dapat mengaktifkan <strong>lebih dari 1 mata pelajaran secara bersamaan</strong> (misal Kelas 7, 8, 9 ujian serentak).</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div id="activeScheduleBanner" class="px-3.5 py-2 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span id="activeScheduleBannerText">Mapel Aktif: -</span>
+            </div>
+            <button id="btnDeactivateAllSchedules" type="button" class="hidden px-3 py-2 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition cursor-pointer">
+              Nonaktifkan Semua
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <!-- Form Tambah / Edit Jadwal -->
+          <div class="lg:col-span-4 bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
+              <h4 id="scheduleFormTitle" class="font-bold text-sm text-slate-900">+ Tambah Jadwal Ujian</h4>
+              <button type="button" id="btnCancelEditSchedule" class="hidden text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer">Batal Edit</button>
+            </div>
+
+            <form id="formScheduleItem" class="space-y-3 text-xs">
+              <input type="hidden" id="editScheduleId">
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputDate">Tanggal Ujian</label>
+                  <input type="date" id="schInputDate" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputDay">Hari</label>
+                  <select id="schInputDay" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="Senin">Senin</option>
+                    <option value="Selasa">Selasa</option>
+                    <option value="Rabu">Rabu</option>
+                    <option value="Kamis">Kamis</option>
+                    <option value="Jumat">Jumat</option>
+                    <option value="Sabtu">Sabtu</option>
+                    <option value="Minggu">Minggu</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="schInputSubject">Mata Pelajaran</label>
+                <input type="text" id="schInputSubject" list="scheduleSubjectList" required placeholder="Contoh: Matematika" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+                <datalist id="scheduleSubjectList"></datalist>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputClass">Kelas / Tingkat</label>
+                  <input type="text" id="schInputClass" required placeholder="Contoh: Kelas 7" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputTime">Jam Pelaksanaan</label>
+                  <input type="text" id="schInputTime" placeholder="07:30 - 08:50" value="07:30 - 08:50" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputDuration">Durasi (Mnt)</label>
+                  <input type="number" id="schInputDuration" min="1" max="300" value="80" required class="w-full px-2.5 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputMaxAttempts">Maks. Uji</label>
+                  <input type="number" id="schInputMaxAttempts" min="1" max="10" value="1" required title="Berapa kali siswa boleh ikut ujian ini" class="w-full px-2.5 py-2 rounded-xl border border-slate-300 font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="schInputToken">Token</label>
+                  <div class="flex gap-1">
+                    <input type="text" id="schInputToken" required placeholder="MTK7A" class="w-full px-2 py-2 rounded-xl border border-slate-300 font-bold uppercase text-blue-700 outline-none focus:ring-2 focus:ring-blue-500">
+                    <button type="button" id="btnSchRandomToken" class="px-2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold cursor-pointer" title="Acak Token">🎲</button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" id="btnSubmitSchedule" class="w-full py-2.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
+                💾 Simpan ke Daftar Jadwal
+              </button>
+            </form>
+          </div>
+
+          <!-- Tabel Daftar Jadwal Ujian -->
+          <div class="lg:col-span-8 bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+            <div class="p-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
+              <span class="font-bold text-xs sm:text-sm text-slate-800">Daftar Jadwal Mata Pelajaran</span>
+              <span class="text-[11px] text-slate-500">Klik <strong>Aktifkan Mapel</strong> pada satu atau banyak mapel</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-bold text-[11px]">
+                    <th class="p-3 text-center w-10">No</th>
+                    <th class="p-3">Hari &amp; Tanggal</th>
+                    <th class="p-3">Mata Pelajaran &amp; Kelas</th>
+                    <th class="p-3">Jam / Durasi</th>
+                    <th class="p-3 text-center">Token</th>
+                    <th class="p-3 text-center">Status &amp; Aktivasi</th>
+                    <th class="p-3 text-center w-20">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="adminSchedulesTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: BANK SOAL UJIAN -->
+      <div id="tabQuestions" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span id="adminTotalQuestionsCount" class="font-bold text-slate-800 text-sm">0 Soal Tersedia</span>
+              <p class="text-[11px] text-slate-500">Pilih Mata Pelajaran &amp; Kelas untuk melihat atau menambah butir soal (PG Tunggal, Benar/Salah, &amp; Jawaban &gt; 1)</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="file" id="fileImportQuestions" accept=".json" class="hidden">
+              <button id="btnImportQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                📥 Impor JSON
+              </button>
+              <button id="btnExportQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                📤 Ekspor JSON
+              </button>
+              <button id="btnOpenPrintQuestions" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer flex items-center gap-1">
+                <span>📄 Download Naskah Soal</span>
+              </button>
+              <button id="btnResetDefaultQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition cursor-pointer">
+                ↺ Reset Soal
+              </button>
+              <button id="btnOpenAddQuestion" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1">
+                <span>+ Tambah Soal</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label for="filterQuestionsSubject" class="block text-[11px] font-bold text-slate-600 mb-1">📚 Mata Pelajaran</label>
+              <select id="filterQuestionsSubject" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></select>
+            </div>
+            <div>
+              <label for="filterQuestionsClass" class="block text-[11px] font-bold text-slate-600 mb-1">🏫 Tingkat / Kelas</label>
+              <select id="filterQuestionsClass" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ALL">Semua Kelas / Tingkat</option>
+                <option value="Kelas 7">Kelas 7</option>
+                <option value="Kelas 8">Kelas 8</option>
+                <option value="Kelas 9">Kelas 9</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="adminQuestionList" class="space-y-3"></div>
+      </div>
+
+      <!-- TAB 3: DATA 250 SISWA (PESERTA UJIAN) -->
+      <div id="tabStudents" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-900">Pangkalan Data Peserta Ujian</h3>
+            <p class="text-xs text-slate-500">Total terdaftar: <span id="studentCountBadge" class="font-black text-blue-700">12 Siswa</span> (Kapasitas hingga 250+ siswa)</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="file" id="fileImportStudentsExcel" accept=".xlsx, .xls" class="hidden">
+
+            <button id="btnOpenAddStudent" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1.5">
+              <span>+ Tambah Siswa</span>
+            </button>
+
+            <button id="btnDownloadStudentTemplate" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition cursor-pointer flex items-center gap-1.5">
+              <span>📄 Unduh Template Excel</span>
+            </button>
+
+            <button id="btnTriggerImportStudents" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5">
+              <span>📥 Impor dari Excel (.xlsx)</span>
+            </button>
+
+            <button id="btnPrintStudentCards" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center gap-1.5">
+              <span>🪪 Kartu Peserta (9x5,3 cm)</span>
+            </button>
+
+            <button id="btnResetAllStudentPasswords" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer flex items-center gap-1.5" title="Reset password seluruh siswa ke 123">
+              <span>🔄 Reset Password (123)</span>
+            </button>
+
+            <button id="btnGenerate250Demo" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1.5">
+              <span>🎲 Isi 250 Siswa Demo</span>
+            </button>
+
+            <button id="btnClearStudents" type="button" class="px-2.5 py-2 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 transition cursor-pointer">
+              🗑️ Hapus Semua
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+          <div class="p-3 border-b border-slate-100 flex items-center justify-between gap-3">
+            <input type="text" id="searchStudentInput" placeholder="Cari nama, NISN, kelas, atau alamat..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-72 outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="text-xs text-slate-400">Format Biodata Lengkap Kartu 9,0 x 5,3 cm</span>
+          </div>
+
+          <div class="overflow-x-auto max-h-[480px]">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                <tr>
+                  <th class="p-3 text-center w-10">No</th>
+                  <th class="p-3">NISN</th>
+                  <th class="p-3">Nama Lengkap Siswa</th>
+                  <th class="p-3">Tempat Lahir</th>
+                  <th class="p-3">Tanggal Lahir</th>
+                  <th class="p-3">Jenis Kelamin</th>
+                  <th class="p-3">Kelas</th>
+                  <th class="p-3">Alamat</th>
+                  <th class="p-3">Password</th>
+                  <th class="p-3 text-center w-24">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="adminStudentsTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: DATA GURU MATA PELAJARAN & ADMIN (DENGAN TEMPLATE & IMPORT EXCEL) -->
+      <div id="tabTeachers" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-900">Pangkalan Data Akun Guru &amp; Admin</h3>
+            <p class="text-xs text-slate-500">Khusus Proktor / Admin: Input manual atau Impor Excel massal untuk mempercepat pengisian data guru.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="file" id="fileImportTeachersExcel" accept=".xlsx, .xls" class="hidden">
+
+            <button id="btnDownloadTeacherTemplate" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition cursor-pointer flex items-center gap-1.5">
+              <span>📄 Unduh Template Excel</span>
+            </button>
+
+            <button id="btnTriggerImportTeachers" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5">
+              <span>📥 Impor dari Excel (.xlsx)</span>
+            </button>
+
+            <button id="btnOpenAddTeacher" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1.5">
+              <span>+ Tambah Guru Baru</span>
+            </button>
+
+            <button id="btnResetAllTeacherPasswords" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer flex items-center gap-1.5" title="Reset password seluruh guru ke guru123">
+              <span>🔄 Reset Password Guru (guru123)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+          <div class="p-3 border-b border-slate-100 flex items-center justify-between gap-3">
+            <input type="text" id="searchTeacherInput" placeholder="Cari nama, NIP, atau mapel guru..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-64 outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="text-xs text-slate-400 font-bold" id="teacherCountBadge">Total: 13 Guru</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                <tr>
+                  <th class="p-3 text-center w-12">No</th>
+                  <th class="p-3">NIP / ID</th>
+                  <th class="p-3">Nama Lengkap Guru</th>
+                  <th class="p-3">Mata Pelajaran yang Diampu</th>
+                  <th class="p-3">Kelas Diampu</th>
+                  <th class="p-3">Password / PIN</th>
+                  <th class="p-3 text-center w-36">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="adminTeachersTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: PENGATURAN JADWAL, TITI MANGSA KEPSEK, UPLOAD LOGO KOP, & CLOUD SUPABASE -->
+      <div id="tabSettings" class="admin-tab-pane hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+          <!-- Box 1: Jadwal & Token -->
+          <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+            <h3 class="text-sm sm:text-base font-bold text-slate-900 mb-4 pb-3 border-b border-slate-100">Konfigurasi Jadwal &amp; Proteksi</h3>
+
+            <form id="formExamConfig" class="space-y-3.5 text-xs sm:text-sm">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="cfgExamTitle">Judul Ujian (Tampil di Halaman Login &amp; Laporan)</label>
+                <div class="flex gap-2">
+                  <input type="text" id="cfgExamTitle" required placeholder="Contoh: Asesmen Sumatif Akhir Semester I" class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                  <button id="btnQuickSaveExamTitle" type="button" class="px-3.5 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs transition cursor-pointer whitespace-nowrap">
+                    ✓ Simpan Judul
+                  </button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">Ditampilkan otomatis di halaman login siswa, kartu peserta, dan laporan rekap.</p>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgSubject">Mata Pelajaran Aktif</label>
+                  <input type="text" id="cfgSubject" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgDurationMinutes">Alokasi Waktu (Menit)</label>
+                  <input type="number" id="cfgDurationMinutes" min="1" max="300" value="80" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="cfgExamToken">Token Masuk Ujian</label>
+                <div class="flex gap-2">
+                  <input type="text" id="cfgExamToken" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold tracking-widest text-blue-700 outline-none uppercase">
+                  <button id="btnGenerateToken" type="button" class="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 text-xs transition cursor-pointer">
+                    🎲 Acak
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgMaxCheats">Toleransi Pindah Tab</label>
+                  <input type="number" id="cfgMaxCheats" min="1" max="10" value="3" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgMaxAttempts">Maks. Percobaan Ujian</label>
+                  <input type="number" id="cfgMaxAttempts" min="1" max="10" value="1" required title="1 = ditolak jika sudah selesai; 2 = boleh 2x ujian" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-indigo-700 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgAdminPin">PIN Akun Saat Ini</label>
+                  <input type="password" id="cfgAdminPin" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+              </div>
+
+              <div class="pt-3 border-t border-slate-100">
+                <button type="submit" class="w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
+                  Simpan Perubahan Pengaturan
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Box 2: Identitas Sekolah, Upload Logo Kop Kiri/Kanan, & Titi Mangsa Kepala Sekolah -->
+          <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+            <h3 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Identitas Sekolah, Logo Kop &amp; Titi Mangsa Kepala Sekolah</h3>
+            <p class="text-[11px] text-slate-500 mb-4 pb-3 border-b border-slate-100">Digunakan otomatis pada Kop Surat Rekapitulasi Resmi PDF &amp; Kartu Peserta 9,0 x 5,3 cm.</p>
+
+            <form id="formSchoolConfig" class="space-y-3 text-xs sm:text-sm">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="cfgSchoolSubtitle">Baris Atas Kop Surat (Pemerintah / Dinas)</label>
+                <input type="text" id="cfgSchoolSubtitle" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgSchoolName">Nama Sekolah</label>
+                  <input type="text" id="cfgSchoolName" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgSchoolAddress">Alamat Sekolah</label>
+                  <input type="text" id="cfgSchoolAddress" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgSchoolCity">Kota Titi Mangsa</label>
+                  <input type="text" id="cfgSchoolCity" required placeholder="Contoh: Pacet" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgSchoolDate">Tanggal Titi Mangsa</label>
+                  <input type="text" id="cfgSchoolDate" required placeholder="Contoh: 14 November 2026" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgHeadmasterName">Nama Kepala Sekolah &amp; Gelar</label>
+                  <input type="text" id="cfgHeadmasterName" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgHeadmasterNip">NIP Kepala Sekolah</label>
+                  <input type="text" id="cfgHeadmasterNip" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+
+              <!-- Upload Logo Kiri & Logo Kanan -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                  <label class="block font-bold text-slate-700 text-xs mb-2">Logo Kiri (Dinas / Pemda)</label>
+                  <input type="file" id="cfgLogoLeftFile" accept="image/*" class="hidden">
+                  <div class="flex items-center gap-2">
+                    <div id="previewLogoLeftBox" class="w-12 h-12 rounded-xl border border-slate-300 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <span class="text-[9px] font-bold text-slate-400">DINAS</span>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <button type="button" id="btnUploadLogoLeft" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-[11px] font-bold text-slate-700 cursor-pointer">
+                        Upload Logo Kiri
+                      </button>
+                      <button type="button" id="btnRemoveLogoLeft" class="hidden text-[11px] text-red-600 font-bold text-left hover:underline cursor-pointer">
+                        Hapus Logo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                  <label class="block font-bold text-slate-700 text-xs mb-2">Logo Kanan (Logo Sekolah)</label>
+                  <input type="file" id="cfgLogoRightFile" accept="image/*" class="hidden">
+                  <div class="flex items-center gap-2">
+                    <div id="previewLogoRightBox" class="w-12 h-12 rounded-xl border border-slate-300 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <span class="text-[9px] font-bold text-slate-400">SMP</span>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <button type="button" id="btnUploadLogoRight" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-[11px] font-bold text-slate-700 cursor-pointer">
+                        Upload Logo Kanan
+                      </button>
+                      <button type="button" id="btnRemoveLogoRight" class="hidden text-[11px] text-red-600 font-bold text-left hover:underline cursor-pointer">
+                        Hapus Logo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Upload Logo CBT (Header & Halaman Login) -->
+              <div class="bg-blue-50/70 border border-blue-200 rounded-2xl p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <label class="block font-bold text-blue-900 text-xs">Logo CBT (Header Atas &amp; Halaman Login Siswa)</label>
+                  <span class="text-[10px] font-semibold text-blue-700">Otomatis sinkron ke semua HP</span>
+                </div>
+                <input type="file" id="cfgLogoCbtFile" accept="image/*" class="hidden">
+                <div class="flex items-center gap-3">
+                  <div id="previewLogoCbtBox" class="w-12 h-12 rounded-xl border border-blue-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <span class="text-[10px] font-black text-blue-700">CBT</span>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <button type="button" id="btnUploadLogoCbt" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-[11px] font-bold text-white shadow-xs cursor-pointer transition">
+                        Upload Logo CBT
+                      </button>
+                      <button type="button" id="btnRemoveLogoCbt" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-red-200 text-[11px] text-red-600 font-bold hover:bg-red-50 cursor-pointer transition">
+                        Hapus Logo
+                      </button>
+                    </div>
+                    <p class="text-[10px] text-slate-500">Mengganti ikon CBT di header atas, halaman login, dan ikon tab browser.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-slate-100">
+                <button type="submit" class="w-full py-3 px-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition cursor-pointer">
+                  💾 Simpan Identitas, Logo &amp; Titi Mangsa
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Box 3: Koneksi Database Cloud Supabase -->
+          <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-black text-sm flex items-center justify-center">⚡</span>
+              <div>
+                <h3 class="text-sm sm:text-base font-bold text-slate-900">Database Cloud Gratis (Supabase)</h3>
+                <p class="text-[11px] text-slate-500">Sinkronisasi hasil ujian 250 siswa secara real-time ke laptop 13 guru</p>
+              </div>
+            </div>
+
+            <p class="text-xs text-slate-600 leading-relaxed my-3 bg-emerald-50/70 p-3 rounded-2xl border border-emerald-200">
+              💡 <strong>Otomatis Lintas Perangkat:</strong> Database cloud sudah terhubung otomatis di semua perangkat (Laptop &amp; HP). Setiap kali Anda menyimpan pengaturan, jadwal, soal, data siswa/guru, perubahan otomatis terkirim ke seluruh HP siswa &amp; guru.
+            </p>
+
+            <form id="formSupabaseConfig" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm items-end">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseUrl">Supabase Project URL</label>
+                <input type="url" id="cfgSupabaseUrl" placeholder="https://xyzabcdefghijklm.supabase.co" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none">
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseKey">Supabase Anon Public API Key</label>
+                <input type="text" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none mono-font text-xs">
+              </div>
+
+              <div class="md:col-span-2 flex flex-wrap gap-2 pt-1">
+                <button type="button" id="btnTestSupabase" class="flex-1 min-w-[140px] py-2.5 px-3 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                  ⚡ Uji Koneksi Cloud
+                </button>
+                <button type="button" id="btnPullFromCloud" class="flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition cursor-pointer">
+                  ⬇️ Ambil Data dari Cloud
+                </button>
+                <button type="button" id="btnPushAllToCloud" class="flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer">
+                  ☁️ Kirim Semua Data ke Cloud
+                </button>
+                <button type="submit" class="flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition cursor-pointer">
+                  💾 Simpan &amp; Sinkron Cloud
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Box 4: Backup & Pulihkan Semua Data (1 Klik Anti Hilang) -->
+          <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 font-black text-sm flex items-center justify-center">💾</span>
+              <div>
+                <h3 class="text-sm sm:text-base font-bold text-slate-900">Backup &amp; Pulihkan Seluruh Data Sekolah (Anti Hilang)</h3>
+                <p class="text-[11px] text-slate-500">Simpan cadangan Data Guru, Data Siswa, Jadwal Ujian, Bank Soal, Logo Kop, &amp; Pengaturan Cloud ke dalam 1 file agar aman saat ganti laptop atau update.</p>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2.5 mt-3">
+              <input type="file" id="fileImportFullBackup" accept=".json" class="hidden">
+              <button type="button" id="btnExportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer">
+                📥 Download Backup Semua Data (.json)
+              </button>
+              <button type="button" id="btnTriggerImportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer">
+                📤 Pulihkan Data dari File Backup (.json)
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ======================== TEMPLATE CETAK PDF RESMI GURU ======================== -->
+  <div id="printableTeacherReport" class="hidden p-6 bg-white text-slate-900 font-sans max-w-6xl mx-auto">
+    <!-- Kop Surat dengan Logo Kiri & Logo Kanan -->
+    <div id="repKopSurat"></div>
+
+    <div class="mb-4 bg-slate-50 border border-slate-300 rounded-xl p-3">
+      <h3 class="text-xs font-bold uppercase text-slate-700 mb-2 border-b border-slate-200 pb-1">Ringkasan Statistik Rekapitulasi:</h3>
+      <div class="grid grid-cols-5 gap-3 text-xs text-center">
+        <div class="p-2 bg-white rounded border border-slate-200">
+          <span class="text-slate-500 block text-[10px]">Rata-Rata Nilai</span>
+          <span id="repAvg" class="text-base font-black text-blue-700">0</span>
+        </div>
+        <div class="p-2 bg-white rounded border border-slate-200">
+          <span class="text-slate-500 block text-[10px]">Nilai Tertinggi</span>
+          <span id="repHigh" class="text-base font-black text-emerald-700">0</span>
+        </div>
+        <div class="p-2 bg-white rounded border border-slate-200">
+          <span class="text-slate-500 block text-[10px]">Nilai Terendah</span>
+          <span id="repLow" class="text-base font-black text-amber-700">0</span>
+        </div>
+        <div class="p-2 bg-white rounded border border-slate-200">
+          <span class="text-slate-500 block text-[10px]">Total Peserta</span>
+          <span id="repTotal" class="text-base font-black text-slate-900">0</span>
+        </div>
+        <div class="p-2 bg-white rounded border border-slate-200">
+          <span class="text-slate-500 block text-[10px]">Ketuntasan (≥75)</span>
+          <span id="repPass" class="text-base font-black text-purple-700">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <table class="w-full border-collapse border border-slate-300 text-xs mb-6">
+      <thead>
+        <tr class="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
+          <th class="p-2 border border-slate-300 text-center w-10">Rank</th>
+          <th class="p-2 border border-slate-300">Nama Siswa</th>
+          <th class="p-2 border border-slate-300 w-24">NISN</th>
+          <th class="p-2 border border-slate-300 w-14 text-center">Kelas</th>
+          <th class="p-2 border border-slate-300 text-center w-16">Nilai Akhir</th>
+          <th class="p-2 border border-slate-300">Jawaban Siswa (Per Nomor)</th>
+          <th class="p-2 border border-slate-300 text-center w-28">Waktu Selesai</th>
+          <th class="p-2 border border-slate-300 text-center w-16">B/S/K</th>
+          <th class="p-2 border border-slate-300 text-center w-20">Ket. Curang</th>
+        </tr>
+      </thead>
+      <tbody id="repTableBody"></tbody>
+    </table>
+
+    <!-- Tanda Tangan Mengetahui Kepala Sekolah & Dibuat Oleh Guru Mapel -->
+    <div class="flex justify-between text-xs pt-4 border-t border-slate-300">
+      <div class="text-center w-64">
+        <p id="repTitiMangsaLeft" class="text-transparent select-none">.</p>
+        <p>Mengetahui,</p>
+        <p class="font-bold">Kepala Sekolah</p>
+        <div class="h-16"></div>
+        <p id="repHeadmasterName" class="font-bold underline">Drs. H. Mulyono, M.Pd.</p>
+        <p id="repHeadmasterNip" class="text-[10px] text-slate-500">NIP. 19680512 199403 1 004</p>
+      </div>
+      <div class="text-center w-64">
+        <p id="repTitiMangsa" class="font-medium text-slate-700">Pacet, ...</p>
+        <p>Dibuat Oleh,</p>
+        <p class="font-bold">Guru Mata Pelajaran</p>
+        <div class="h-16"></div>
+        <p id="repTeacherName" class="font-bold underline">Guru Mata Pelajaran</p>
+        <p id="repTeacherNip" class="text-[10px] text-slate-500">NIP. —</p>
+      </div>
+    </div>
+
+    <div id="repAutoPrintNote" class="cbt-print-footer-note mt-4 pt-2 border-t border-slate-200" style="font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+  </div>
+
+  <!-- TEMPLATE CETAK & PDF KARTU PESERTA UJIAN (UKURAN 9,0 x 5,3 CM) -->
+  <div id="printableCardsArea" class="hidden"></div>
+
+  <!-- TEMPLATE CETAK & PDF NASKAH SOAL UJIAN -->
+  <div id="printableQuestionsArea" class="hidden"></div>
+
+  <!-- ======================== MODALS ======================== -->
+
+  <!-- MODAL: KONFIRMASI SELESAI UJIAN -->
+  <div id="modalFinishConfirm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in">
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl mx-auto flex items-center justify-center mb-2">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Kumpulkan Lembar Jawaban?</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Pastikan Anda telah memeriksa semua butir soal sebelum mengakhiri ujian.</p>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 py-3 px-3.5 bg-slate-50 rounded-2xl border border-slate-200/60 text-center mb-4">
+        <div>
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Dijawab</span>
+          <span id="modalSummaryAnswered" class="text-base font-black text-green-600">0</span>
+        </div>
+        <div>
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Ragu-ragu</span>
+          <span id="modalSummaryDoubt" class="text-base font-black text-amber-500">0</span>
+        </div>
+        <div>
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Kosong</span>
+          <span id="modalSummaryUnanswered" class="text-base font-black text-slate-400">0</span>
+        </div>
+      </div>
+
+      <div id="modalFinishWarningNote" class="hidden mb-4 p-3 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 text-xs leading-relaxed">
+        ⚠️ <strong>Perhatian:</strong> Masih ada soal yang belum Anda jawab atau ditandai ragu-ragu!
+      </div>
+
+      <div class="flex gap-2">
+        <button id="btnCancelFinish" type="button" class="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+          Periksa Lagi
+        </button>
+        <button id="btnConfirmFinishFinal" type="button" class="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-green-600 hover:bg-green-700 transition cursor-pointer">
+          Ya, Selesaikan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PERINGATAN ANTI TAB SWITCH -->
+  <div id="modalCheatWarning" class="hidden fixed inset-0 z-50 bg-red-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center shadow-2xl border-4 border-red-500 animate-alert">
+      <div class="w-14 h-14 sm:w-16 sm:h-16 bg-red-100 text-red-600 rounded-3xl mx-auto flex items-center justify-center mb-3">
+        <svg class="w-8 h-8 sm:w-9 sm:h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <h3 class="text-lg sm:text-xl font-black text-red-600">PERINGATAN PINDAH TAB!</h3>
+      <p id="cheatWarningReason" class="text-xs text-slate-700 mt-2 font-semibold">
+        Anda terdeteksi berpindah tab, membuka jendela lain, atau keluar dari layar ujian!
+      </p>
+
+      <div class="my-4 py-2.5 px-3 bg-red-50 rounded-xl border border-red-200">
+        <span class="text-sm font-black text-red-700 block">
+          Pelanggaran: <span id="cheatWarningCount">1</span> / <span id="cheatWarningMax">3</span>
+        </span>
+        <p class="text-[11px] text-red-600 mt-1">Jika mencapai batas toleransi, ujian akan dihentikan otomatis dan lembar jawaban langsung dikumpulkan!</p>
+      </div>
+
+      <button id="btnAcknowledgeCheat" type="button" class="w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-red-600 hover:bg-red-700 transition cursor-pointer">
+        Saya Mengerti &amp; Kembali ke Soal
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: DRAWER PALET NOMOR SOAL -->
+  <div id="modalQuestionDrawer" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex justify-end">
+    <div class="bg-white w-full max-w-xs h-full p-4 sm:p-5 flex flex-col shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="font-bold text-sm text-slate-900">Daftar Nomor Soal</h3>
+        <button id="btnCloseQuestionDrawer" type="button" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer text-base">✕</button>
+      </div>
+      <div id="questionPaletteDrawer" class="grid grid-cols-4 gap-2 overflow-y-auto flex-1 p-1"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: TAMBAH SOAL UJIAN -->
+  <div id="modalQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 id="questionFormTitle" class="font-bold text-base text-slate-900">Tambah Soal Ujian Baru</h3>
+        <button id="btnCloseQuestionForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
+      </div>
+
+      <form id="formQuestionItem" class="space-y-3.5 text-xs sm:text-sm">
+        <input type="hidden" id="editQuestionId" value="">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="qInputSubject">Mata Pelajaran</label>
+            <select id="qInputSubject" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="qInputClassLevel">Untuk Kelas / Tingkat</label>
+            <select id="qInputClassLevel" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="Semua Kelas">Semua Kelas (7, 8, 9)</option>
+              <option value="Kelas 7">Kelas 7</option>
+              <option value="Kelas 8">Kelas 8</option>
+              <option value="Kelas 9">Kelas 9</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="qInputType">Format Tipe Soal</label>
+          <select id="qInputType" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+            <option value="single">Pilihan Ganda Tunggal (1 Jawaban Benar)</option>
+            <option value="multiple">Pilihan Ganda Kompleks (Jawaban &gt; 1)</option>
+            <option value="true_false">Tabel Pernyataan Benar / Salah</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="qInputText">Teks Pertanyaan</label>
+          <textarea id="qInputText" rows="3" required placeholder="Tuliskan butir soal di sini..." class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+        </div>
+
+        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <label class="block font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span>Upload File Gambar Lampiran (Opsional)</span>
+          </label>
+
+          <input type="file" id="qInputFileImage" accept="image/*" class="hidden">
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="btnTriggerUploadImage" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-bold text-xs text-slate-700 flex items-center gap-1.5 cursor-pointer shadow-xs transition">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+              <span>Pilih Gambar dari Komputer / HP</span>
+            </button>
+            <button type="button" id="btnRemoveImage" class="hidden text-xs text-red-600 hover:text-red-700 font-bold px-2 py-1 rounded-lg hover:bg-red-50 cursor-pointer transition">
+              ✕ Hapus Gambar
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Dukung format JPG, PNG, WEBP. Gambar otomatis dikompres agar hemat memori &amp; cepat dimuat.</p>
+
+          <div id="imagePreviewContainer" class="hidden mt-2.5 p-2 border border-slate-200 rounded-xl bg-white max-w-xs mx-auto">
+            <img id="imagePreviewImg" src="" alt="Pratinjau Gambar" class="rounded-lg max-h-36 object-contain mx-auto">
+          </div>
+        </div>
+
+        <div id="sectionOptionsAE" class="space-y-2">
+          <label class="block font-bold text-slate-700">Pilihan Jawaban (A - E)</label>
+          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">A</span><input type="text" id="qInputOptA" placeholder="Teks Pilihan A" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">B</span><input type="text" id="qInputOptB" placeholder="Teks Pilihan B" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">C</span><input type="text" id="qInputOptC" placeholder="Teks Pilihan C" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">D</span><input type="text" id="qInputOptD" placeholder="Teks Pilihan D" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">E</span><input type="text" id="qInputOptE" placeholder="Teks Pilihan E" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+
+          <div id="boxKeySingle" class="pt-1">
+            <label class="block font-bold text-slate-700 mb-1" for="qInputCorrectSingle">Kunci Jawaban Tunggal</label>
+            <select id="qInputCorrectSingle" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="E">E</option>
+            </select>
+          </div>
+
+          <div id="boxKeyMultiple" class="hidden pt-1">
+            <label class="block font-bold text-slate-700 mb-1">Centang Kunci Jawaban yang Benar (Bisa &gt; 1):</label>
+            <div class="flex gap-4 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" name="multiCorrect" value="A"> A</label>
+              <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" name="multiCorrect" value="B"> B</label>
+              <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" name="multiCorrect" value="C"> C</label>
+              <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" name="multiCorrect" value="D"> D</label>
+              <label class="inline-flex items-center gap-1 font-bold"><input type="checkbox" name="multiCorrect" value="E"> E</label>
+            </div>
+          </div>
+        </div>
+
+        <div id="sectionTrueFalse" class="hidden space-y-2">
+          <label class="block font-bold text-slate-700">Pernyataan &amp; Kunci Benar / Salah:</label>
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <input type="text" id="tfStmt1" placeholder="Pernyataan 1" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <select id="tfCorrect1" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
+                <option value="B">Benar</option>
+                <option value="S">Salah</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="text" id="tfStmt2" placeholder="Pernyataan 2" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <select id="tfCorrect2" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
+                <option value="B">Benar</option>
+                <option value="S">Salah</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="text" id="tfStmt3" placeholder="Pernyataan 3 (Opsional)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <select id="tfCorrect3" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
+                <option value="B">Benar</option>
+                <option value="S">Salah</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-1">
+          <label class="block font-bold text-slate-700 mb-1" for="qInputWeight">Bobot Nilai</label>
+          <input type="number" id="qInputWeight" min="1" max="100" value="10" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none">
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex gap-2">
+          <button type="button" id="btnCancelQuestionForm" class="px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Batal
+          </button>
+          <button type="submit" id="btnSubmitQuestionForm" class="flex-1 py-2.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
+            Simpan Soal Ujian
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: TAMBAH / EDIT DATA SISWA (LENGKAP UNTUK KARTU 9,0 x 5,3 CM) -->
+  <div id="modalStudentForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+          <h3 id="modalStudentFormTitle" class="font-bold text-base text-slate-900">Tambah Data Siswa</h3>
+          <p class="text-xs text-slate-500">Biodata lengkap untuk kartu peserta 9,0 x 5,3 cm</p>
+        </div>
+        <button id="btnCloseStudentForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
+      </div>
+
+      <form id="formStudentItem" class="space-y-3 text-xs sm:text-sm">
+        <input type="hidden" id="editStudentOriginalNisn">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputNisn">NISN</label>
+            <input type="text" id="stuInputNisn" required placeholder="0081234513" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputClass">Kelas / Rombel</label>
+            <input type="text" id="stuInputClass" required placeholder="9A" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="stuInputName">Nama Lengkap Siswa</label>
+          <input type="text" id="stuInputName" required placeholder="Nama Lengkap" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthPlace">Tempat Lahir</label>
+            <input type="text" id="stuInputBirthPlace" required placeholder="Mojokerto" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthDate">Tanggal Lahir</label>
+            <input type="text" id="stuInputBirthDate" required placeholder="12 Januari 2011" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputGender">Jenis Kelamin</label>
+            <select id="stuInputGender" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="Laki-laki">Laki-laki</option>
+              <option value="Perempuan">Perempuan</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputPassword">Password Login</label>
+            <input type="text" id="stuInputPassword" required value="123" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="stuInputAddress">Alamat Lengkap</label>
+          <textarea id="stuInputAddress" rows="2" required placeholder="Ds. Pacet RT 02 RW 01, Kec. Pacet" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex gap-2">
+          <button id="btnCancelStudentForm" type="button" class="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer">
+            Batal
+          </button>
+          <button type="submit" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer">
+            Simpan Data Siswa
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: LOGIN GURU & PROKTOR -->
+  <div id="modalAdminPin" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl mx-auto flex items-center justify-center mb-2">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        </div>
+        <h3 class="text-base font-bold text-slate-900">Autentikasi Proktor &amp; Guru</h3>
+        <p class="text-xs text-slate-400">Masukkan Username / NIP dan PIN untuk masuk</p>
+      </div>
+
+      <form id="adminLoginForm" class="space-y-3.5 text-xs sm:text-sm">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="adminUsernameInput">Username / NIP / ID Pengguna</label>
+          <input type="text" id="adminUsernameInput" required placeholder="Masukkan Username atau NIP" autocomplete="username" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-medium outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block font-bold text-slate-700" for="adminPinInput">PIN / Kata Sandi</label>
+            <button type="button" id="btnTogglePinVisibility" class="text-[11px] text-blue-600 hover:underline cursor-pointer">Lihat PIN</button>
+          </div>
+          <input type="password" id="adminPinInput" required placeholder="Masukkan PIN / Kata Sandi" autocomplete="current-password" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-center font-bold tracking-widest outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button id="btnCloseAdminPin" type="button" class="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Batal
+          </button>
+          <button type="submit" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer shadow-sm">
+            Masuk Panel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT DATA & PASSWORD GURU -->
+  <div id="modalEditTeacher" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+          <h3 id="modalEditTeacherTitle" class="font-bold text-base text-slate-900">Edit Data &amp; Password Guru</h3>
+          <p id="modalEditTeacherSubtitle" class="text-xs text-slate-500">Perbarui identitas, mapel, atau password/PIN akun</p>
+        </div>
+        <button id="btnCloseEditTeacher" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
+      </div>
+
+      <form id="formEditTeacher" class="space-y-3.5 text-xs sm:text-sm">
+        <input type="hidden" id="editTeacherId">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="editTeacherName">Nama Lengkap Guru &amp; Gelar</label>
+          <input type="text" id="editTeacherName" required placeholder="Contoh: Budi Santoso, S.Pd." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="editTeacherNip">NIP / Nomor Identitas (Untuk Login)</label>
+          <input type="text" id="editTeacherNip" required placeholder="Contoh: 198003152006041002" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="editTeacherSubject">Mata Pelajaran yang Diampu</label>
+          <input type="text" id="editTeacherSubject" required placeholder="Contoh: Ilmu Pengetahuan Alam (IPA)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+          <p class="text-[11px] text-slate-500 mt-1">💡 Jika mengampu 2 mapel, pisahkan dengan koma atau garis miring (Contoh: <strong>Informatika, Prakarya</strong>).</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="editTeacherClasses">Kelas yang Diampu (Opsional)</label>
+          <input type="text" id="editTeacherClasses" placeholder="Contoh: 7B, 7C (Kosongkan jika semua kelas)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 uppercase focus:ring-2 focus:ring-blue-500 outline-none">
+          <p class="text-[11px] text-slate-500 mt-1">💡 Untuk mapel yang dibagi beberapa guru (misal IPA: <strong>7B, 7C</strong> atau <strong>8A, 8B</strong>). Kosongkan jika mengajar semua kelas.</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="editTeacherPin">Password / PIN Akun Guru</label>
+          <input type="text" id="editTeacherPin" required placeholder="Masukkan PIN / Password Login Guru" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold tracking-wider text-blue-700 focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex gap-2">
+          <button id="btnCancelEditTeacher" type="button" class="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Batal
+          </button>
+          <button id="btnSubmitEditTeacher" type="submit" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
+            Simpan Data Guru
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: PRATINJAU, DOWNLOAD PDF, & CETAK KARTU PESERTA (9,0 x 5,3 CM) -->
+  <div id="modalPrintCardsPreview" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200">
+
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-xl">🪪</div>
+          <div>
+            <h3 class="font-bold text-base text-slate-900">Kartu Peserta Ujian (Ukuran 9,0 x 5,3 cm + Kop Surat)</h3>
+            <p class="text-xs text-slate-500" id="cardPreviewSubtitle">Format: NISN, Nama, TTL, Jenis Kelamin, Alamat, &amp; Pengesahan Kepala Sekolah</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-600">Pilih Kelas:</span>
+          <select id="cardPreviewClassFilter" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-xs bg-white text-blue-700 outline-none">
+            <option value="ALL">Semua Kelas</option>
+          </select>
+          <button id="btnCloseCardPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50" id="cardPreviewContainer"></div>
+
+      <div class="p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+        <div class="text-xs text-slate-500 font-medium">
+          Total kartu: <span id="cardPreviewCountBadge" class="font-bold text-purple-700">0 Kartu</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnCancelCardPreview" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+          <button id="btnDownloadCardsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF Kartu</span>
+          </button>
+          <button id="btnExecuteDirectPrintCards" type="button" class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-md shadow-purple-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            <span>🖨️ Cetak Sekarang</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: PRATINJAU, DOWNLOAD PDF / WORD, & CETAK NASKAH SOAL (SESUAI TEMPLATE SEKOLAH) -->
+  <div id="modalPrintQuestionsPreview" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-5xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-slate-200">
+
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl">📄</div>
+          <div>
+            <h3 class="font-bold text-sm sm:text-base text-slate-900">Pratinjau &amp; Download Naskah Soal Ujian</h3>
+            <p class="text-[11px] sm:text-xs text-slate-500" id="questionsPreviewSubtitle">Ukuran F4 (21 &times; 33 cm) &bull; Upload Kop Surat Resmi, 2 Kolom Rapi &amp; Penyesuaian Soal Bergambar</p>
+          </div>
+        </div>
+        <button id="btnCloseQuestionsPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <!-- Baris Pengaturan Naskah Sebelum Download -->
+      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50/80 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
+        <div class="col-span-2">
+          <label class="block font-bold text-slate-600 mb-1" for="nqExamTitle">Judul Naskah</label>
+          <input type="text" id="nqExamTitle" value="ASESMEN SUMATIF AKHIR SEMESTER (ASAS)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-600 mb-1" for="nqSemester">Semester</label>
+          <input type="text" id="nqSemester" value="SEMESTER GANJIL" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-600 mb-1" for="nqAcademicYear">Tahun Pelajaran</label>
+          <input type="text" id="nqAcademicYear" value="2025/2026" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-600 mb-1" for="nqDuration">Alokasi Waktu</label>
+          <input type="text" id="nqDuration" value="80 Menit" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-600 mb-1" for="nqLayoutCols">Tata Letak</label>
+          <select id="nqLayoutCols" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="2">2 Kolom (Template)</option>
+            <option value="1">1 Kolom (Gambar Besar)</option>
+          </select>
+        </div>
+        <div class="col-span-2 sm:col-span-2">
+          <label class="block font-bold text-slate-600 mb-1" for="nqDateText">Hari / Tanggal (Opsional)</label>
+          <input type="text" id="nqDateText" placeholder="Kosongkan untuk titik-titik (........)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="col-span-2 sm:col-span-2">
+          <label class="block font-bold text-slate-600 mb-1">Kop Surat Resmi (Opsional)</label>
+          <input type="file" id="nqKopImageFile" accept="image/*" class="hidden">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button type="button" id="btnUploadNqKopImage" class="px-2.5 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs cursor-pointer transition flex items-center gap-1 shadow-xs">
+              <span>🖼️ Upload Kop Surat</span>
+            </button>
+            <button type="button" id="btnRemoveNqKopImage" class="hidden px-2 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer transition" title="Hapus gambar kop surat & kembali ke kop otomatis">
+              ✕ Hapus
+            </button>
+            <span id="nqKopImageStatus" class="text-[11px] font-semibold text-slate-500 truncate max-w-[150px]">Kop Otomatis Sekolah</span>
+          </div>
+        </div>
+        <div class="col-span-2 sm:col-span-2 flex items-end pb-1">
+          <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+            <input type="checkbox" id="nqIncludeAnswerKey" class="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer">
+            <span>Sertakan Kunci Jawaban</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Area Pratinjau Kertas F4 (21cm x 33cm) -->
+      <div class="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/80" id="questionsPaperPreviewContainer"></div>
+
+      <!-- Footer Tombol Download -->
+      <div class="p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+        <div class="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap">
+          <span>Total: <span id="questionsPreviewCountBadge" class="font-bold text-emerald-700">0 Soal</span></span>
+          <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold text-[11px]">Kertas F4 (21 &times; 33 cm)</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnCancelQuestionsPreview" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+          <button id="btnDownloadQuestionsDoc" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>📝 Download Word (.doc)</span>
+          </button>
+          <button id="btnDownloadQuestionsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF (.pdf)</span>
+          </button>
+          <button id="btnExecuteDirectPrintQuestions" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>🖨️ Cetak Langsung</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LAYAR PELINDUNG ANTI-SCREENSHOT & KUNCI FOKUS -->
+  <div id="examPrivacyShield" class="hidden fixed inset-0 z-[60] bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none">
+    <div class="w-16 h-16 rounded-3xl bg-red-600/20 border border-red-500/40 text-red-400 flex items-center justify-center mb-4">
+      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+    </div>
+    <h3 class="text-lg sm:text-xl font-black text-white mb-2">LAYAR UJIAN TERKUNCI</h3>
+    <p id="privacyShieldReason" class="text-xs sm:text-sm text-slate-300 max-w-md mb-6 leading-relaxed">
+      Layar soal disembunyikan untuk mencegah tangkapan layar atau perpindahan aplikasi.
+    </p>
+    <button id="btnResumeFromPrivacyShield" type="button" class="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg cursor-pointer transition">
+      🔓 Kembali ke Layar Penuh Ujian
+    </button>
+  </div>
+
+  <!-- ======================== SCRIPTS ======================== -->
+  <script src="js/default-questions.js?v=3.18"></script>
+  <script src="js/default-teachers.js?v=3.18"></script>
+  <script src="js/default-students.js?v=3.18"></script>
+  <script src="js/supabase-config.js?v=3.18"></script>
+  <script src="js/exam-engine.js?v=3.18"></script>
+  <script src="js/admin.js?v=3.18"></script>
+  <script src="js/app.js?v=3.18"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.update());
+        });
+      });
+    }
+  </script>
+</body>
+</html>

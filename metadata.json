@@ -1,0 +1,8 @@
+{
+  "name": "CBT Ujian Sekolah",
+  "description": "Aplikasi Ujian Sekolah Berbasis Komputer (CBT) terintegrasi untuk 13 guru mata pelajaran dan 250 siswa dengan rekap otomatis Excel & PDF, anti tab switch, dan sinkronisasi database Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
