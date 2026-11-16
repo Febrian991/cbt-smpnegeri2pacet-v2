@@ -62,26 +62,26 @@
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="bg-gradient-to-br from-[#eef4ff] via-[#f6f9ff] to-[#e4eeff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
+<body class="bg-gradient-to-br from-[#dbe3ef] via-[#e4ebf5] to-[#d4dfee] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
   <!-- ======================== TOP NAVBAR (Tampil Saat Ujian & Panel Admin) ======================== -->
-  <header id="appTopHeader" class="hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-xs no-print transition-colors">
+  <header id="appTopHeader" class="hidden bg-gradient-to-r from-[#0c2e6e] via-[#124196] to-[#1a56c4] dark:from-slate-900/95 dark:via-slate-900/95 dark:to-slate-900/95 backdrop-blur-md border-b border-blue-900/50 dark:border-slate-800 sticky top-0 z-30 shadow-md no-print transition-colors">
     <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
 
       <!-- Brand Logo & Title -->
       <div class="flex items-center gap-2.5 sm:gap-3">
-        <div id="headerLogoBox" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md flex-shrink-0 overflow-hidden">
+        <div id="headerLogoBox" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md flex-shrink-0 overflow-hidden">
           CBT
         </div>
         <div>
-          <h1 class="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">CBT Computer Based Test</h1>
-          <p id="headerSchoolName" class="text-[11px] sm:text-xs font-extrabold text-blue-700 dark:text-sky-400 tracking-wide leading-tight">SMP NEGERI 2 PACET</p>
+          <h1 class="text-sm sm:text-base font-bold text-white dark:text-slate-100 tracking-tight leading-tight">CBT Computer Based Test</h1>
+          <p id="headerSchoolName" class="text-[11px] sm:text-xs font-extrabold text-sky-200 dark:text-sky-400 tracking-wide leading-tight">SMP NEGERI 2 PACET</p>
         </div>
       </div>
 
       <!-- Action Buttons Right (Dark Mode Toggle + Cloud Status) -->
       <div class="flex items-center gap-2">
-        <button id="btnDarkModeHeader" type="button" title="Aktifkan / Matikan Mode Gelap" aria-label="Ganti Mode Tampilan" class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-amber-300 dark:border-slate-700 transition cursor-pointer">
+        <button id="btnDarkModeHeader" type="button" title="Aktifkan / Matikan Mode Gelap" aria-label="Ganti Mode Tampilan" class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-white/15 hover:bg-white/25 text-white border border-white/25 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-amber-300 dark:border-slate-700 transition cursor-pointer">
           <span id="darkModeIconHeader" class="flex items-center">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
           </span>
@@ -616,7 +616,7 @@
       </div>
 
       <!-- Admin Tabs Navigation (7 Tabs dengan Gradasi Nyaman di Pandang) -->
-      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-slate-100/95 via-blue-50/80 to-indigo-100/85 dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-slate-200/80 dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
+      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#eef3f9] via-[#e9f0fa] to-[#e2eaf7] dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-slate-300/80 dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
         <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/25 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
           <span>📊 Rekap Nilai (Ranking)</span>
         </button>

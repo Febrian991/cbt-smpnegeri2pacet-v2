@@ -150,6 +150,29 @@ body.exam-locked img {
 }
 
 /* ==========================================================================
+   COOL SLATE & SOFT PEARL LIGHT MODE (Anti-Glare Comfort)
+   ========================================================================== */
+@media screen {
+  html:not(.dark) .bg-white:not([class*="bg-gradient-"]):not(.naskah-paper-sheet) {
+    background-color: #f8fafc !important;
+  }
+
+  html:not(.dark) .bg-slate-50:not([class*="bg-gradient-"]):not(.naskah-paper-sheet) {
+    background-color: #edf2f8 !important;
+  }
+
+  html:not(.dark) .border-slate-200:not(.naskah-paper-sheet) {
+    border-color: #cbd5e1 !important;
+  }
+
+  html:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([class*="bg-slate-"]),
+  html:not(.dark) select:not([class*="bg-slate-"]),
+  html:not(.dark) textarea:not([class*="bg-slate-"]) {
+    background-color: #ffffff !important;
+  }
+}
+
+/* ==========================================================================
    ERGONOMIC DARK MODE (Tailwind class="dark" + Dynamic Content Surfaces)
    Soft Slate Palette (#0f172a / #1e293b) for Low-Light Classroom Comfort
    ========================================================================== */
