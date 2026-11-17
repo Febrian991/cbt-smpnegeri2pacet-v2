@@ -1545,7 +1545,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const tabKey = b.getAttribute('data-tab');
       const isHidden = b.classList.contains('hidden');
       const isActive = tabKey === targetTab;
-      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap ${
+      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap ${
         isActive ? activeTabClass : idleTabClass
       }${isHidden ? ' hidden' : ''}`;
     });
@@ -2067,16 +2067,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition text-xs";
       tr.innerHTML = `
-        <td class="p-3 text-center font-bold">${rankBadge}</td>
-        <td class="p-3">
+        <td class="px-2.5 py-2.5 text-center font-bold">${rankBadge}</td>
+        <td class="px-2.5 py-2.5">
           <div class="font-bold text-slate-900">${r.student?.name || '-'}</div>
           <div class="text-[10px] text-slate-400">${r.subject}</div>
         </td>
-        <td class="p-3 font-mono font-semibold text-slate-700">${r.student?.nisn || '-'}</td>
-        <td class="p-3">
+        <td class="px-2.5 py-2.5 font-mono font-semibold text-slate-700">${r.student?.nisn || '-'}</td>
+        <td class="px-2.5 py-2.5 whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-xs">${r.student?.class ? 'Kelas ' + r.student.class : '-'}</span>
         </td>
-        <td class="p-3 text-center">
+        <td class="px-2.5 py-2.5 text-center">
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-black ${
             r.finalScore >= 75
               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -2085,16 +2085,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ${r.finalScore}
           </span>
         </td>
-        <td class="p-3">${answerChipsHtml}</td>
-        <td class="p-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">${r.completedAt}</td>
-        <td class="p-3 text-center whitespace-nowrap">
+        <td class="px-2.5 py-2.5">${answerChipsHtml}</td>
+        <td class="px-2.5 py-2.5 text-slate-600 font-mono text-[11px] whitespace-nowrap">${r.completedAt}</td>
+        <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
           <div class="inline-flex items-center gap-1.5 font-bold">
             <span class="text-emerald-600">✓${r.correctCount}</span>
             <span class="text-red-500">✗${r.incorrectCount}</span>
             <span class="text-slate-400">?${r.unattemptedCount}</span>
           </div>
         </td>
-        <td class="p-3">
+        <td class="px-2.5 py-2.5 whitespace-nowrap">
           ${(r.cheatCount || 0) > 0
             ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-red-100 text-red-600 rounded inline-block">${r.cheatCount}x Pindah Tab</span>`
             : `<span class="text-[11px] text-emerald-600 font-medium">Tertib (0)</span>`
