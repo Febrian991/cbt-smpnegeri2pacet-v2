@@ -32,8 +32,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "20 m/s" },
       { key: "B", text: "24 m/s" },
       { key: "C", text: "26 m/s" },
-      { key: "D", text: "30 m/s" },
-      { key: "E", text: "32 m/s" }
+      { key: "D", text: "30 m/s" }
     ],
     correctAnswer: "C",
     weight: 10
@@ -49,8 +48,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "Peningkatan konsentrasi gas Karbon Dioksida (CO₂) hingga titik optimum" },
       { key: "B", text: "Intensitas cahaya matahari yang cukup" },
       { key: "C", text: "Ketiadaan klorofil pada sel daun" },
-      { key: "D", text: "Ketersediaan air tanah yang memadai" },
-      { key: "E", text: "Suhu ekstrem di atas 60°C" }
+      { key: "D", text: "Ketersediaan air tanah yang memadai" }
     ],
     correctAnswer: ["A", "B", "D"],
     weight: 15
@@ -80,8 +78,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "Tenaga pendidik tidak lagi dibutuhkan di era digital" },
       { key: "B", text: "Teknologi digital membantu mempermudah akses dan pemahaman konsep belajar siswa" },
       { key: "C", text: "Semua sekolah diwajibkan menutup perpustakaan konvensional" },
-      { key: "D", text: "Siswa hanya bisa belajar jika memiliki perangkat komputer canggih" },
-      { key: "E", text: "Buku cetak sudah tidak memiliki manfaat sama sekali" }
+      { key: "D", text: "Siswa hanya bisa belajar jika memiliki perangkat komputer canggih" }
     ],
     correctAnswer: "B",
     weight: 10
@@ -97,8 +94,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "2" },
       { key: "B", text: "9" },
       { key: "C", text: "17" },
-      { key: "D", text: "29" },
-      { key: "E", text: "33" }
+      { key: "D", text: "29" }
     ],
     correctAnswer: ["A", "C", "D"],
     weight: 15
@@ -128,8 +124,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "1/4" },
       { key: "B", text: "1/3" },
       { key: "C", text: "1/2" },
-      { key: "D", text: "3/4" },
-      { key: "E", text: "5/12" }
+      { key: "D", text: "3/4" }
     ],
     correctAnswer: "D",
     weight: 10
@@ -145,8 +140,7 @@ const DEFAULT_QUESTIONS = [
       { key: "A", text: "Terjadinya siang dan malam secara bergantian" },
       { key: "B", text: "Gerak semu harian matahari dari timur ke barat" },
       { key: "C", text: "Pergantian empat musim di daerah subtropis" },
-      { key: "D", text: "Perbedaan zona waktu di berbagai belahan bumi" },
-      { key: "E", text: "Perubahan lamanya waktu siang dan malam sepanjang tahun" }
+      { key: "D", text: "Perbedaan zona waktu di berbagai belahan bumi" }
     ],
     correctAnswer: ["A", "B", "D"],
     weight: 10

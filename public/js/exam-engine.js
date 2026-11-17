@@ -130,12 +130,33 @@ class ExamEngine {
     }
   }
 
+  normalizeQuestionsList(questionsList) {
+    if (!Array.isArray(questionsList)) return [];
+    return questionsList.map(q => {
+      if (!q || !Array.isArray(q.options)) return q;
+      const ansKeys = Array.isArray(q.correctAnswer)
+        ? q.correctAnswer.map(k => String(k || '').trim().toUpperCase())
+        : [String(q.correctAnswer || '').trim().toUpperCase()];
+      const cleanedOpts = q.options.filter(opt => {
+        if (!opt) return false;
+        const k = String(opt.key || '').trim().toUpperCase();
+        const t = String(opt.text || '').trim();
+        if (k === 'E' && t === '' && !ansKeys.includes('E')) return false;
+        return true;
+      });
+      return cleanedOpts.length === q.options.length ? q : { ...q, options: cleanedOpts };
+    });
+  }
+
   loadQuestions() {
     const saved = localStorage.getItem('cbt_questions');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const normalized = this.normalizeQuestionsList(parsed);
+          return normalized;
+        }
       } catch (e) {
         console.error("Gagal load questions", e);
       }
@@ -145,7 +166,7 @@ class ExamEngine {
   }
 
   saveQuestions(newQuestions, skipCloudPush = false) {
-    this.questions = newQuestions;
+    this.questions = this.normalizeQuestionsList(newQuestions);
     localStorage.setItem('cbt_questions', JSON.stringify(this.questions));
     if (!skipCloudPush && typeof window !== 'undefined' && window.supabaseSync) {
       window.supabaseSync.pushStateKey('cbt_questions', this.questions);

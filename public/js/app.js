@@ -491,8 +491,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const key = e.key.toUpperCase();
       const type = q.type || 'single';
-      const keyMap = { '1': 'A', '2': 'B', '3': 'C', '4': 'D', '5': 'E' };
-      const selectedOptionKey = ['A', 'B', 'C', 'D', 'E'].includes(key) ? key : keyMap[e.key];
+      const keyMap = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
+      const selectedOptionKey = ['A', 'B', 'C', 'D'].includes(key) ? key : keyMap[e.key];
 
       if (selectedOptionKey) {
         if (type === 'single') {
@@ -4214,10 +4214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('qInputOptB').value = optsMap['B'] || '';
         document.getElementById('qInputOptC').value = optsMap['C'] || '';
         document.getElementById('qInputOptD').value = optsMap['D'] || '';
-        document.getElementById('qInputOptE').value = optsMap['E'] || '';
 
         if (qType === 'single') {
-          document.getElementById('qInputCorrectSingle').value = String(question.correctAnswer || 'A').toUpperCase();
+          const singleKey = String(question.correctAnswer || 'A').toUpperCase();
+          document.getElementById('qInputCorrectSingle').value = ['A', 'B', 'C', 'D'].includes(singleKey) ? singleKey : 'A';
         } else {
           const correctKeys = Array.isArray(question.correctAnswer)
             ? question.correctAnswer.map(k => String(k).toUpperCase())
@@ -4295,7 +4295,6 @@ document.addEventListener('DOMContentLoaded', () => {
       let qData = { subject, classLevel, type, question: questionText, image, weight };
 
       if (type === 'single') {
-        const optE = document.getElementById('qInputOptE').value.trim();
         const correctSingle = document.getElementById('qInputCorrectSingle').value;
         const opts = [
           { key: "A", text: document.getElementById('qInputOptA').value.trim() },
@@ -4303,27 +4302,22 @@ document.addEventListener('DOMContentLoaded', () => {
           { key: "C", text: document.getElementById('qInputOptC').value.trim() },
           { key: "D", text: document.getElementById('qInputOptD').value.trim() }
         ];
-        if (optE || correctSingle === 'E') {
-          opts.push({ key: "E", text: optE });
-        }
         qData.options = opts;
-        qData.correctAnswer = correctSingle;
+        qData.correctAnswer = ['A', 'B', 'C', 'D'].includes(correctSingle) ? correctSingle : 'A';
       } else if (type === 'multiple') {
-        const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked')).map(el => el.value);
+        const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked'))
+          .map(el => el.value)
+          .filter(v => ['A', 'B', 'C', 'D'].includes(v));
         if (checkedBoxes.length === 0) {
           alert("Pilih minimal 1 kunci jawaban untuk soal pilihan ganda kompleks!");
           return;
         }
-        const optE = document.getElementById('qInputOptE').value.trim();
         const opts = [
           { key: "A", text: document.getElementById('qInputOptA').value.trim() },
           { key: "B", text: document.getElementById('qInputOptB').value.trim() },
           { key: "C", text: document.getElementById('qInputOptC').value.trim() },
           { key: "D", text: document.getElementById('qInputOptD').value.trim() }
         ];
-        if (optE || checkedBoxes.includes('E')) {
-          opts.push({ key: "E", text: optE });
-        }
         qData.options = opts;
         qData.correctAnswer = checkedBoxes;
       } else if (type === 'true_false') {
