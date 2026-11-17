@@ -1538,44 +1538,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const allTabBtns = document.querySelectorAll('.admin-tab-btn');
     const allTabPanes = document.querySelectorAll('.admin-tab-pane');
 
-    const tabGradientStyles = {
-      tabResults: {
-        idle: 'bg-gradient-to-r from-sky-50 to-blue-100/80 text-blue-800 border-blue-200/80 dark:from-sky-950/70 dark:to-blue-900/50 dark:text-sky-200 dark:border-blue-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/25'
-      },
-      tabMonitoring: {
-        idle: 'bg-gradient-to-r from-cyan-50 to-teal-100/80 text-teal-800 border-teal-200/80 dark:from-cyan-950/70 dark:to-teal-900/50 dark:text-teal-200 dark:border-teal-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white border-transparent shadow-md shadow-teal-600/25'
-      },
-      tabSchedules: {
-        idle: 'bg-gradient-to-r from-indigo-50 to-violet-100/80 text-indigo-800 border-indigo-200/80 dark:from-indigo-950/70 dark:to-violet-900/50 dark:text-indigo-200 dark:border-indigo-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-transparent shadow-md shadow-indigo-600/25'
-      },
-      tabQuestions: {
-        idle: 'bg-gradient-to-r from-emerald-50 to-teal-100/75 text-emerald-800 border-emerald-200/80 dark:from-emerald-950/70 dark:to-teal-900/50 dark:text-emerald-200 dark:border-emerald-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-transparent shadow-md shadow-emerald-600/25'
-      },
-      tabStudents: {
-        idle: 'bg-gradient-to-r from-amber-50 to-orange-100/75 text-amber-900 border-amber-200/80 dark:from-amber-950/70 dark:to-orange-900/50 dark:text-amber-200 dark:border-amber-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-amber-500 to-orange-600 text-white border-transparent shadow-md shadow-amber-500/25'
-      },
-      tabTeachers: {
-        idle: 'bg-gradient-to-r from-rose-50 to-pink-100/75 text-rose-800 border-rose-200/80 dark:from-rose-950/70 dark:to-pink-900/50 dark:text-rose-200 dark:border-rose-800/60 hover:brightness-95',
-        active: 'bg-gradient-to-r from-rose-600 to-pink-600 text-white border-transparent shadow-md shadow-rose-600/25'
-      },
-      tabSettings: {
-        idle: 'bg-gradient-to-r from-slate-100 to-indigo-100/80 text-slate-800 border-slate-300/80 dark:from-slate-800 dark:to-indigo-950/60 dark:text-slate-200 dark:border-slate-700 hover:brightness-95',
-        active: 'bg-gradient-to-r from-slate-700 to-indigo-700 text-white border-transparent shadow-md shadow-slate-700/25'
-      }
-    };
+    const idleTabClass = 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700';
+    const activeTabClass = 'bg-gradient-to-r from-[#124196] to-[#1a56c4] text-white border-transparent shadow-md shadow-blue-900/20';
 
     allTabBtns.forEach(b => {
       const tabKey = b.getAttribute('data-tab');
-      const stylePair = tabGradientStyles[tabKey] || tabGradientStyles.tabResults;
       const isHidden = b.classList.contains('hidden');
       const isActive = tabKey === targetTab;
-      b.className = `admin-tab-btn px-3.5 py-2 rounded-xl font-bold border flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap ${
-        isActive ? stylePair.active : stylePair.idle
+      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap ${
+        isActive ? activeTabClass : idleTabClass
       }${isHidden ? ' hidden' : ''}`;
     });
 
@@ -2014,12 +1985,18 @@ document.addEventListener('DOMContentLoaded', () => {
       window.cbtAdmin.setClassFilter(e.target.value);
       renderAdminAnalyticsAndResults();
     };
+
+    const searchResultsInput = document.getElementById('searchResultsInput');
+    if (searchResultsInput) {
+      searchResultsInput.oninput = () => renderAdminAnalyticsAndResults();
+    }
   }
 
   // ===================== TAB 1: REKAP NILAI & EVALUASI JAWABAN PER NOMOR =====================
   function renderAdminAnalyticsAndResults() {
     const analytics = window.cbtAdmin.getExamAnalytics();
     const sortedResults = window.cbtAdmin.getAllResultsSorted();
+    const searchQuery = (document.getElementById('searchResultsInput')?.value || '').trim().toLowerCase();
 
     document.getElementById('kpiAvgScore').innerText = analytics.averageScore;
     document.getElementById('kpiHighestScore').innerText = analytics.highestScore;
@@ -2040,10 +2017,31 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const rankedResults = sortedResults
+      .map((r, idx) => ({ r, rank: idx + 1 }))
+      .filter(({ r }) => {
+        if (!searchQuery) return true;
+        const name = String(r.student?.name || '').toLowerCase();
+        const nisn = String(r.student?.nisn || '').toLowerCase();
+        const cls = String(r.student?.class || '').toLowerCase();
+        return name.includes(searchQuery) || nisn.includes(searchQuery) || cls.includes(searchQuery);
+      });
+
+    if (rankedResults.length === 0) {
+      if (emptyRow) emptyRow.classList.add('hidden');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
+            Tidak ada peserta yang cocok dengan pencarian "<strong>${escapeHtmlSafe(searchQuery)}</strong>".
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
     if (emptyRow) emptyRow.classList.add('hidden');
 
-    sortedResults.forEach((r, idx) => {
-      const rank = idx + 1;
+    rankedResults.forEach(({ r, rank }) => {
       let rankBadge = `<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black text-xs inline-flex items-center justify-center">${rank}</span>`;
       if (rank === 1) {
         rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-black text-xs inline-flex items-center justify-center shadow-xs">🥇 1</span>`;

@@ -918,10 +918,11 @@ class CBTAdmin {
 
     if (typeof html2pdf !== 'undefined') {
       const opt = {
-        margin: [8, 8, 8, 8],
+        margin: [6, 8, 6, 8],
         filename: `Laporan_Rekap_Nilai_CBT_${Date.now()}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['#repSignatureBlock', '#repSummaryBox', '#repAutoPrintNote', '#repTableBody tr'] },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
@@ -1033,16 +1034,16 @@ class CBTAdmin {
           : '<span style="color:#64748b; font-size:9px;">-</span>';
 
         return `
-          <tr style="border-bottom:1px solid #cbd5e1; font-size:10px;">
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center; font-weight:700;">${idx + 1}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; font-weight:700;">${r.student?.name || '-'}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; font-family:monospace;">${r.student?.nisn || '-'}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center;">${r.student?.class || '-'}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:12px; color:${r.finalScore >= 75 ? '#15803d' : '#dc2626'};">${r.finalScore}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; line-height:1.4;">${ansHtml}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center;">${r.completedAt}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center;">${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}</td>
-            <td style="padding:5px; border:1px solid #cbd5e1; text-align:center;">${(r.cheatCount || 0) > 0 ? r.cheatCount + 'x Tab' : 'Tertib'}</td>
+          <tr style="border-bottom:1px solid #cbd5e1; font-size:10px; break-inside:avoid; page-break-inside:avoid;">
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:700;">${idx + 1}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; font-weight:700;">${r.student?.name || '-'}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; font-family:monospace;">${r.student?.nisn || '-'}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.student?.class || '-'}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:12px; color:${r.finalScore >= 75 ? '#15803d' : '#dc2626'};">${r.finalScore}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; line-height:1.35;">${ansHtml}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.completedAt}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${(r.cheatCount || 0) > 0 ? r.cheatCount + 'x Tab' : 'Tertib'}</td>
           </tr>
         `;
       }).join('');

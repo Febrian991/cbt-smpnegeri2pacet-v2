@@ -60,7 +60,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.19">
+  <link rel="stylesheet" href="css/styles.css?v=3.20">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -615,37 +615,47 @@
         </div>
       </div>
 
-      <!-- Admin Tabs Navigation (7 Tabs dengan Gradasi Nyaman di Pandang) -->
-      <div id="adminTabsBar" class="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#dde6f3] via-[#d6e1f1] to-[#cddbef] dark:from-slate-900 dark:via-slate-800/90 dark:to-indigo-950/75 border border-[#b4c4da] dark:border-slate-700/80 shadow-xs text-xs sm:text-sm">
-        <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/25 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>📊 Rekap Nilai (Ranking)</span>
-        </button>
-        <button id="adminTabBtnMonitoring" type="button" data-tab="tabMonitoring" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-cyan-50 to-teal-100/80 text-teal-800 border-teal-200/80 dark:from-cyan-950/70 dark:to-teal-900/50 dark:text-teal-200 dark:border-teal-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>📡 Pantau Login Siswa</span>
-        </button>
-        <button id="adminTabBtnSchedules" type="button" data-tab="tabSchedules" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-indigo-50 to-violet-100/80 text-indigo-800 border-indigo-200/80 dark:from-indigo-950/70 dark:to-violet-900/50 dark:text-indigo-200 dark:border-indigo-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>📅 Jadwal &amp; Aktifkan Mapel</span>
-        </button>
-        <button id="adminTabBtnQuestions" type="button" data-tab="tabQuestions" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-emerald-50 to-teal-100/75 text-emerald-800 border-emerald-200/80 dark:from-emerald-950/70 dark:to-teal-900/50 dark:text-emerald-200 dark:border-emerald-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>📝 Bank Soal Ujian</span>
-        </button>
-        <button id="adminTabBtnStudents" type="button" data-tab="tabStudents" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-amber-50 to-orange-100/75 text-amber-900 border-amber-200/80 dark:from-amber-950/70 dark:to-orange-900/50 dark:text-amber-200 dark:border-amber-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>👥 Data Siswa</span>
-        </button>
-        <button id="adminTabBtnTeachers" type="button" data-tab="tabTeachers" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-rose-50 to-pink-100/75 text-rose-800 border-rose-200/80 dark:from-rose-950/70 dark:to-pink-900/50 dark:text-rose-200 dark:border-rose-800/60 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>👨‍🏫 Data Guru</span>
-        </button>
-        <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn px-3.5 py-2 rounded-xl font-bold border bg-gradient-to-r from-slate-100 to-indigo-100/80 text-slate-800 border-slate-300/80 dark:from-slate-800 dark:to-indigo-950/60 dark:text-slate-200 dark:border-slate-700 hover:brightness-95 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap">
-          <span>⚙️ Pengaturan, Kop &amp; Cloud</span>
-        </button>
-      </div>
+      <!-- Workspace 2 Kolom: Sidebar Menu Kiri + Konten Utama Kanan -->
+      <div id="adminWorkspaceLayout" class="flex flex-col lg:flex-row items-start gap-4 sm:gap-5">
+        <!-- Sidebar Menu Kiri (Berjajar ke Bawah di Desktop, Scroll Horizontal di HP) -->
+        <aside class="w-full lg:w-64 shrink-0 lg:sticky lg:top-20">
+          <div id="adminTabsBar" class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2 sm:p-3 shadow-xs flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-x-visible">
+            <div class="hidden lg:flex items-center justify-between px-2.5 pt-1 pb-2 mb-1 border-b border-slate-200/80 dark:border-slate-800">
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Menu Panel</span>
+            </div>
+            <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-gradient-to-r from-[#124196] to-[#1a56c4] text-white border-transparent shadow-md shadow-blue-900/20 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>📊 Rekap Nilai (Ranking)</span>
+            </button>
+            <button id="adminTabBtnMonitoring" type="button" data-tab="tabMonitoring" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>📡 Pantau Login Siswa</span>
+            </button>
+            <button id="adminTabBtnSchedules" type="button" data-tab="tabSchedules" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>📅 Jadwal &amp; Mapel</span>
+            </button>
+            <button id="adminTabBtnQuestions" type="button" data-tab="tabQuestions" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>📝 Bank Soal Ujian</span>
+            </button>
+            <button id="adminTabBtnStudents" type="button" data-tab="tabStudents" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>👥 Data Siswa</span>
+            </button>
+            <button id="adminTabBtnTeachers" type="button" data-tab="tabTeachers" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>👨‍🏫 Data Guru</span>
+            </button>
+            <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <span>⚙️ Pengaturan, Kop &amp; Cloud</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- Area Konten Tab (Kanan) -->
+        <div id="adminTabContentArea" class="flex-1 min-w-0 w-full flex flex-col gap-4">
 
       <!-- TAB 1: REKAP NILAI SISWA DENGAN DETAIL JAWABAN PER NOMOR -->
       <div id="tabResults" class="admin-tab-pane flex flex-col gap-4">
 
-        <!-- Filter Bar: Mapel & Kelas -->
+        <!-- Filter Bar: Mapel, Kelas & Pencarian Siswa -->
         <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
             <span class="font-bold text-slate-700 dark:text-slate-200">Filter Rekap:</span>
             <select id="filterResultsSubject" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-blue-700 bg-white outline-none">
               <option value="ALL">Semua Mata Pelajaran</option>
@@ -653,9 +663,10 @@
             <select id="filterResultsClass" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-slate-700 bg-white outline-none">
               <option value="ALL">Semua Kelas</option>
             </select>
+            <input id="searchResultsInput" type="search" placeholder="🔍 Cari nama atau NISN siswa..." class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-56">
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0">
             <button id="btnSyncCloudResults" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1" title="Tarik data terbaru yang disubmit 250 siswa">
               <span>🔄 Sinkron Cloud</span>
             </button>
@@ -1553,65 +1564,68 @@
         </div>
       </div>
 
+        </div>
+      </div>
+
     </section>
 
   </main>
 
   <!-- ======================== TEMPLATE CETAK PDF RESMI GURU ======================== -->
-  <div id="printableTeacherReport" class="hidden p-6 bg-white text-slate-900 font-sans max-w-6xl mx-auto">
+  <div id="printableTeacherReport" class="hidden p-4 bg-white text-slate-900 font-sans max-w-6xl mx-auto">
     <!-- Kop Surat dengan Logo Kiri & Logo Kanan -->
     <div id="repKopSurat"></div>
 
-    <div class="mb-4 bg-slate-50 border border-slate-300 rounded-xl p-3">
-      <h3 class="text-xs font-bold uppercase text-slate-700 mb-2 border-b border-slate-200 pb-1">Ringkasan Statistik Rekapitulasi:</h3>
-      <div class="grid grid-cols-5 gap-3 text-xs text-center">
-        <div class="p-2 bg-white rounded border border-slate-200">
+    <div id="repSummaryBox" style="break-inside: avoid; page-break-inside: avoid;" class="mb-3 bg-slate-50 border border-slate-300 rounded-xl p-2.5">
+      <h3 class="text-[11px] font-bold uppercase text-slate-700 mb-1.5 border-b border-slate-200 pb-1">Ringkasan Statistik Rekapitulasi:</h3>
+      <div class="grid grid-cols-5 gap-2.5 text-xs text-center">
+        <div class="p-1.5 bg-white rounded border border-slate-200">
           <span class="text-slate-500 block text-[10px]">Rata-Rata Nilai</span>
-          <span id="repAvg" class="text-base font-black text-blue-700">0</span>
+          <span id="repAvg" class="text-sm font-black text-blue-700">0</span>
         </div>
-        <div class="p-2 bg-white rounded border border-slate-200">
+        <div class="p-1.5 bg-white rounded border border-slate-200">
           <span class="text-slate-500 block text-[10px]">Nilai Tertinggi</span>
-          <span id="repHigh" class="text-base font-black text-emerald-700">0</span>
+          <span id="repHigh" class="text-sm font-black text-emerald-700">0</span>
         </div>
-        <div class="p-2 bg-white rounded border border-slate-200">
+        <div class="p-1.5 bg-white rounded border border-slate-200">
           <span class="text-slate-500 block text-[10px]">Nilai Terendah</span>
-          <span id="repLow" class="text-base font-black text-amber-700">0</span>
+          <span id="repLow" class="text-sm font-black text-amber-700">0</span>
         </div>
-        <div class="p-2 bg-white rounded border border-slate-200">
+        <div class="p-1.5 bg-white rounded border border-slate-200">
           <span class="text-slate-500 block text-[10px]">Total Peserta</span>
-          <span id="repTotal" class="text-base font-black text-slate-900">0</span>
+          <span id="repTotal" class="text-sm font-black text-slate-900">0</span>
         </div>
-        <div class="p-2 bg-white rounded border border-slate-200">
+        <div class="p-1.5 bg-white rounded border border-slate-200">
           <span class="text-slate-500 block text-[10px]">Ketuntasan (≥75)</span>
-          <span id="repPass" class="text-base font-black text-purple-700">0%</span>
+          <span id="repPass" class="text-sm font-black text-purple-700">0%</span>
         </div>
       </div>
     </div>
 
-    <table class="w-full border-collapse border border-slate-300 text-xs mb-6">
+    <table class="w-full border-collapse border border-slate-300 text-xs mb-3">
       <thead>
         <tr class="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
-          <th class="p-2 border border-slate-300 text-center w-10">Rank</th>
-          <th class="p-2 border border-slate-300">Nama Siswa</th>
-          <th class="p-2 border border-slate-300 w-24">NISN</th>
-          <th class="p-2 border border-slate-300 w-14 text-center">Kelas</th>
-          <th class="p-2 border border-slate-300 text-center w-16">Nilai Akhir</th>
-          <th class="p-2 border border-slate-300">Jawaban Siswa (Per Nomor)</th>
-          <th class="p-2 border border-slate-300 text-center w-28">Waktu Selesai</th>
-          <th class="p-2 border border-slate-300 text-center w-16">B/S/K</th>
-          <th class="p-2 border border-slate-300 text-center w-20">Ket. Curang</th>
+          <th class="p-1.5 border border-slate-300 text-center w-10">Rank</th>
+          <th class="p-1.5 border border-slate-300">Nama Siswa</th>
+          <th class="p-1.5 border border-slate-300 w-24">NISN</th>
+          <th class="p-1.5 border border-slate-300 w-14 text-center">Kelas</th>
+          <th class="p-1.5 border border-slate-300 text-center w-16">Nilai Akhir</th>
+          <th class="p-1.5 border border-slate-300">Jawaban Siswa (Per Nomor)</th>
+          <th class="p-1.5 border border-slate-300 text-center w-28">Waktu Selesai</th>
+          <th class="p-1.5 border border-slate-300 text-center w-16">B/S/K</th>
+          <th class="p-1.5 border border-slate-300 text-center w-20">Ket. Curang</th>
         </tr>
       </thead>
       <tbody id="repTableBody"></tbody>
     </table>
 
     <!-- Tanda Tangan Mengetahui Kepala Sekolah & Dibuat Oleh Guru Mapel -->
-    <div class="flex justify-between text-xs pt-4 border-t border-slate-300">
+    <div id="repSignatureBlock" style="break-inside: avoid; page-break-inside: avoid;" class="flex justify-between text-xs pt-2.5 border-t border-slate-300">
       <div class="text-center w-64">
         <p id="repTitiMangsaLeft" class="text-transparent select-none">.</p>
         <p>Mengetahui,</p>
         <p class="font-bold">Kepala Sekolah</p>
-        <div class="h-16"></div>
+        <div class="h-12"></div>
         <p id="repHeadmasterName" class="font-bold underline">Drs. H. Mulyono, M.Pd.</p>
         <p id="repHeadmasterNip" class="text-[10px] text-slate-500">NIP. 19680512 199403 1 004</p>
       </div>
@@ -1619,13 +1633,13 @@
         <p id="repTitiMangsa" class="font-medium text-slate-700">Pacet, ...</p>
         <p>Dibuat Oleh,</p>
         <p class="font-bold">Guru Mata Pelajaran</p>
-        <div class="h-16"></div>
+        <div class="h-12"></div>
         <p id="repTeacherName" class="font-bold underline">Guru Mata Pelajaran</p>
         <p id="repTeacherNip" class="text-[10px] text-slate-500">NIP. —</p>
       </div>
     </div>
 
-    <div id="repAutoPrintNote" class="cbt-print-footer-note mt-4 pt-2 border-t border-slate-200" style="font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+    <div id="repAutoPrintNote" style="break-inside: avoid; page-break-inside: avoid; font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" class="cbt-print-footer-note mt-2.5 pt-1.5 border-t border-slate-200"></div>
   </div>
 
   <!-- TEMPLATE CETAK & PDF KARTU PESERTA UJIAN (UKURAN 9,0 x 5,3 CM) -->
@@ -2169,8 +2183,8 @@
   <script src="js/default-students.js?v=3.18"></script>
   <script src="js/supabase-config.js?v=3.18"></script>
   <script src="js/exam-engine.js?v=3.18"></script>
-  <script src="js/admin.js?v=3.19"></script>
-  <script src="js/app.js?v=3.19"></script>
+  <script src="js/admin.js?v=3.20"></script>
+  <script src="js/app.js?v=3.20"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
