@@ -63,3 +63,22 @@ CREATE TABLE IF NOT EXISTS cbt_student_sessions (
 ALTER TABLE cbt_student_sessions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public all on student sessions" ON cbt_student_sessions FOR ALL USING (true) WITH CHECK (true);
+
+-- Aktifkan Supabase Realtime agar notifikasi pelanggaran & selesai ujian masuk instan (< 1 detik)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'cbt_student_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE cbt_student_sessions;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'cbt_exam_results'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE cbt_exam_results;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;

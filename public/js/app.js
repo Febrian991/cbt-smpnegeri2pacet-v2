@@ -28,6 +28,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentLogoCbtBase64 = "";
   let monitoringRefreshTimer = null;
   let cachedMonitoringSessions = [];
+  let realtimePollTimer = null;
+  let realtimeNotifActive = false;
+  let realtimeBaselineReady = false;
+  const realtimeSessionSnapshot = new Map();
+  const realtimeEmittedEventKeys = new Set();
+  const realtimeRecentDoneAt = new Map();
+  let realtimeNotifs = [];
+  let realtimeUnreadCount = 0;
+  let realtimeFilterMode = 'ALL';
+  let realtimeSoundEnabled = localStorage.getItem('cbt_notif_sound') !== 'off';
+  let realtimeControlsInitialized = false;
+  let realtimeLastCloudResultPullAt = 0;
 
   function init() {
     renderConfigInfoOnLogin();
@@ -39,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupStudentNisnDetection();
     setupSubjectAndClassFilters();
     setupMonitoringControls();
+    setupRealtimeNotificationControls();
     setupDarkMode();
     setupLoginPortalControls();
     setupAdminLoginHelpers();
@@ -782,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (viewName !== 'admin') {
       stopMonitoringAutoRefresh();
+      stopAdminRealtimeNotifications();
     }
 
     if (viewName === 'login') {
@@ -798,6 +812,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (viewName === 'admin') {
       viewAdmin.classList.remove('hidden');
       renderAdminDashboard();
+      startAdminRealtimeNotifications();
     }
 
     updateCloudBadge();
@@ -1617,6 +1632,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnAdminLogout.addEventListener('click', () => {
       openLogoutConfirmModal('admin', () => {
         stopMonitoringAutoRefresh();
+        resetAdminRealtimeStateOnLogout();
         try { localStorage.removeItem('cbt_active_admin_tab'); } catch (e) {}
         window.cbtAdmin.logout();
         showView('login');
@@ -5439,6 +5455,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!badge || !window.supabaseSync) return;
 
     const isAdminVisible = Boolean(viewAdmin && !viewAdmin.classList.contains('hidden'));
+    updateRealtimeNotifVisibility(isAdminVisible);
+
     if (!isAdminVisible) {
       badge.className = "hidden";
       return;
@@ -5463,6 +5481,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const key = document.getElementById('cfgSupabaseKey').value.trim();
       window.supabaseSync.saveConfig(url, key);
       updateCloudBadge();
+      if (viewAdmin && !viewAdmin.classList.contains('hidden')) {
+        stopAdminRealtimeNotifications();
+        startAdminRealtimeNotifications();
+      }
       const res = await window.supabaseSync.pushAllSchoolState();
       if (res.success) {
         alert("Konfigurasi Cloud disimpan & seluruh data sekolah (Token, Jadwal, Kop/Logo, Soal, Siswa, Guru) berhasil disinkronkan ke Cloud!");
@@ -5612,8 +5634,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (typeof window.supabaseSync.fetchCloudResults === 'function') {
             await window.supabaseSync.fetchCloudResults();
           }
-          if (typeof window.supabaseSync.fetchCloudStudentSessions === 'function') {
-            await window.supabaseSync.fetchCloudStudentSessions();
+          if (typeof window.supabaseSync.fetchStudentSessions === 'function') {
+            await window.supabaseSync.fetchStudentSessions();
           }
         }
         renderAdminOverviewDashboard();
@@ -5633,6 +5655,556 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshVisibleD3Charts();
     }, 180);
   });
+
+  // ===================== NOTIFIKASI REAL-TIME ADMIN & GURU (SUPABASE + POLLING) =====================
+  function updateRealtimeNotifVisibility(isAdminVisible) {
+    const container = document.getElementById('realtimeNotifContainer');
+    const dropdown = document.getElementById('realtimeNotifDropdown');
+    const liveTag = document.getElementById('realtimeNotifLiveTag');
+    if (container) {
+      if (isAdminVisible) container.classList.remove('hidden');
+      else {
+        container.classList.add('hidden');
+        if (dropdown) dropdown.classList.add('hidden');
+      }
+    }
+    if (liveTag && window.supabaseSync) {
+      const isCloud = window.supabaseSync.isCloudConfigured();
+      liveTag.innerText = isCloud ? 'Live' : 'Lokal';
+      liveTag.className = isCloud
+        ? 'px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 text-[9px] font-black uppercase'
+        : 'px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-[9px] font-black uppercase';
+    }
+    updateRealtimeBadgeAndSoundUi();
+  }
+
+  function isRecordInCurrentAdminScope(subject, className) {
+    if (!window.cbtAdmin) return true;
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    if (!currentTeacher) return false;
+    const isAdmin = currentTeacher.role === 'admin' || currentTeacher.id === 'admin';
+    if (isAdmin) return true;
+
+    const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
+    const subLower = String(subject || '').trim().toLowerCase();
+    const subOk = teacherSubjects.length === 0 || teacherSubjects.some(ts => subLower === ts || subLower.includes(ts) || ts.includes(subLower));
+
+    const assignedClasses = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
+    const clsUpper = String(className || '').trim().toUpperCase();
+    const clsOk = assignedClasses.length === 0 || assignedClasses.some(tc => clsUpper === tc || clsUpper.startsWith(tc));
+
+    return subOk && clsOk;
+  }
+
+  function playRealtimeNotifSound(type) {
+    if (!realtimeSoundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      const beep = (freq, startOffset, duration, waveType, gainVal) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = waveType;
+        osc.frequency.setValueAtTime(freq, now + startOffset);
+        gain.gain.setValueAtTime(0.0001, now + startOffset);
+        gain.gain.exponentialRampToValueAtTime(gainVal, now + startOffset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + startOffset + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + startOffset);
+        osc.stop(now + startOffset + duration + 0.02);
+      };
+
+      if (type === 'cheat') {
+        beep(880, 0, 0.14, 'triangle', 0.12);
+        beep(660, 0.16, 0.2, 'triangle', 0.12);
+      } else {
+        beep(587.33, 0, 0.12, 'sine', 0.08);
+        beep(880, 0.13, 0.2, 'sine', 0.08);
+      }
+      setTimeout(() => { try { ctx.close(); } catch (e) {} }, 600);
+    } catch (e) {}
+  }
+
+  function updateRealtimeBadgeAndSoundUi() {
+    const badge = document.getElementById('realtimeNotifBadge');
+    const soundBtn = document.getElementById('btnToggleNotifSound');
+    if (badge) {
+      if (realtimeUnreadCount > 0) {
+        badge.innerText = realtimeUnreadCount > 99 ? '99+' : String(realtimeUnreadCount);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+    if (soundBtn) {
+      soundBtn.innerText = realtimeSoundEnabled ? '🔊 Suara: ON' : '🔇 Suara: OFF';
+    }
+  }
+
+  function formatNotifClock(isoStr) {
+    try {
+      const d = isoStr ? new Date(isoStr) : new Date();
+      if (isNaN(d.getTime())) return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) {
+      return '--:--';
+    }
+  }
+
+  function renderRealtimeNotifList() {
+    const listEl = document.getElementById('realtimeNotifList');
+    if (!listEl) return;
+
+    const filtered = realtimeNotifs.filter(n => realtimeFilterMode === 'ALL' || n.type === realtimeFilterMode);
+    if (filtered.length === 0) {
+      listEl.innerHTML = `
+        <div class="p-6 text-center text-xs text-slate-400 dark:text-slate-500">
+          ${realtimeFilterMode === 'ALL'
+            ? 'Belum ada aktivitas pelanggaran atau penyelesaian ujian baru pada sesi ini.'
+            : (realtimeFilterMode === 'cheat'
+              ? 'Belum ada notifikasi pelanggaran siswa pada sesi ini.'
+              : 'Belum ada notifikasi penyelesaian ujian baru pada sesi ini.')}
+        </div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(item => {
+      const isCheat = item.type === 'cheat';
+      const iconBg = isCheat
+        ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-300'
+        : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300';
+      const badgeCls = isCheat
+        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
+        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300';
+      const targetTab = isCheat ? 'tabMonitoring' : 'tabResults';
+      const actionLabel = isCheat ? 'Pantau Siswa →' : 'Lihat Nilai →';
+
+      return `
+        <div class="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition flex items-start gap-2.5">
+          <div class="w-8 h-8 rounded-xl ${iconBg} flex items-center justify-center shrink-0 text-sm font-bold mt-0.5">
+            ${isCheat ? '⚠️' : '✅'}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold ${badgeCls}">
+                ${isCheat ? 'Pelanggaran Anti-Tab' : 'Ujian Selesai'}
+              </span>
+              <span class="text-[10px] text-slate-400 font-semibold">${escapeHtmlSafe(item.timeLabel)}</span>
+            </div>
+            <p class="text-xs font-extrabold text-slate-900 dark:text-white truncate mt-1">
+              ${escapeHtmlSafe(item.studentName)} <span class="font-semibold text-slate-500 dark:text-slate-400">(${escapeHtmlSafe(item.studentClass)})</span>
+            </p>
+            <p class="text-[11px] font-semibold text-blue-700 dark:text-sky-400 truncate">${escapeHtmlSafe(item.subject)}</p>
+            <p class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">${escapeHtmlSafe(item.detail)}</p>
+            <div class="mt-1.5 flex items-center justify-between gap-2">
+              <span class="text-[10px] text-slate-400 font-mono">NISN: ${escapeHtmlSafe(item.nisn)}</span>
+              <button type="button" data-notif-jump="${targetTab}" class="notif-jump-btn text-[10px] font-extrabold text-blue-600 dark:text-sky-400 hover:underline cursor-pointer">
+                ${actionLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.notif-jump-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-notif-jump');
+        const dropdown = document.getElementById('realtimeNotifDropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+        if (target) switchAdminTab(target);
+      });
+    });
+  }
+
+  function showRealtimeToast(item) {
+    const stack = document.getElementById('cbtRealtimeToastStack');
+    if (!stack || !viewAdmin || viewAdmin.classList.contains('hidden')) return;
+
+    while (stack.children.length >= 4) {
+      stack.removeChild(stack.firstElementChild);
+    }
+
+    const isCheat = item.type === 'cheat';
+    const targetTab = isCheat ? 'tabMonitoring' : 'tabResults';
+    const toast = document.createElement('div');
+    toast.className = `pointer-events-auto rounded-2xl border shadow-2xl p-3.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-all duration-300 flex items-start gap-3 ${
+      isCheat
+        ? 'border-rose-300 dark:border-rose-700/70 ring-1 ring-rose-500/20'
+        : 'border-emerald-300 dark:border-emerald-700/70 ring-1 ring-emerald-500/20'
+    }`;
+
+    toast.innerHTML = `
+      <div class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-base ${
+        isCheat
+          ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300'
+          : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-300'
+      }">${isCheat ? '🚨' : '✅'}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[11px] font-black uppercase tracking-wide ${isCheat ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">
+            ${isCheat ? 'Peringatan Kecurangan!' : 'Siswa Selesai Ujian'}
+          </span>
+          <button type="button" class="toast-close-btn text-slate-400 hover:text-slate-700 dark:hover:text-white text-xs font-bold px-1 cursor-pointer">✕</button>
+        </div>
+        <p class="text-xs font-extrabold text-slate-900 dark:text-white truncate mt-0.5">
+          ${escapeHtmlSafe(item.studentName)} (${escapeHtmlSafe(item.studentClass)})
+        </p>
+        <p class="text-[11px] font-semibold text-blue-700 dark:text-sky-400 truncate">${escapeHtmlSafe(item.subject)}</p>
+        <p class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">${escapeHtmlSafe(item.detail)}</p>
+        <div class="mt-2 flex items-center justify-between">
+          <span class="text-[10px] text-slate-400">${escapeHtmlSafe(item.timeLabel)}</span>
+          <button type="button" class="toast-action-btn px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-white ${
+            isCheat ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+          } transition cursor-pointer">
+            ${isCheat ? 'Pantau Live →' : 'Buka Rekap →'}
+          </button>
+        </div>
+      </div>
+    `;
+
+    const dismiss = () => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(8px)';
+      setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 250);
+    };
+
+    const closeBtn = toast.querySelector('.toast-close-btn');
+    const actionBtn = toast.querySelector('.toast-action-btn');
+    if (closeBtn) closeBtn.addEventListener('click', dismiss);
+    if (actionBtn) {
+      actionBtn.addEventListener('click', () => {
+        dismiss();
+        switchAdminTab(targetTab);
+      });
+    }
+
+    stack.appendChild(toast);
+    setTimeout(dismiss, isCheat ? 9000 : 6000);
+  }
+
+  function mergeSessionIntoMonitoringCache(sess) {
+    if (!sess || !sess.nisn || !window.supabaseSync) return;
+    const key = window.supabaseSync.buildSessionKey(sess.nisn, sess.subject);
+    const idx = cachedMonitoringSessions.findIndex(s => window.supabaseSync.buildSessionKey(s.nisn, s.subject) === key);
+    const normalized = { ...sess, sessionKey: key };
+    if (idx >= 0) cachedMonitoringSessions[idx] = normalized;
+    else cachedMonitoringSessions.unshift(normalized);
+  }
+
+  function refreshActiveAdminViewsOnAlert() {
+    if (!viewAdmin || viewAdmin.classList.contains('hidden')) return;
+    const dashPane = document.getElementById('tabDashboard');
+    const monPane = document.getElementById('tabMonitoring');
+    const resPane = document.getElementById('tabResults');
+    if (dashPane && !dashPane.classList.contains('hidden')) {
+      renderAdminOverviewDashboard();
+    }
+    if (monPane && !monPane.classList.contains('hidden')) {
+      renderMonitoringDashboard(false);
+    }
+    if (resPane && !resPane.classList.contains('hidden')) {
+      renderAdminAnalyticsAndResults();
+    }
+  }
+
+  function triggerThrottledCloudResultsRefresh() {
+    const now = Date.now();
+    if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) return;
+    if (now - realtimeLastCloudResultPullAt < 3000) return;
+    realtimeLastCloudResultPullAt = now;
+    window.supabaseSync.fetchCloudResults().then(res => {
+      if (res && res.success) {
+        refreshActiveAdminViewsOnAlert();
+      }
+    }).catch(() => {});
+  }
+
+  function pushRealtimeAlert(eventKey, alertObj) {
+    if (!eventKey || realtimeEmittedEventKeys.has(eventKey)) return;
+    realtimeEmittedEventKeys.add(eventKey);
+    if (realtimeEmittedEventKeys.size > 500) {
+      const firstKey = realtimeEmittedEventKeys.values().next().value;
+      realtimeEmittedEventKeys.delete(firstKey);
+    }
+
+    if (!isRecordInCurrentAdminScope(alertObj.subject, alertObj.studentClass)) return;
+
+    const item = {
+      id: eventKey,
+      type: alertObj.type,
+      nisn: String(alertObj.nisn || '-'),
+      studentName: String(alertObj.studentName || 'Siswa'),
+      studentClass: String(alertObj.studentClass || '-'),
+      subject: String(alertObj.subject || '-'),
+      detail: String(alertObj.detail || ''),
+      timeLabel: formatNotifClock(alertObj.timestamp)
+    };
+
+    realtimeNotifs.unshift(item);
+    if (realtimeNotifs.length > 60) realtimeNotifs = realtimeNotifs.slice(0, 60);
+
+    const dropdown = document.getElementById('realtimeNotifDropdown');
+    if (!dropdown || dropdown.classList.contains('hidden')) {
+      realtimeUnreadCount += 1;
+    }
+
+    updateRealtimeBadgeAndSoundUi();
+    renderRealtimeNotifList();
+    playRealtimeNotifSound(item.type);
+    showRealtimeToast(item);
+    refreshActiveAdminViewsOnAlert();
+  }
+
+  function processSessionDelta(sess, emitAlerts) {
+    if (!sess || !sess.nisn) return;
+    const nisn = String(sess.nisn).trim();
+    const subject = String(sess.subject || 'Umum').trim();
+    const studentName = String(sess.name || sess.student_name || 'Siswa').trim();
+    const studentClass = String(sess.class || sess.class_name || sess.student_class || '-').trim();
+    const key = window.supabaseSync
+      ? window.supabaseSync.buildSessionKey(nisn, subject)
+      : `${nisn.toUpperCase()}__${subject.toLowerCase()}`;
+
+    const cheatCount = Number(sess.cheatCount || 0);
+    const status = String(sess.status || '').trim();
+    const attemptNumber = Number(sess.attemptNumber || 1);
+    const completedAt = String(sess.completedAt || '').trim();
+
+    mergeSessionIntoMonitoringCache(sess);
+
+    const prev = realtimeSessionSnapshot.get(key);
+    const cfg = window.cbtAdmin && typeof window.cbtAdmin.getConfig === 'function' ? window.cbtAdmin.getConfig() : { maxCheatViolations: 3 };
+    const maxViolations = Number(cfg.maxCheatViolations || 3);
+
+    if (emitAlerts && realtimeBaselineReady) {
+      if (cheatCount > 0 && (!prev || cheatCount > prev.cheatCount)) {
+        const logs = Array.isArray(sess.cheatLogs) ? sess.cheatLogs : [];
+        const latestLogReason = logs.length > 0 ? logs[logs.length - 1]?.reason : '';
+        const reasonText = String(sess.lastViolationReason || latestLogReason || 'Terdeteksi berpindah tab / keluar layar penuh').trim();
+        const isAutoSubmit = cheatCount >= maxViolations || status === 'completed';
+        const detail = `${reasonText} • Pelanggaran ke-${cheatCount}/${maxViolations}${isAutoSubmit ? ' (Auto-Submit)' : ''}`;
+        pushRealtimeAlert(`cheat:${key}:${attemptNumber}:${cheatCount}`, {
+          type: 'cheat',
+          nisn,
+          studentName,
+          studentClass,
+          subject,
+          detail,
+          timestamp: sess.lastViolationAt || sess.updatedAt
+        });
+      }
+
+      const becameCompleted = status === 'completed' && (!prev || prev.status !== 'completed' || (completedAt && completedAt !== prev.completedAt));
+      if (becameCompleted) {
+        const lastDoneMs = realtimeRecentDoneAt.get(key) || 0;
+        if (Date.now() - lastDoneMs > 12000) {
+          realtimeRecentDoneAt.set(key, Date.now());
+          const scoreTxt = sess.finalScore !== undefined && sess.finalScore !== null ? `Nilai Akhir: ${sess.finalScore}` : 'Nilai telah direkap';
+          const reasonLabel = sess.finishReason === 'cheat_limit'
+            ? 'Selesai otomatis (batas pelanggaran)'
+            : (sess.finishReason === 'timeout' ? 'Waktu ujian habis' : 'Diselesaikan siswa');
+          pushRealtimeAlert(`done:${key}:${attemptNumber}:${completedAt}`, {
+            type: 'completed',
+            nisn,
+            studentName,
+            studentClass,
+            subject,
+            detail: `${scoreTxt} • ${reasonLabel}`,
+            timestamp: completedAt || sess.updatedAt
+          });
+        }
+        triggerThrottledCloudResultsRefresh();
+      }
+    }
+
+    realtimeSessionSnapshot.set(key, {
+      cheatCount,
+      status,
+      attemptNumber,
+      completedAt
+    });
+  }
+
+  function processResultInsertDelta(resObj) {
+    if (!resObj || !realtimeBaselineReady) return;
+    const nisn = String(resObj.student?.nisn || resObj.student_nisn || '').trim();
+    if (!nisn || nisn === '__CBT_STATE__') return;
+
+    const studentName = String(resObj.student?.name || resObj.student_name || 'Siswa').trim();
+    const studentClass = String(resObj.student?.class || resObj.student_class || '-').trim();
+    const subject = String(resObj.subject || 'Umum').trim();
+    const key = window.supabaseSync
+      ? window.supabaseSync.buildSessionKey(nisn, subject)
+      : `${nisn.toUpperCase()}__${subject.toLowerCase()}`;
+
+    const lastDoneMs = realtimeRecentDoneAt.get(key) || 0;
+    if (Date.now() - lastDoneMs <= 12000) {
+      triggerThrottledCloudResultsRefresh();
+      return;
+    }
+
+    realtimeRecentDoneAt.set(key, Date.now());
+    const completedAt = String(resObj.completedAt || new Date().toISOString());
+    const scoreTxt = resObj.finalScore !== undefined && resObj.finalScore !== null ? `Nilai Akhir: ${resObj.finalScore}` : 'Nilai telah masuk';
+    const cheatInfo = Number(resObj.cheatCount || 0) > 0 ? ` • ${resObj.cheatCount}x pelanggaran` : '';
+    const reasonLabel = resObj.finishReason === 'cheat_limit'
+      ? 'Auto-submit pelanggaran'
+      : (resObj.finishReason === 'timeout' ? 'Waktu habis' : 'Diselesaikan siswa');
+
+    pushRealtimeAlert(`result:${key}:${completedAt}`, {
+      type: 'completed',
+      nisn,
+      studentName,
+      studentClass,
+      subject,
+      detail: `${scoreTxt} • ${reasonLabel}${cheatInfo}`,
+      timestamp: completedAt
+    });
+    triggerThrottledCloudResultsRefresh();
+  }
+
+  async function pollRealtimeStudentEvents(isBaseline = false) {
+    if (!window.supabaseSync || !viewAdmin || viewAdmin.classList.contains('hidden')) return;
+    try {
+      const res = await window.supabaseSync.fetchStudentSessions();
+      const sessions = res && Array.isArray(res.data) ? res.data : [];
+      sessions.forEach(sess => processSessionDelta(sess, !isBaseline && realtimeBaselineReady));
+      if (isBaseline) {
+        realtimeBaselineReady = true;
+      }
+    } catch (e) {
+      if (isBaseline) realtimeBaselineReady = true;
+    }
+  }
+
+  function startAdminRealtimeNotifications() {
+    if (realtimeNotifActive) return;
+    if (!viewAdmin || viewAdmin.classList.contains('hidden')) return;
+
+    realtimeNotifActive = true;
+    realtimeBaselineReady = false;
+    updateRealtimeNotifVisibility(true);
+
+    pollRealtimeStudentEvents(true);
+
+    if (window.supabaseSync && window.supabaseSync.isCloudConfigured() && typeof window.supabaseSync.subscribeToRealtimeNotifications === 'function') {
+      window.supabaseSync.subscribeToRealtimeNotifications(
+        (sess) => processSessionDelta(sess, true),
+        (resObj) => processResultInsertDelta(resObj)
+      );
+    }
+
+    realtimePollTimer = setInterval(() => {
+      if (!viewAdmin || viewAdmin.classList.contains('hidden')) {
+        stopAdminRealtimeNotifications();
+        return;
+      }
+      pollRealtimeStudentEvents(false);
+    }, 6000);
+  }
+
+  function stopAdminRealtimeNotifications() {
+    realtimeNotifActive = false;
+    if (realtimePollTimer) {
+      clearInterval(realtimePollTimer);
+      realtimePollTimer = null;
+    }
+    if (window.supabaseSync && typeof window.supabaseSync.unsubscribeRealtimeNotifications === 'function') {
+      window.supabaseSync.unsubscribeRealtimeNotifications();
+    }
+  }
+
+  function resetAdminRealtimeStateOnLogout() {
+    stopAdminRealtimeNotifications();
+    realtimeBaselineReady = false;
+    realtimeSessionSnapshot.clear();
+    realtimeEmittedEventKeys.clear();
+    realtimeRecentDoneAt.clear();
+    realtimeNotifs = [];
+    realtimeUnreadCount = 0;
+    const stack = document.getElementById('cbtRealtimeToastStack');
+    if (stack) stack.innerHTML = '';
+    updateRealtimeNotifVisibility(false);
+    renderRealtimeNotifList();
+  }
+
+  function setupRealtimeNotificationControls() {
+    if (realtimeControlsInitialized) return;
+    realtimeControlsInitialized = true;
+
+    const container = document.getElementById('realtimeNotifContainer');
+    const bellBtn = document.getElementById('btnRealtimeNotifBell');
+    const dropdown = document.getElementById('realtimeNotifDropdown');
+    const soundBtn = document.getElementById('btnToggleNotifSound');
+    const clearBtn = document.getElementById('btnClearRealtimeNotifs');
+
+    if (bellBtn && dropdown) {
+      bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willOpen = dropdown.classList.contains('hidden');
+        dropdown.classList.toggle('hidden');
+        if (willOpen) {
+          realtimeUnreadCount = 0;
+          updateRealtimeBadgeAndSoundUi();
+          renderRealtimeNotifList();
+        }
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (dropdown && !dropdown.classList.contains('hidden') && container && !container.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    if (soundBtn) {
+      soundBtn.addEventListener('click', () => {
+        realtimeSoundEnabled = !realtimeSoundEnabled;
+        try { localStorage.setItem('cbt_notif_sound', realtimeSoundEnabled ? 'on' : 'off'); } catch (e) {}
+        updateRealtimeBadgeAndSoundUi();
+        if (realtimeSoundEnabled) playRealtimeNotifSound('completed');
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        realtimeNotifs = [];
+        realtimeUnreadCount = 0;
+        updateRealtimeBadgeAndSoundUi();
+        renderRealtimeNotifList();
+      });
+    }
+
+    document.querySelectorAll('.notif-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        realtimeFilterMode = btn.getAttribute('data-notif-filter') || 'ALL';
+        document.querySelectorAll('.notif-filter-btn').forEach(b => {
+          const active = (b.getAttribute('data-notif-filter') || 'ALL') === realtimeFilterMode;
+          b.className = active
+            ? 'notif-filter-btn px-2.5 py-1 rounded-lg bg-blue-600 text-white cursor-pointer transition'
+            : 'notif-filter-btn px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer transition';
+        });
+        renderRealtimeNotifList();
+      });
+    });
+
+    window.addEventListener('storage', (e) => {
+      if (!realtimeNotifActive) return;
+      if (e.key === 'cbt_local_student_sessions' && e.newValue) {
+        try {
+          const list = JSON.parse(e.newValue);
+          if (Array.isArray(list)) list.forEach(sess => processSessionDelta(sess, true));
+        } catch (err) {}
+      }
+    });
+
+    updateRealtimeBadgeAndSoundUi();
+  }
 
   init();
 });

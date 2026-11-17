@@ -273,6 +273,9 @@ class ExamEngine {
       totalQuestions: summary.total,
       remainingSeconds: this.remainingSeconds,
       cheatCount: this.cheatCount,
+      lastViolationReason: this.lastViolationReason || null,
+      lastViolationAt: this.lastViolationAt || null,
+      cheatLogs: this.cheatLogs || [],
       startedAt: this.startedAtIso || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -656,10 +659,14 @@ class ExamEngine {
     this.cheatCount++;
     const now = new Date();
     const timeStr = now.toLocaleTimeString('id-ID');
+    this.lastViolationReason = reason;
+    this.lastViolationAt = now.toISOString();
     this.cheatLogs.push({ time: timeStr, reason });
     this.saveSession();
 
     this.playAlarmSound();
+    // Kirim peringatan pelanggaran secara instan ke Supabase Cloud untuk dashboard Admin & Guru
+    this.syncLiveStudentProgress(true);
 
     window.dispatchEvent(new CustomEvent('cbt-cheat-warning', {
       detail: {
@@ -832,6 +839,8 @@ class ExamEngine {
         totalQuestions: activeQs.length,
         remainingSeconds: this.remainingSeconds,
         cheatCount: this.cheatCount,
+        lastViolationReason: this.lastViolationReason || null,
+        finishReason: reason || 'Selesai mandiri oleh peserta',
         finalScore: finalScore,
         startedAt: this.startedAtIso,
         completedAt: completedAtStr,

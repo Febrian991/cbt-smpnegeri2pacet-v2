@@ -600,6 +600,106 @@ class SupabaseSyncManager {
       return { success: false, message: err.message, data: JSON.parse(localStorage.getItem('cbt_exam_results') || '[]') };
     }
   }
+
+  // Subscribe ke Supabase Realtime (postgres_changes) untuk notifikasi instan pelanggaran & selesai ujian
+  subscribeToRealtimeNotifications(onSessionEvent, onResultEvent) {
+    this.unsubscribeRealtimeNotifications();
+    if (!this.client || !this.isConnected || typeof this.client.channel !== 'function') {
+      return null;
+    }
+
+    try {
+      const channel = this.client
+        .channel('cbt-admin-realtime-alerts-' + Date.now())
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cbt_student_sessions' },
+          (payload) => {
+            const row = payload && (payload.new || payload.record);
+            if (!row || !row.student_nisn) return;
+            const sessionObj = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {
+              nisn: row.student_nisn,
+              name: row.student_name,
+              class: row.student_class,
+              subject: row.subject,
+              status: row.status,
+              attemptNumber: row.attempt_number,
+              answeredCount: row.answered_count,
+              totalQuestions: row.total_questions,
+              remainingSeconds: row.remaining_seconds,
+              cheatCount: row.cheat_count,
+              finalScore: row.final_score,
+              completedAt: row.completed_at,
+              updatedAt: row.updated_at
+            };
+            if (typeof onSessionEvent === 'function') {
+              onSessionEvent(sessionObj);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'cbt_exam_results' },
+          (payload) => {
+            const row = payload && payload.new;
+            if (!row || row.student_nisn === '__CBT_STATE__') return;
+
+            if (row.exam_title === '__CBT_LIVE_SESSION__') {
+              const sessionObj = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {
+                nisn: row.student_nisn,
+                name: row.student_name,
+                class: row.student_class,
+                subject: row.subject,
+                status: row.finish_reason || 'logged_in',
+                answeredCount: row.correct_count || 0,
+                totalQuestions: row.total_questions || 0,
+                cheatCount: row.cheat_count || 0,
+                finalScore: row.final_score,
+                updatedAt: row.completed_at
+              };
+              if (typeof onSessionEvent === 'function') {
+                onSessionEvent(sessionObj);
+              }
+              return;
+            }
+
+            const resultObj = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {
+              id: row.id,
+              student: {
+                name: row.student_name,
+                nisn: row.student_nisn,
+                class: row.student_class
+              },
+              examTitle: row.exam_title,
+              subject: row.subject,
+              finalScore: row.final_score,
+              cheatCount: row.cheat_count || 0,
+              completedAt: row.completed_at,
+              finishReason: row.finish_reason
+            };
+            if (typeof onResultEvent === 'function') {
+              onResultEvent(resultObj);
+            }
+          }
+        );
+
+      channel.subscribe();
+      this.realtimeChannel = channel;
+      return channel;
+    } catch (err) {
+      console.warn('Supabase Realtime channel tidak tersedia, menggunakan polling sinkronisasi:', err);
+      return null;
+    }
+  }
+
+  unsubscribeRealtimeNotifications() {
+    if (this.realtimeChannel && this.client && typeof this.client.removeChannel === 'function') {
+      try {
+        this.client.removeChannel(this.realtimeChannel);
+      } catch (e) {}
+    }
+    this.realtimeChannel = null;
+  }
 }
 
 if (typeof window !== 'undefined') {
