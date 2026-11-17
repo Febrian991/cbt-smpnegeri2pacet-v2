@@ -439,6 +439,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (labelHeader) labelHeader.innerText = isDark ? 'Mode Terang' : 'Mode Gelap';
     if (iconLogin) iconLogin.innerHTML = isDark ? sunSvg : moonSvg;
     if (labelLogin) labelLogin.innerText = isDark ? 'Terang' : 'Gelap';
+
+    if (typeof refreshVisibleD3Charts === 'function') {
+      refreshVisibleD3Charts();
+    }
   }
 
   function setupDarkMode() {
@@ -1517,12 +1521,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnAdminLogout) {
     btnAdminLogout.addEventListener('click', () => {
       stopMonitoringAutoRefresh();
+      try { localStorage.removeItem('cbt_active_admin_tab'); } catch (e) {}
       window.cbtAdmin.logout();
       showView('login');
     });
   }
 
-  // ===================== 7 ADMIN TABS SWITCHER & RBAC =====================
+  // ===================== ADMIN TABS SWITCHER & RBAC =====================
   const adminTabButtons = document.querySelectorAll('.admin-tab-btn');
 
   function switchAdminTab(targetTab) {
@@ -1530,7 +1535,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
 
     if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings')) {
-      targetTab = 'tabResults';
+      targetTab = 'tabDashboard';
     }
 
     try { localStorage.setItem('cbt_active_admin_tab', targetTab); } catch (e) {}
@@ -1560,7 +1565,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      if (targetTab === 'tabResults') {
+      if (targetTab === 'tabDashboard') {
+        renderAdminOverviewDashboard();
+      } else if (targetTab === 'tabResults') {
         renderAdminAnalyticsAndResults();
       } else if (targetTab === 'tabMonitoring') {
         setupMonitoringControls();
@@ -1637,14 +1644,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabStudentsPane) tabStudentsPane.classList.add('hidden');
         if (tabTeachersPane) tabTeachersPane.classList.add('hidden');
         if (tabSettingsPane) tabSettingsPane.classList.add('hidden');
-        const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabResults';
-        const allowedGuruTabs = ['tabResults', 'tabMonitoring', 'tabQuestions'];
-        switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabResults');
+        const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
+        const allowedGuruTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabQuestions'];
+        switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabDashboard');
       } else {
         if (tabSchedulesBtn) tabSchedulesBtn.classList.remove('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.remove('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.remove('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.remove('hidden');
+        const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
+        const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings'];
+        switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard');
       }
     }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
@@ -1656,6 +1666,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSubjectAndClassFilters();
     setupQuestionBankFilters();
     setupMonitoringControls();
+    renderAdminOverviewDashboard();
     renderAdminAnalyticsAndResults();
     renderAdminQuestionList();
 
@@ -1666,6 +1677,427 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAdminConfigForm();
       renderSchoolConfigForm();
       renderSupabaseConfigForm();
+    }
+  }
+
+  // ===================== D3.JS VISUALIZATION HELPERS & TAB DASHBOARD =====================
+  let lastEmpiricalAnalysisCache = null;
+  let lastDashboardResultsCache = [];
+
+  function ensureD3Tooltip() {
+    let tip = document.getElementById('cbtD3Tooltip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'cbtD3Tooltip';
+      tip.className = 'hidden fixed z-[80] pointer-events-none max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-3 py-2 text-[11px] text-slate-800 dark:text-slate-100 shadow-xl transition-opacity duration-75';
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function showD3Tooltip(event, htmlContent) {
+    const tip = ensureD3Tooltip();
+    tip.innerHTML = htmlContent;
+    tip.classList.remove('hidden');
+    const pad = 14;
+    const rect = tip.getBoundingClientRect();
+    let left = (event.clientX || 0) + pad;
+    let top = (event.clientY || 0) + pad;
+    if (left + rect.width > window.innerWidth - 10) {
+      left = Math.max(10, (event.clientX || 0) - rect.width - pad);
+    }
+    if (top + rect.height > window.innerHeight - 10) {
+      top = Math.max(10, (event.clientY || 0) - rect.height - pad);
+    }
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  }
+
+  function hideD3Tooltip() {
+    const tip = document.getElementById('cbtD3Tooltip');
+    if (tip) tip.classList.add('hidden');
+  }
+
+  function getD3ThemeColors() {
+    const isDark = document.documentElement.classList.contains('dark');
+    return {
+      isDark,
+      axisText: isDark ? '#94a3b8' : '#475569',
+      axisLine: isDark ? '#475569' : '#94a3b8',
+      gridLine: isDark ? '#334155' : '#e2e8f0',
+      idealBg: isDark ? 'rgba(16, 185, 129, 0.14)' : 'rgba(16, 185, 129, 0.10)',
+      idealStroke: isDark ? '#34d399' : '#10b981',
+      labelBg: isDark ? '#0f172a' : '#ffffff'
+    };
+  }
+
+  function renderDashboardScoreDistChart(results = []) {
+    const container = document.getElementById('dashboardScoreDistChart');
+    if (!container) return;
+    lastDashboardResultsCache = Array.isArray(results) ? results : [];
+
+    if (!lastDashboardResultsCache.length) {
+      container.innerHTML = `
+        <div class="text-center py-10 px-4 text-slate-400 text-xs">
+          <p class="font-bold text-slate-600 dark:text-slate-300">Belum ada data nilai ujian masuk</p>
+          <p class="mt-1">Grafik distribusi nilai D3.js akan muncul otomatis setelah siswa menyelesaikan ujian atau setelah Sinkron Cloud.</p>
+        </div>
+      `;
+      return;
+    }
+
+    if (typeof d3 === 'undefined') {
+      container.innerHTML = `<div class="text-xs text-slate-500 p-4">Library visualisasi D3.js sedang dimuat...</div>`;
+      return;
+    }
+
+    const brackets = [
+      { label: '< 50', desc: 'Perlu Bimbingan', min: -Infinity, max: 49.999, color: '#e11d48' },
+      { label: '50–64', desc: 'Cukup', min: 50, max: 64.999, color: '#f97316' },
+      { label: '65–74', desc: 'Hampir Tuntas', min: 65, max: 74.999, color: '#f59e0b' },
+      { label: '75–84', desc: 'Tuntas (Baik)', min: 75, max: 84.999, color: '#2563eb' },
+      { label: '85–100', desc: 'Sangat Baik', min: 85, max: Infinity, color: '#10b981' }
+    ];
+
+    const total = lastDashboardResultsCache.length;
+    const data = brackets.map(b => {
+      const count = lastDashboardResultsCache.filter(r => {
+        const s = Number(r.finalScore || 0);
+        return s >= b.min && s <= b.max;
+      }).length;
+      return {
+        ...b,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0
+      };
+    });
+
+    const theme = getD3ThemeColors();
+    const width = Math.max(container.clientWidth || 0, 480);
+    const height = 250;
+    const margin = { top: 24, right: 16, bottom: 42, left: 38 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+
+    container.innerHTML = '';
+    const svg = d3.select(container)
+      .append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('class', 'w-full h-auto overflow-visible');
+
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleBand()
+      .domain(data.map(d => d.label))
+      .range([0, innerW])
+      .padding(0.32);
+
+    const maxCount = Math.max(1, d3.max(data, d => d.count) || 1);
+    const y = d3.scaleLinear()
+      .domain([0, maxCount])
+      .nice()
+      .range([innerH, 0]);
+
+    // Grid horizontal
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(4).tickSize(-innerW).tickFormat(''))
+      .selectAll('line')
+      .attr('stroke', theme.gridLine)
+      .attr('stroke-dasharray', '3,3');
+    g.select('.domain').remove();
+
+    // Sumbu Y
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format('d')))
+      .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+      .selectAll('text')
+      .attr('fill', theme.axisText)
+      .style('font-size', '11px')
+      .style('font-weight', '600');
+
+    // Sumbu X
+    g.append('g')
+      .attr('transform', `translate(0,${innerH})`)
+      .call(d3.axisBottom(x))
+      .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+      .selectAll('text')
+      .attr('fill', theme.axisText)
+      .style('font-size', '11px')
+      .style('font-weight', '700');
+
+    // Garis batas KKM 75 (di antara 65-74 dan 75-84)
+    const xBeforePass = x('75–84');
+    if (xBeforePass !== undefined) {
+      const kkmX = xBeforePass - (x.step() - x.bandwidth()) / 2;
+      g.append('line')
+        .attr('x1', kkmX)
+        .attr('x2', kkmX)
+        .attr('y1', 0)
+        .attr('y2', innerH)
+        .attr('stroke', theme.idealStroke)
+        .attr('stroke-width', 1.5)
+        .attr('stroke-dasharray', '4,3');
+
+      g.append('text')
+        .attr('x', kkmX + 4)
+        .attr('y', 10)
+        .attr('fill', theme.idealStroke)
+        .style('font-size', '10px')
+        .style('font-weight', '700')
+        .text('Batas Tuntas ≥75 →');
+    }
+
+    // Batang nilai
+    const bars = g.selectAll('.dash-bar')
+      .data(data)
+      .enter()
+      .append('rect')
+      .attr('class', 'dash-bar cursor-pointer')
+      .attr('x', d => x(d.label))
+      .attr('width', x.bandwidth())
+      .attr('y', innerH)
+      .attr('height', 0)
+      .attr('rx', 6)
+      .attr('fill', d => d.color)
+      .attr('opacity', 0.9);
+
+    bars.transition()
+      .duration(350)
+      .attr('y', d => y(d.count))
+      .attr('height', d => Math.max(0, innerH - y(d.count)));
+
+    bars
+      .on('mouseenter mousemove', (event, d) => {
+        d3.select(event.currentTarget).attr('opacity', 1);
+        showD3Tooltip(event, `
+          <div class="font-extrabold text-slate-900 dark:text-white">Rentang Nilai ${escapeHtmlSafe(d.label)}</div>
+          <div class="text-slate-500 dark:text-slate-400 mb-1">${escapeHtmlSafe(d.desc)}</div>
+          <div>Jumlah: <strong>${d.count} siswa</strong> (${d.pct}%)</div>
+        `);
+      })
+      .on('mouseleave', (event) => {
+        d3.select(event.currentTarget).attr('opacity', 0.9);
+        hideD3Tooltip();
+      });
+
+    // Label jumlah di atas batang
+    g.selectAll('.dash-bar-label')
+      .data(data)
+      .enter()
+      .append('text')
+      .attr('x', d => x(d.label) + x.bandwidth() / 2)
+      .attr('y', d => y(d.count) - 6)
+      .attr('text-anchor', 'middle')
+      .attr('fill', theme.axisText)
+      .style('font-size', '10px')
+      .style('font-weight', '700')
+      .text(d => d.count > 0 ? `${d.count} (${d.pct}%)` : '0');
+  }
+
+  function renderAdminOverviewDashboard() {
+    if (!window.cbtAdmin) return;
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+
+    const subtitleEl = document.getElementById('dashOverviewSubtitle');
+    if (subtitleEl && currentTeacher) {
+      subtitleEl.innerText = isAdmin
+        ? 'Cakupan Administrator Sekolah — Pantau kesiapan soal, peserta, jadwal aktif, dan sebaran nilai semua mata pelajaran.'
+        : `Cakupan Guru Mapel (${currentTeacher.subject || '-'}) — Pantau kesiapan soal dan capaian nilai peserta pada kelas ampuan Anda.`;
+    }
+
+    // 1. Bank Soal & Audit Pra-Ujian
+    const scopedQuestions = window.cbtAdmin.getQuestionsFiltered('ALL', 'ALL');
+    const preAudit = typeof window.cbtAdmin.auditQuestionsPreExam === 'function'
+      ? window.cbtAdmin.auditQuestionsPreExam(scopedQuestions)
+      : { items: [], summary: { totalQuestions: scopedQuestions.length, readyCount: 0, warningCount: 0, errorCount: 0, readyPercent: 0 } };
+    const qSum = preAudit.summary;
+
+    const dashQ = document.getElementById('dashKpiQuestions');
+    const dashQSub = document.getElementById('dashKpiQuestionsSub');
+    if (dashQ) dashQ.innerText = `${qSum.totalQuestions} Soal`;
+    if (dashQSub) dashQSub.innerText = `${qSum.readyCount} siap (${qSum.readyPercent}% lolos pra-ujian)`;
+
+    // 2. Data Siswa (sesuai kelas ampuan jika Guru Mapel)
+    let allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
+    const teacherClasses = (!isAdmin && currentTeacher && currentTeacher.classes)
+      ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes)
+      : [];
+    if (teacherClasses.length > 0) {
+      allStudents = allStudents.filter(st => {
+        const cls = String(st.class || '').trim().toUpperCase();
+        return teacherClasses.some(tc => cls === tc || cls.startsWith(tc));
+      });
+    }
+    const uniqueClasses = new Set(allStudents.map(s => String(s.class || '').trim()).filter(Boolean));
+    const dashStu = document.getElementById('dashKpiStudents');
+    const dashStuSub = document.getElementById('dashKpiStudentsSub');
+    if (dashStu) dashStu.innerText = `${allStudents.length} Siswa`;
+    if (dashStuSub) dashStuSub.innerText = `${uniqueClasses.size} kelas terdaftar`;
+
+    // 3. Hasil Ujian & Aktivitas Live
+    const scopedResults = window.cbtAdmin.getAllResultsSorted('ALL', 'ALL');
+    const analytics = window.cbtAdmin.getExamAnalytics('ALL', 'ALL');
+
+    let liveSessions = window.supabaseSync && typeof window.supabaseSync.getLocalStudentSessions === 'function'
+      ? window.supabaseSync.getLocalStudentSessions()
+      : [];
+    if (!isAdmin && currentTeacher) {
+      const tSubs = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
+      liveSessions = liveSessions.filter(sess => {
+        const subOk = tSubs.length === 0 || tSubs.some(ts => String(sess.subject || '').toLowerCase().includes(ts));
+        const cls = String(sess.class_name || '').trim().toUpperCase();
+        const clsOk = teacherClasses.length === 0 || teacherClasses.some(tc => cls === tc || cls.startsWith(tc));
+        return subOk && clsOk;
+      });
+    }
+    const activeLiveCount = liveSessions.filter(s => s.status === 'in_progress').length;
+
+    const dashResCount = document.getElementById('dashKpiResultsCount');
+    const dashResSub = document.getElementById('dashKpiResultsSub');
+    if (dashResCount) dashResCount.innerText = `${scopedResults.length} Hasil`;
+    if (dashResSub) dashResSub.innerText = `${activeLiveCount} siswa sedang ujian live`;
+
+    // 4. Rata-rata & Ketuntasan
+    const dashAvg = document.getElementById('dashKpiAvgScore');
+    const dashPass = document.getElementById('dashKpiPassRate');
+    if (dashAvg) dashAvg.innerText = String(analytics.averageScore ?? 0);
+    if (dashPass) dashPass.innerText = `Ketuntasan (≥75): ${analytics.passRatePercentage ?? 0}%`;
+
+    const distHigh = document.getElementById('dashDistHighest');
+    const distLow = document.getElementById('dashDistLowest');
+    const distPass = document.getElementById('dashDistPassCount');
+    const passedTotal = scopedResults.filter(r => Number(r.finalScore || 0) >= 75).length;
+    if (distHigh) distHigh.innerText = scopedResults.length > 0 ? `${analytics.highestScore}` : '-';
+    if (distLow) distLow.innerText = scopedResults.length > 0 ? `${analytics.lowestScore}` : '-';
+    if (distPass) distPass.innerText = `${passedTotal} dari ${scopedResults.length}`;
+
+    // Render Grafik Distribusi Nilai D3.js
+    renderDashboardScoreDistChart(scopedResults);
+
+    // 5. Box Kesiapan Pra-Ujian
+    const readinessBox = document.getElementById('dashboardReadinessBox');
+    if (readinessBox) {
+      const totalQ = Math.max(1, qSum.totalQuestions);
+      const readyPct = qSum.totalQuestions > 0 ? Math.round((qSum.readyCount / totalQ) * 100) : 0;
+      const warnPct = qSum.totalQuestions > 0 ? Math.round((qSum.warningCount / totalQ) * 100) : 0;
+      const errPct = qSum.totalQuestions > 0 ? Math.max(0, 100 - readyPct - warnPct) : 0;
+
+      readinessBox.innerHTML = qSum.totalQuestions === 0
+        ? `<div class="text-xs text-slate-400 py-3 text-center">Belum ada butir soal pada cakupan ini.</div>`
+        : `
+          <div class="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex">
+            <div class="bg-emerald-500 h-full transition-all" style="width:${readyPct}%" title="Siap: ${qSum.readyCount}"></div>
+            <div class="bg-amber-400 h-full transition-all" style="width:${warnPct}%" title="Perlu Dicek: ${qSum.warningCount}"></div>
+            <div class="bg-rose-500 h-full transition-all" style="width:${errPct}%" title="Perlu Perbaikan: ${qSum.errorCount}"></div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
+              <div class="text-sm font-black text-emerald-700">${qSum.readyCount}</div>
+              <div class="text-[10px] font-bold text-emerald-800">Siap Diujikan</div>
+            </div>
+            <div class="p-2 rounded-xl bg-amber-50 border border-amber-200">
+              <div class="text-sm font-black text-amber-700">${qSum.warningCount}</div>
+              <div class="text-[10px] font-bold text-amber-800">Perlu Dicek</div>
+            </div>
+            <div class="p-2 rounded-xl bg-rose-50 border border-rose-200">
+              <div class="text-sm font-black text-rose-700">${qSum.errorCount}</div>
+              <div class="text-[10px] font-bold text-rose-800">Perbaikan</div>
+            </div>
+          </div>
+        `;
+    }
+
+    // 6. Jadwal Aktif & Token
+    const btnOpenSchedules = document.getElementById('btnDashOpenSchedules');
+    if (btnOpenSchedules) {
+      if (isAdmin) btnOpenSchedules.classList.remove('hidden');
+      else btnOpenSchedules.classList.add('hidden');
+    }
+    const schedListEl = document.getElementById('dashboardActiveSchedulesList');
+    if (schedListEl) {
+      let activeSchedules = window.cbtAdmin.getActiveSchedules();
+      if (!isAdmin && currentTeacher) {
+        const tSubs = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
+        if (tSubs.length > 0) {
+          activeSchedules = activeSchedules.filter(sch => tSubs.some(ts => String(sch.subject || '').toLowerCase().includes(ts)));
+        }
+      }
+      if (activeSchedules.length === 0) {
+        schedListEl.innerHTML = `
+          <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-300 text-xs text-slate-500 text-center">
+            Belum ada jadwal mapel berstatus <strong>Aktif</strong> saat ini.
+          </div>
+        `;
+      } else {
+        schedListEl.innerHTML = activeSchedules.slice(0, 4).map(sch => `
+          <div class="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 flex items-center justify-between gap-2 text-xs">
+            <div class="min-w-0">
+              <div class="font-bold text-slate-800 dark:text-slate-100 truncate">${escapeHtmlSafe(sch.subject || '-')}</div>
+              <div class="text-[10px] text-slate-500 truncate">${escapeHtmlSafe(sch.day || '')} ${escapeHtmlSafe(sch.date || '')} • ${escapeHtmlSafe(sch.time || '')} (${sch.durationMinutes || 80} mnt)</div>
+            </div>
+            <span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-mono font-black text-[11px] shrink-0" title="Token Ujian">
+              ${escapeHtmlSafe(sch.token || '-')}
+            </span>
+          </div>
+        `).join('') + (activeSchedules.length > 4 ? `<p class="text-[10px] text-slate-400 text-right font-semibold">+ ${activeSchedules.length - 4} jadwal aktif lainnya</p>` : '');
+      }
+    }
+
+    // 7. Ringkasan 5 Nilai Terbaru / Teratas
+    const recentEl = document.getElementById('dashboardRecentResultsList');
+    if (recentEl) {
+      if (scopedResults.length === 0) {
+        recentEl.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">Belum ada peserta yang menyelesaikan ujian.</p>`;
+      } else {
+        const topSlice = scopedResults.slice(0, 5);
+        recentEl.innerHTML = `
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold">
+                <th class="py-2 px-2.5 text-center w-10">#</th>
+                <th class="py-2 px-2.5">Nama Siswa</th>
+                <th class="py-2 px-2.5">Kelas</th>
+                <th class="py-2 px-2.5">Mata Pelajaran</th>
+                <th class="py-2 px-2.5 text-center">B / S / K</th>
+                <th class="py-2 px-2.5 text-center">Nilai</th>
+                <th class="py-2 px-2.5">Waktu Selesai</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${topSlice.map((r, i) => `
+                <tr class="border-b border-slate-100 hover:bg-slate-50 transition">
+                  <td class="py-2 px-2.5 text-center font-bold text-slate-500">${i + 1}</td>
+                  <td class="py-2 px-2.5 font-bold text-slate-800 dark:text-slate-100">${escapeHtmlSafe(r.student?.name || '-')}</td>
+                  <td class="py-2 px-2.5"><span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">${escapeHtmlSafe(r.student?.class ? 'Kelas ' + r.student.class : '-')}</span></td>
+                  <td class="py-2 px-2.5 text-slate-600 dark:text-slate-300 font-medium">${escapeHtmlSafe(r.subject || '-')}</td>
+                  <td class="py-2 px-2.5 text-center font-bold whitespace-nowrap">
+                    <span class="text-emerald-600">✓${r.correctCount || 0}</span>
+                    <span class="text-red-500 ml-1">✗${r.incorrectCount || 0}</span>
+                    <span class="text-slate-400 ml-1">?${r.unattemptedCount || 0}</span>
+                  </td>
+                  <td class="py-2 px-2.5 text-center">
+                    <span class="inline-flex px-2 py-0.5 rounded-md font-black text-[11px] ${Number(r.finalScore || 0) >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${r.finalScore ?? 0}</span>
+                  </td>
+                  <td class="py-2 px-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">${escapeHtmlSafe(r.completedAt || '-')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+    }
+  }
+
+  function refreshVisibleD3Charts() {
+    const dashPane = document.getElementById('tabDashboard');
+    if (viewAdmin && !viewAdmin.classList.contains('hidden') && dashPane && !dashPane.classList.contains('hidden')) {
+      renderDashboardScoreDistChart(lastDashboardResultsCache);
+    }
+    const empSec = document.getElementById('empiricalAnalysisSection');
+    const panel = document.getElementById('itemAnalysisPanel');
+    if (panel && !panel.classList.contains('hidden') && empSec && !empSec.classList.contains('hidden') && lastEmpiricalAnalysisCache) {
+      renderItemAnalysisD3Charts(lastEmpiricalAnalysisCache.analysis, lastEmpiricalAnalysisCache.qualityFilter);
     }
   }
 
@@ -2895,6 +3327,366 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function renderItemAnalysisD3Charts(analysis, qualityFilter = 'ALL') {
+    const scatterEl = document.getElementById('itemAnalysisScatterChart');
+    const barEl = document.getElementById('itemAnalysisBarChart');
+    if (!scatterEl || !barEl) return;
+
+    lastEmpiricalAnalysisCache = { analysis, qualityFilter };
+
+    const allItems = (analysis && Array.isArray(analysis.items)) ? analysis.items : [];
+    const filtered = qualityFilter === 'ALL'
+      ? allItems
+      : allItems.filter(it => it.qualityStatus === qualityFilter);
+
+    const plotted = filtered.filter(it => it.n >= 2 && it.difficulty !== null && it.discrimination !== null);
+
+    if (plotted.length === 0) {
+      const msg = allItems.length === 0
+        ? 'Belum ada soal pada filter mata pelajaran/kelas ini.'
+        : 'Butuh minimal 2 siswa menyelesaikan ujian (atau ubah Filter Kualitas) untuk menampilkan grafik D3.js.';
+      const emptyHtml = `
+        <div class="text-center py-10 px-4 text-slate-400 text-xs">
+          <p class="font-bold text-slate-600 dark:text-slate-300">Belum cukup data analisis</p>
+          <p class="mt-1">${escapeHtmlSafe(msg)}</p>
+        </div>
+      `;
+      scatterEl.innerHTML = emptyHtml;
+      barEl.innerHTML = emptyHtml;
+      return;
+    }
+
+    if (typeof d3 === 'undefined') {
+      const loadingHtml = `<div class="text-xs text-slate-500 p-4">Library D3.js sedang dimuat...</div>`;
+      scatterEl.innerHTML = loadingHtml;
+      barEl.innerHTML = loadingHtml;
+      return;
+    }
+
+    const theme = getD3ThemeColors();
+    const statusColor = (status) => {
+      if (status === 'good') return '#10b981';
+      if (status === 'revise') return '#f59e0b';
+      if (status === 'bad') return '#e11d48';
+      return '#64748b';
+    };
+
+    // ---- CHART 1: SCATTER PLOT P vs D ----
+    {
+      const width = Math.max(scatterEl.clientWidth || 0, 440);
+      const height = 285;
+      const margin = { top: 20, right: 20, bottom: 44, left: 48 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+
+      scatterEl.innerHTML = '';
+      const svg = d3.select(scatterEl)
+        .append('svg')
+        .attr('viewBox', `0 0 ${width} ${height}`)
+        .attr('class', 'w-full h-auto overflow-visible');
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const minD = d3.min(plotted, d => d.discrimination) ?? 0;
+      const maxD = d3.max(plotted, d => d.discrimination) ?? 1;
+      const yMin = Math.min(-0.20, Math.floor((minD - 0.1) * 10) / 10);
+      const yMax = Math.max(1.0, Math.ceil((maxD + 0.05) * 10) / 10);
+
+      const x = d3.scaleLinear().domain([0, 1]).range([0, innerW]);
+      const y = d3.scaleLinear().domain([yMin, yMax]).range([innerH, 0]);
+
+      // Zona Ideal: P in [0.30, 0.70], D in [0.30, yMax]
+      g.append('rect')
+        .attr('x', x(0.30))
+        .attr('y', y(yMax))
+        .attr('width', Math.max(0, x(0.70) - x(0.30)))
+        .attr('height', Math.max(0, y(0.30) - y(yMax)))
+        .attr('fill', theme.idealBg)
+        .attr('stroke', theme.idealStroke)
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '3,3')
+        .attr('rx', 6);
+
+      g.append('text')
+        .attr('x', x(0.50))
+        .attr('y', y(yMax) + 14)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.idealStroke)
+        .style('font-size', '10px')
+        .style('font-weight', '800')
+        .text('Zona Ideal (P 0.30–0.70, D ≥ 0.30)');
+
+      // Grid X & Y
+      g.append('g')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(x).ticks(5).tickSize(-innerH).tickFormat(''))
+        .selectAll('line')
+        .attr('stroke', theme.gridLine)
+        .attr('stroke-dasharray', '2,3');
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(''))
+        .selectAll('line')
+        .attr('stroke', theme.gridLine)
+        .attr('stroke-dasharray', '2,3');
+      g.selectAll('.domain').remove();
+
+      // Garis Referensi P = 0.30 & P = 0.70
+      [0.30, 0.70].forEach(pVal => {
+        g.append('line')
+          .attr('x1', x(pVal)).attr('x2', x(pVal))
+          .attr('y1', 0).attr('y2', innerH)
+          .attr('stroke', theme.axisLine)
+          .attr('stroke-width', 1)
+          .attr('stroke-dasharray', '4,4');
+      });
+
+      // Garis Referensi D = 0.30 & D = 0.00
+      g.append('line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', y(0.30)).attr('y2', y(0.30))
+        .attr('stroke', theme.idealStroke)
+        .attr('stroke-width', 1.2)
+        .attr('stroke-dasharray', '5,3');
+
+      if (yMin < 0) {
+        g.append('line')
+          .attr('x1', 0).attr('x2', innerW)
+          .attr('y1', y(0)).attr('y2', y(0))
+          .attr('stroke', '#e11d48')
+          .attr('stroke-width', 1.2)
+          .attr('stroke-dasharray', '3,3');
+      }
+
+      // Sumbu X
+      g.append('g')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format('.2f')))
+        .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+        .selectAll('text')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10px')
+        .style('font-weight', '600');
+
+      svg.append('text')
+        .attr('x', margin.left + innerW / 2)
+        .attr('y', height - 6)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10.5px')
+        .style('font-weight', '700')
+        .text('Tingkat Kesukaran (P) — Sukar (<0.30) • Sedang (0.30–0.70) • Mudah (>0.70)');
+
+      // Sumbu Y
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(6).tickFormat(d3.format('.2f')))
+        .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+        .selectAll('text')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10px')
+        .style('font-weight', '600');
+
+      svg.append('text')
+        .attr('transform', 'rotate(-90)')
+        .attr('x', -(margin.top + innerH / 2))
+        .attr('y', 13)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10.5px')
+        .style('font-weight', '700')
+        .text('Daya Pembeda (D)');
+
+      // Titik Nomor Soal
+      const radius = plotted.length > 24 ? 10 : 12;
+      const nodes = g.selectAll('.ia-scatter-node')
+        .data(plotted)
+        .enter()
+        .append('g')
+        .attr('class', 'ia-scatter-node cursor-pointer')
+        .attr('transform', d => `translate(${x(d.difficulty)},${y(d.discrimination)})`);
+
+      nodes.append('circle')
+        .attr('r', radius)
+        .attr('fill', d => statusColor(d.qualityStatus))
+        .attr('fill-opacity', 0.9)
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', 1.8);
+
+      nodes.append('text')
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#ffffff')
+        .style('font-size', plotted.length > 24 ? '9px' : '10px')
+        .style('font-weight', '800')
+        .text(d => d.index);
+
+      nodes
+        .on('mouseenter mousemove', (event, d) => {
+          d3.select(event.currentTarget).select('circle').attr('r', radius + 3).attr('fill-opacity', 1);
+          const snippet = String(d.questionText || '').replace(/\s+/g, ' ').trim().slice(0, 85);
+          showD3Tooltip(event, `
+            <div class="font-extrabold text-slate-900 dark:text-white">Soal No. ${d.index} (${escapeHtmlSafe(d.subject)})</div>
+            <div class="text-slate-500 dark:text-slate-400 mb-1.5">${escapeHtmlSafe(snippet || 'Soal bergambar')}${snippet.length >= 85 ? '…' : ''}</div>
+            <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10px]">
+              <span>Responden: <strong>${d.n}</strong></span>
+              <span>Status: <strong>${escapeHtmlSafe(d.qualityLabel)}</strong></span>
+              <span>Kesukaran P: <strong>${d.difficulty.toFixed(2)}</strong> (${escapeHtmlSafe(d.difficultyLabel)})</span>
+              <span>Pembeda D: <strong>${d.discrimination.toFixed(2)}</strong> (${escapeHtmlSafe(d.discriminationLabel)})</span>
+            </div>
+            <div class="mt-1.5 pt-1 border-t border-slate-200 dark:border-slate-700 text-[10px] text-slate-600 dark:text-slate-300">${escapeHtmlSafe(d.recommendation)}</div>
+          `);
+        })
+        .on('mouseleave', (event) => {
+          d3.select(event.currentTarget).select('circle').attr('r', radius).attr('fill-opacity', 0.9);
+          hideD3Tooltip();
+        });
+    }
+
+    // ---- CHART 2: GROUPED BAR CHART P & D PER NOMOR ----
+    {
+      const containerW = Math.max(barEl.clientWidth || 0, 460);
+      const width = Math.max(containerW, plotted.length * 42 + 76);
+      const height = 285;
+      const margin = { top: 22, right: 16, bottom: 44, left: 44 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+
+      barEl.innerHTML = '';
+      const svg = d3.select(barEl)
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height)
+        .attr('viewBox', `0 0 ${width} ${height}`)
+        .attr('class', 'h-auto overflow-visible');
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const minD = d3.min(plotted, d => d.discrimination) ?? 0;
+      const yMin = Math.min(0, Math.floor((minD - 0.05) * 10) / 10);
+      const yMax = 1.0;
+
+      const x0 = d3.scaleBand()
+        .domain(plotted.map(d => `No.${d.index}`))
+        .range([0, innerW])
+        .padding(0.24);
+
+      const x1 = d3.scaleBand()
+        .domain(['P', 'D'])
+        .range([0, x0.bandwidth()])
+        .padding(0.12);
+
+      const y = d3.scaleLinear().domain([yMin, yMax]).range([innerH, 0]);
+      const yZero = y(0);
+
+      // Grid Y
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(''))
+        .selectAll('line')
+        .attr('stroke', theme.gridLine)
+        .attr('stroke-dasharray', '2,3');
+      g.select('.domain').remove();
+
+      // Garis dasar y = 0 & garis batas D = 0.30
+      g.append('line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', yZero).attr('y2', yZero)
+        .attr('stroke', theme.axisLine)
+        .attr('stroke-width', 1.2);
+
+      g.append('line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', y(0.30)).attr('y2', y(0.30))
+        .attr('stroke', theme.idealStroke)
+        .attr('stroke-width', 1.2)
+        .attr('stroke-dasharray', '5,3');
+
+      g.append('text')
+        .attr('x', innerW - 4)
+        .attr('y', y(0.30) - 5)
+        .attr('text-anchor', 'end')
+        .attr('fill', theme.idealStroke)
+        .style('font-size', '9.5px')
+        .style('font-weight', '700')
+        .text('Batas Layak D = 0.30');
+
+      // Sumbu Y
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format('.2f')))
+        .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+        .selectAll('text')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10px')
+        .style('font-weight', '600');
+
+      // Sumbu X
+      g.append('g')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(x0))
+        .call(ax => ax.select('.domain').attr('stroke', theme.axisLine))
+        .selectAll('text')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10px')
+        .style('font-weight', '700');
+
+      svg.append('text')
+        .attr('x', margin.left + innerW / 2)
+        .attr('y', height - 6)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.axisText)
+        .style('font-size', '10.5px')
+        .style('font-weight', '700')
+        .text('Nomor Butir Soal');
+
+      const groups = g.selectAll('.ia-bar-group')
+        .data(plotted)
+        .enter()
+        .append('g')
+        .attr('class', 'ia-bar-group cursor-pointer')
+        .attr('transform', d => `translate(${x0(`No.${d.index}`)},0)`);
+
+      // Bar Kesukaran P
+      groups.append('rect')
+        .attr('x', x1('P'))
+        .attr('width', x1.bandwidth())
+        .attr('y', d => y(Math.max(0, d.difficulty)))
+        .attr('height', d => Math.max(2, Math.abs(y(d.difficulty) - yZero)))
+        .attr('rx', 3)
+        .attr('fill', '#3b82f6')
+        .attr('opacity', 0.88);
+
+      // Bar Daya Pembeda D (mendukung nilai negatif turun di bawah garis 0)
+      groups.append('rect')
+        .attr('x', x1('D'))
+        .attr('width', x1.bandwidth())
+        .attr('y', d => d.discrimination >= 0 ? y(d.discrimination) : yZero)
+        .attr('height', d => Math.max(2, Math.abs(y(d.discrimination) - yZero)))
+        .attr('rx', 3)
+        .attr('fill', d => {
+          if (d.discrimination >= 0.30) return '#10b981';
+          if (d.discrimination >= 0.20) return '#f59e0b';
+          return '#e11d48';
+        })
+        .attr('opacity', 0.9);
+
+      groups
+        .on('mouseenter mousemove', (event, d) => {
+          d3.select(event.currentTarget).selectAll('rect').attr('opacity', 1);
+          showD3Tooltip(event, `
+            <div class="font-extrabold text-slate-900 dark:text-white">Butir Soal No. ${d.index}</div>
+            <div class="mt-1 space-y-0.5 text-[10.5px]">
+              <div><span class="font-bold text-blue-600">Kesukaran (P):</span> <strong>${d.difficulty.toFixed(2)}</strong> (${escapeHtmlSafe(d.difficultyLabel)})</div>
+              <div><span class="font-bold text-emerald-600">Daya Pembeda (D):</span> <strong>${d.discrimination.toFixed(2)}</strong> (${escapeHtmlSafe(d.discriminationLabel)})</div>
+              <div>Benar/Salah/Kosong: <strong>${d.correctCount}/${d.incorrectCount}/${d.unattemptedCount}</strong> (N=${d.n})</div>
+              <div class="text-slate-500 dark:text-slate-400">Status: <strong>${escapeHtmlSafe(d.qualityLabel)}</strong></div>
+            </div>
+          `);
+        })
+        .on('mouseleave', (event) => {
+          d3.select(event.currentTarget).selectAll('rect').attr('opacity', 0.9);
+          hideD3Tooltip();
+        });
+    }
+  }
+
   function renderItemAnalysisPanel(precomputed = null) {
     const panel = document.getElementById('itemAnalysisPanel');
     if (!panel) return;
@@ -2932,6 +3724,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (kpiGood) kpiGood.innerText = String(summary.goodCount);
     if (kpiRevise) kpiRevise.innerText = String(summary.reviseCount);
     if (kpiBad) kpiBad.innerText = String(summary.badCount);
+
+    // Render Grafik Visualisasi D3.js (Sebaran P vs D + Bar P & D per Nomor)
+    renderItemAnalysisD3Charts(analysis, qualityFilter);
 
     const tbody = document.getElementById('itemAnalysisTbody');
     if (!tbody) return;
@@ -4687,6 +5482,59 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.value = '';
     });
   }
+
+  // ===================== DASHBOARD QUICK JUMP & CLOUD REFRESH =====================
+  document.querySelectorAll('.dash-jump-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-jump-tab');
+      if (target) switchAdminTab(target);
+    });
+  });
+
+  const btnDashOpenPreExam = document.getElementById('btnDashOpenPreExam');
+  if (btnDashOpenPreExam) {
+    btnDashOpenPreExam.addEventListener('click', () => {
+      switchAdminTab('tabQuestions');
+      const panel = document.getElementById('itemAnalysisPanel');
+      if (panel) panel.classList.remove('hidden');
+      setItemAnalysisMode('pre_exam');
+      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  const btnRefreshDashboardOverview = document.getElementById('btnRefreshDashboardOverview');
+  if (btnRefreshDashboardOverview) {
+    btnRefreshDashboardOverview.addEventListener('click', async () => {
+      const origHtml = btnRefreshDashboardOverview.innerHTML;
+      btnRefreshDashboardOverview.disabled = true;
+      btnRefreshDashboardOverview.innerHTML = '<span>⏳ Menyegarkan...</span>';
+      try {
+        if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+          await syncFromCloud(true);
+          if (typeof window.supabaseSync.fetchCloudResults === 'function') {
+            await window.supabaseSync.fetchCloudResults();
+          }
+          if (typeof window.supabaseSync.fetchCloudStudentSessions === 'function') {
+            await window.supabaseSync.fetchCloudStudentSessions();
+          }
+        }
+        renderAdminOverviewDashboard();
+      } catch (err) {
+        console.warn('Gagal menyegarkan dashboard:', err);
+      } finally {
+        btnRefreshDashboardOverview.disabled = false;
+        btnRefreshDashboardOverview.innerHTML = origHtml;
+      }
+    });
+  }
+
+  let d3ResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(d3ResizeTimer);
+    d3ResizeTimer = setTimeout(() => {
+      refreshVisibleD3Charts();
+    }, 180);
+  });
 
   init();
 });
