@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.23">
+  <link rel="stylesheet" href="css/styles.css?v=3.26">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -1872,6 +1872,29 @@
     </div>
   </div>
 
+  <!-- MODAL: KONFIRMASI KELUAR (ADMIN/GURU & SISWA BERBEDA) -->
+  <div id="modalLogoutConfirm" class="hidden fixed inset-0 z-[70] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl max-w-md w-full p-6 text-center shadow-2xl border border-slate-200 dark:border-slate-800">
+      <div id="logoutModalIconBox" class="w-11 h-11 rounded-2xl mx-auto flex items-center justify-center mb-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+      </div>
+      <p id="logoutModalSubtitle" class="text-xs font-bold text-slate-500 dark:text-slate-400">Konfirmasi Keluar</p>
+      <h3 id="logoutModalTitle" class="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white mt-1.5">Apakah Anda yakin ingin keluar dari aplikasi CBT?</h3>
+      <p id="logoutModalDesc" class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 mb-5 leading-relaxed">
+        Anda dapat login kembali kapan saja untuk mengakses aplikasi.
+      </p>
+
+      <div class="grid grid-cols-2 gap-3">
+        <button id="btnCancelLogoutConfirm" type="button" class="py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 transition cursor-pointer">
+          Tidak
+        </button>
+        <button id="btnConfirmLogoutFinal" type="button" class="py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition cursor-pointer">
+          Ya, Keluar
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: PERINGATAN ANTI TAB SWITCH -->
   <div id="modalCheatWarning" class="hidden fixed inset-0 z-50 bg-red-950/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center shadow-2xl border-4 border-red-500 animate-alert">
@@ -2364,8 +2387,8 @@
   <script src="js/default-students.js?v=3.18"></script>
   <script src="js/supabase-config.js?v=3.18"></script>
   <script src="js/exam-engine.js?v=3.18"></script>
-  <script src="js/admin.js?v=3.23"></script>
-  <script src="js/app.js?v=3.23"></script>
+  <script src="js/admin.js?v=3.26"></script>
+  <script src="js/app.js?v=3.26"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

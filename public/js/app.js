@@ -1043,13 +1043,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCancelConfirm = document.getElementById('btnCancelConfirm');
   if (btnCancelConfirm) {
     btnCancelConfirm.addEventListener('click', () => {
-      if (tempStudent && window.supabaseSync) {
-        const sub = (tempStudent.examConfig && tempStudent.examConfig.subject) || window.examEngine.config.subject;
-        window.supabaseSync.removeStudentSession(tempStudent.nisn, sub);
-      }
-      tempStudent = null;
-      try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
-      showView('login');
+      openLogoutConfirmModal('student_confirm', () => {
+        if (tempStudent && window.supabaseSync) {
+          const sub = (tempStudent.examConfig && tempStudent.examConfig.subject) || window.examEngine.config.subject;
+          window.supabaseSync.removeStudentSession(tempStudent.nisn, sub);
+        }
+        tempStudent = null;
+        try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
+        showView('login');
+      });
     });
   }
 
@@ -1445,7 +1447,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   const btnReturnHome = document.getElementById('btnReturnHome');
-  if (btnReturnHome) btnReturnHome.addEventListener('click', () => showView('login'));
+  if (btnReturnHome) {
+    btnReturnHome.addEventListener('click', () => {
+      openLogoutConfirmModal('student_result', () => {
+        showView('login');
+      });
+    });
+  }
 
   // ===================== PANEL PROKTOR & GURU: LOGIN SECURE =====================
   function setupAdminLoginHelpers() {
@@ -1517,13 +1525,102 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 10000);
   }
 
+  let pendingLogoutAction = null;
+  const modalLogoutConfirm = document.getElementById('modalLogoutConfirm');
+  const btnCancelLogoutConfirm = document.getElementById('btnCancelLogoutConfirm');
+  const btnConfirmLogoutFinal = document.getElementById('btnConfirmLogoutFinal');
+
+  function openLogoutConfirmModal(mode, onConfirm) {
+    if (!modalLogoutConfirm) {
+      if (typeof onConfirm === 'function') onConfirm();
+      return;
+    }
+    pendingLogoutAction = onConfirm;
+
+    const iconBox = document.getElementById('logoutModalIconBox');
+    const subtitleEl = document.getElementById('logoutModalSubtitle');
+    const titleEl = document.getElementById('logoutModalTitle');
+    const descEl = document.getElementById('logoutModalDesc');
+
+    const exitArrowSvg = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>';
+    const studentWarnSvg = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>';
+    const studentDoneSvg = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+
+    if (mode === 'student_confirm') {
+      if (iconBox) {
+        iconBox.className = 'w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-2.5 bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400';
+        iconBox.innerHTML = studentWarnSvg;
+      }
+      if (subtitleEl) subtitleEl.innerText = 'Notifikasi Keluar Peserta';
+      if (titleEl) titleEl.innerText = 'Batalkan & keluar sebelum memulai ujian?';
+      if (descEl) descEl.innerText = 'Jika keluar sekarang, sesi kehadiran ujian Anda akan dibatalkan dan Anda harus login ulang serta memasukkan token kembali.';
+      if (btnCancelLogoutConfirm) btnCancelLogoutConfirm.innerText = 'Batal';
+      if (btnConfirmLogoutFinal) {
+        btnConfirmLogoutFinal.innerText = 'Ya, Keluar Sesi';
+        btnConfirmLogoutFinal.className = 'py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-600/20 transition cursor-pointer';
+      }
+    } else if (mode === 'student_result') {
+      if (iconBox) {
+        iconBox.className = 'w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-2.5 bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400';
+        iconBox.innerHTML = studentDoneSvg;
+      }
+      if (subtitleEl) subtitleEl.innerText = 'Konfirmasi Keluar Peserta Ujian';
+      if (titleEl) titleEl.innerText = 'Keluar dari halaman bukti selesai ujian?';
+      if (descEl) descEl.innerText = 'Pastikan Anda sudah mencetak/menyimpan bukti ujian atau melapor ke pengawas. Anda tidak dapat mengulang ujian tanpa reset token dari proktor.';
+      if (btnCancelLogoutConfirm) btnCancelLogoutConfirm.innerText = 'Tetap di Sini';
+      if (btnConfirmLogoutFinal) {
+        btnConfirmLogoutFinal.innerText = 'Ya, Kembali ke Login';
+        btnConfirmLogoutFinal.className = 'py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition cursor-pointer';
+      }
+    } else {
+      // Admin & Guru
+      if (iconBox) {
+        iconBox.className = 'w-11 h-11 rounded-2xl mx-auto flex items-center justify-center mb-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200';
+        iconBox.innerHTML = exitArrowSvg;
+      }
+      if (subtitleEl) subtitleEl.innerText = 'Konfirmasi Keluar';
+      if (titleEl) titleEl.innerText = 'Apakah Anda yakin ingin keluar dari aplikasi CBT?';
+      if (descEl) descEl.innerText = 'Anda dapat login kembali kapan saja untuk mengakses aplikasi.';
+      if (btnCancelLogoutConfirm) btnCancelLogoutConfirm.innerText = 'Tidak';
+      if (btnConfirmLogoutFinal) {
+        btnConfirmLogoutFinal.innerText = 'Ya, Keluar';
+        btnConfirmLogoutFinal.className = 'py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition cursor-pointer';
+      }
+    }
+
+    modalLogoutConfirm.classList.remove('hidden');
+  }
+
+  function closeLogoutConfirmModal() {
+    if (modalLogoutConfirm) modalLogoutConfirm.classList.add('hidden');
+    pendingLogoutAction = null;
+  }
+
+  if (btnCancelLogoutConfirm) {
+    btnCancelLogoutConfirm.addEventListener('click', closeLogoutConfirmModal);
+  }
+  if (btnConfirmLogoutFinal) {
+    btnConfirmLogoutFinal.addEventListener('click', () => {
+      const action = pendingLogoutAction;
+      closeLogoutConfirmModal();
+      if (typeof action === 'function') action();
+    });
+  }
+  if (modalLogoutConfirm) {
+    modalLogoutConfirm.addEventListener('click', (e) => {
+      if (e.target === modalLogoutConfirm) closeLogoutConfirmModal();
+    });
+  }
+
   const btnAdminLogout = document.getElementById('btnAdminLogout');
   if (btnAdminLogout) {
     btnAdminLogout.addEventListener('click', () => {
-      stopMonitoringAutoRefresh();
-      try { localStorage.removeItem('cbt_active_admin_tab'); } catch (e) {}
-      window.cbtAdmin.logout();
-      showView('login');
+      openLogoutConfirmModal('admin', () => {
+        stopMonitoringAutoRefresh();
+        try { localStorage.removeItem('cbt_active_admin_tab'); } catch (e) {}
+        window.cbtAdmin.logout();
+        showView('login');
+      });
     });
   }
 
@@ -1621,7 +1718,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nameDisp) {
         nameDisp.innerText = isAdmin
           ? 'Selamat Datang, Admin!'
-          : `Selamat Datang, ${currentTeacher.name}!`;
+          : `Hallo, ${currentTeacher.name}! 👋`;
       }
       if (roleBadge) {
         roleBadge.className = 'hidden';
