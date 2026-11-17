@@ -1618,19 +1618,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const nameDisp = document.getElementById('adminTeacherNameDisplay');
       const roleBadge = document.getElementById('adminRoleBadge');
       const subjDisp = document.getElementById('adminSubjectDisplay');
-      if (nameDisp) nameDisp.innerText = `Panel: ${currentTeacher.name}`;
+      if (nameDisp) {
+        nameDisp.innerText = isAdmin
+          ? 'Selamat Datang, Admin!'
+          : `Selamat Datang, ${currentTeacher.name}!`;
+      }
       if (roleBadge) {
-        roleBadge.innerText = isAdmin ? 'Proktor Utama / Admin' : 'Guru Mata Pelajaran';
-        roleBadge.className = isAdmin
-          ? 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-200'
-          : 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 border border-blue-200';
+        roleBadge.className = 'hidden';
       }
       if (subjDisp) {
         const parsedClasses = currentTeacher.classes && window.cbtAdmin ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
         const classInfo = parsedClasses.length > 0 ? ` • Kelas: ${parsedClasses.join(', ')}` : '';
         subjDisp.innerText = isAdmin
-          ? `Status: Hak Akses Penuh (Administrator Sistem)`
-          : `Mata Pelajaran: ${currentTeacher.subject}${classInfo} • NIP: ${currentTeacher.nip}`;
+          ? 'Administrator Sistem'
+          : `Guru Mata Pelajaran • ${currentTeacher.subject}${classInfo}`;
       }
 
       if (tabMonitoringBtn) tabMonitoringBtn.classList.remove('hidden');
