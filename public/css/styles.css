@@ -860,5 +860,152 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
   html.dark .naskah-paper-sheet .cbt-print-footer-note {
     color: #1d4ed8 !important;
   }
-}
 
+  /* ===================== SMOOTH TAB TRANSITIONS & RESULTS LOADING SHIMMER ===================== */
+  @keyframes cbtTabEnter {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.996);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes cbtCardStagger {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes cbtResultRowIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes cbtKpiPop {
+    0% {
+      opacity: 0.35;
+      transform: translateY(4px) scale(0.95);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes cbtShimmerSweep {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  #adminTabsBar .admin-tab-btn {
+    transition:
+      background 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 180ms ease,
+      border-color 200ms ease,
+      box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+
+  @media (min-width: 1024px) {
+    #adminTabsBar .admin-tab-btn:hover {
+      transform: translateX(3px);
+    }
+  }
+
+  #adminTabsBar .admin-tab-btn:active {
+    transform: scale(0.985);
+  }
+
+  .admin-tab-pane.cbt-tab-entering {
+    animation: cbtTabEnter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    will-change: opacity, transform;
+  }
+
+  .admin-tab-pane.cbt-tab-entering > *:nth-child(1) {
+    animation: cbtCardStagger 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 0ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > *:nth-child(2) {
+    animation: cbtCardStagger 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 40ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > *:nth-child(3) {
+    animation: cbtCardStagger 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 80ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > *:nth-child(4) {
+    animation: cbtCardStagger 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 115ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > *:nth-child(n+5) {
+    animation: cbtCardStagger 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 145ms;
+  }
+
+  .cbt-skeleton-bar {
+    display: inline-block;
+    border-radius: 9999px;
+    background: linear-gradient(100deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+    background-size: 220% 100%;
+    animation: cbtShimmerSweep 1.25s ease-in-out infinite;
+  }
+
+  html.dark .cbt-skeleton-bar {
+    background: linear-gradient(100deg, #161d42 25%, #273370 50%, #161d42 75%);
+    background-size: 220% 100%;
+  }
+
+  #tabResults.cbt-results-loading #kpiAvgScore,
+  #tabResults.cbt-results-loading #kpiHighestScore,
+  #tabResults.cbt-results-loading #kpiLowestScore,
+  #tabResults.cbt-results-loading #kpiTotalStudents {
+    opacity: 0.55;
+    transform: scale(0.98);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .cbt-kpi-pop {
+    animation: cbtKpiPop 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  #adminResultsTbody tr.cbt-result-row-in {
+    animation: cbtResultRowIn 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(min(var(--row-idx, 0), 12) * 20ms);
+  }
+
+  #studentConsultationPanel.cbt-consult-reveal:not(.hidden) {
+    animation: cbtCardStagger 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #adminTabsBar .admin-tab-btn,
+    .admin-tab-pane.cbt-tab-entering,
+    .admin-tab-pane.cbt-tab-entering > *,
+    .cbt-skeleton-bar,
+    .cbt-kpi-pop,
+    #adminResultsTbody tr.cbt-result-row-in,
+    #studentConsultationPanel.cbt-consult-reveal:not(.hidden) {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+}

@@ -1812,8 +1812,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===================== ADMIN TABS SWITCHER & RBAC =====================
   const adminTabButtons = document.querySelectorAll('.admin-tab-btn');
+  let cbtTabEnterTimer = null;
+  let cbtResultsLoadSeq = 0;
 
-  function switchAdminTab(targetTab) {
+  function animateAdminTabPane(targetPane) {
+    if (!targetPane) return;
+    document.querySelectorAll('.admin-tab-pane.cbt-tab-entering').forEach(p => {
+      p.classList.remove('cbt-tab-entering');
+    });
+    if (cbtTabEnterTimer) {
+      clearTimeout(cbtTabEnterTimer);
+      cbtTabEnterTimer = null;
+    }
+    void targetPane.offsetWidth;
+    targetPane.classList.add('cbt-tab-entering');
+    cbtTabEnterTimer = setTimeout(() => {
+      targetPane.classList.remove('cbt-tab-entering');
+      cbtTabEnterTimer = null;
+    }, 480);
+  }
+
+  function clearResultsLoadingState() {
+    const tabRes = document.getElementById('tabResults');
+    if (tabRes) tabRes.classList.remove('cbt-results-loading');
+  }
+
+  function showResultsLoadingSkeleton(rowCount = 6) {
+    const tabRes = document.getElementById('tabResults');
+    const tbody = document.getElementById('adminResultsTbody');
+    const emptyRow = document.getElementById('adminResultsEmpty');
+    if (tabRes) tabRes.classList.add('cbt-results-loading');
+    if (emptyRow) emptyRow.classList.add('hidden');
+    if (!tbody) return;
+
+    const widths = [
+      { name: 'w-32', mapel: 'w-20', score: 'w-10', chips: 4 },
+      { name: 'w-40', mapel: 'w-24', score: 'w-11', chips: 5 },
+      { name: 'w-28', mapel: 'w-16', score: 'w-10', chips: 4 },
+      { name: 'w-36', mapel: 'w-20', score: 'w-11', chips: 5 },
+      { name: 'w-32', mapel: 'w-24', score: 'w-10', chips: 3 },
+      { name: 'w-40', mapel: 'w-20', score: 'w-11', chips: 4 }
+    ];
+
+    tbody.innerHTML = Array.from({ length: rowCount }, (_, i) => {
+      const cfg = widths[i % widths.length];
+      const chipsHtml = Array.from({ length: cfg.chips }, () =>
+        `<span class="cbt-skeleton-bar h-4 w-10 rounded-md"></span>`
+      ).join('');
+      return `
+        <tr class="border-b border-slate-100 dark:border-slate-800/80">
+          <td class="px-2.5 py-3 text-center"><span class="cbt-skeleton-bar w-6 h-6 rounded-full"></span></td>
+          <td class="px-2.5 py-3">
+            <div class="flex flex-col gap-1.5">
+              <span class="cbt-skeleton-bar h-3.5 ${cfg.name}"></span>
+              <span class="cbt-skeleton-bar h-2.5 ${cfg.mapel}"></span>
+            </div>
+          </td>
+          <td class="px-2.5 py-3"><span class="cbt-skeleton-bar h-3 w-20"></span></td>
+          <td class="px-2.5 py-3"><span class="cbt-skeleton-bar h-5 w-16 rounded-md"></span></td>
+          <td class="px-2.5 py-3 text-center"><span class="cbt-skeleton-bar h-6 ${cfg.score} rounded-lg"></span></td>
+          <td class="px-2.5 py-3"><div class="flex flex-wrap gap-1">${chipsHtml}</div></td>
+          <td class="px-2.5 py-3"><span class="cbt-skeleton-bar h-3 w-24"></span></td>
+          <td class="px-2.5 py-3 text-center"><span class="cbt-skeleton-bar h-3.5 w-16"></span></td>
+          <td class="px-2.5 py-3"><span class="cbt-skeleton-bar h-5 w-20 rounded"></span></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function triggerResultsTabLoadTransition() {
+    const seq = ++cbtResultsLoadSeq;
+    showResultsLoadingSkeleton(6);
+
+    const hasCloud = Boolean(window.supabaseSync && window.supabaseSync.isCloudConfigured());
+    if (!hasCloud) {
+      setTimeout(() => {
+        if (seq !== cbtResultsLoadSeq) return;
+        renderAdminAnalyticsAndResults({ animateRows: true, _seq: seq });
+      }, 170);
+      return;
+    }
+
+    let revealed = false;
+    const revealOnce = () => {
+      if (revealed || seq !== cbtResultsLoadSeq) return;
+      revealed = true;
+      renderAdminAnalyticsAndResults({ animateRows: true, _seq: seq });
+    };
+
+    const minDelayPromise = new Promise(resolve => setTimeout(resolve, 190));
+    const fallbackTimer = setTimeout(revealOnce, 650);
+
+    Promise.all([
+      window.supabaseSync.fetchCloudResults().catch(() => null),
+      minDelayPromise
+    ]).then(([cloudRes]) => {
+      clearTimeout(fallbackTimer);
+      if (seq !== cbtResultsLoadSeq) return;
+      if (!revealed) {
+        revealOnce();
+      } else if (cloudRes && cloudRes.success) {
+        renderAdminAnalyticsAndResults({ animateRows: false, _seq: seq });
+      }
+    });
+  }
+
+  function switchAdminTab(targetTab, options = {}) {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
 
@@ -1838,10 +1942,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }${isHidden ? ' hidden' : ''}`;
     });
 
+    let activePane = null;
     allTabPanes.forEach(pane => {
-      if (pane.id === targetTab) pane.classList.remove('hidden');
-      else pane.classList.add('hidden');
+      if (pane.id === targetTab) {
+        pane.classList.remove('hidden');
+        activePane = pane;
+      } else {
+        pane.classList.add('hidden');
+        pane.classList.remove('cbt-tab-entering');
+      }
     });
+
+    if (activePane) {
+      animateAdminTabPane(activePane);
+    }
 
     if (targetTab !== 'tabMonitoring') {
       stopMonitoringAutoRefresh();
@@ -1851,7 +1965,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetTab === 'tabDashboard') {
         renderAdminOverviewDashboard();
       } else if (targetTab === 'tabResults') {
-        renderAdminAnalyticsAndResults();
+        if (options.skipSkeleton) {
+          renderAdminAnalyticsAndResults({ animateRows: true });
+        } else {
+          triggerResultsTabLoadTransition();
+        }
       } else if (targetTab === 'tabMonitoring') {
         setupMonitoringControls();
         renderMonitoringDashboard(true);
@@ -1949,7 +2067,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabBackupPane) tabBackupPane.classList.add('hidden');
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
         const allowedGuruTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabQuestions'];
-        switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabDashboard');
+        switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
       } else {
         if (tabSchedulesBtn) tabSchedulesBtn.classList.remove('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.remove('hidden');
@@ -1959,7 +2077,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabBackupBtn) tabBackupBtn.classList.remove('hidden');
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
         const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
-        switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard');
+        switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
       }
     }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
@@ -2801,25 +2919,25 @@ document.addEventListener('DOMContentLoaded', () => {
     subjSelect.onchange = (e) => {
       window.cbtAdmin.setSubjectFilter(e.target.value);
       selectedConsultAttemptIdx = 0;
-      renderAdminAnalyticsAndResults();
+      renderAdminAnalyticsAndResults({ animateRows: true });
     };
 
     classSelect.onchange = (e) => {
       window.cbtAdmin.setClassFilter(e.target.value);
       selectedConsultAttemptIdx = 0;
-      renderAdminAnalyticsAndResults();
+      renderAdminAnalyticsAndResults({ animateRows: true });
     };
 
     const searchResultsInput = document.getElementById('searchResultsInput');
     if (searchResultsInput) {
-      searchResultsInput.oninput = () => renderAdminAnalyticsAndResults();
+      searchResultsInput.oninput = () => renderAdminAnalyticsAndResults({ animateRows: false });
     }
 
     const filterResultsStudent = document.getElementById('filterResultsStudent');
     if (filterResultsStudent) {
       filterResultsStudent.onchange = () => {
         selectedConsultAttemptIdx = 0;
-        renderAdminAnalyticsAndResults();
+        renderAdminAnalyticsAndResults({ animateRows: true });
       };
     }
 
@@ -2883,7 +3001,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const wasHidden = panel.classList.contains('hidden');
     panel.classList.remove('hidden');
+    if (wasHidden) {
+      panel.classList.remove('cbt-consult-reveal');
+      void panel.offsetWidth;
+      panel.classList.add('cbt-consult-reveal');
+    }
     if (selectedConsultAttemptIdx >= attempts.length) selectedConsultAttemptIdx = 0;
     const activeRecord = attempts[selectedConsultAttemptIdx] || attempts[0];
 
@@ -2966,7 +3090,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ===================== TAB 1: REKAP NILAI & EVALUASI JAWABAN PER NOMOR =====================
-  function renderAdminAnalyticsAndResults() {
+  function triggerResultsKpiPop() {
+    ['kpiAvgScore', 'kpiHighestScore', 'kpiLowestScore', 'kpiTotalStudents'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('cbt-kpi-pop');
+      void el.offsetWidth;
+      el.classList.add('cbt-kpi-pop');
+    });
+  }
+
+  function renderAdminAnalyticsAndResults(options = {}) {
+    if (!options._seq) {
+      cbtResultsLoadSeq += 1;
+    }
+    const animateRows = options.animateRows !== false;
+    clearResultsLoadingState();
+
     const analytics = window.cbtAdmin.getExamAnalytics();
     const sortedResults = window.cbtAdmin.getAllResultsSorted();
     const searchQuery = (document.getElementById('searchResultsInput')?.value || '').trim().toLowerCase();
@@ -2981,6 +3121,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('kpiLowestStudent').innerText = analytics.lowestStudent;
     document.getElementById('kpiTotalStudents').innerText = `${analytics.totalStudents} Siswa`;
     document.getElementById('kpiPassRate').innerText = `Ketuntasan (≥75): ${analytics.passRatePercentage}%`;
+
+    if (animateRows) {
+      triggerResultsKpiPop();
+    }
 
     const tbody = document.getElementById('adminResultsTbody');
     const emptyRow = document.getElementById('adminResultsEmpty');
@@ -3020,7 +3164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (emptyRow) emptyRow.classList.add('hidden');
 
-    rankedResults.forEach(({ r, rank }) => {
+    rankedResults.forEach(({ r, rank }, rowIdx) => {
       let rankBadge = `<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black text-xs inline-flex items-center justify-center">${rank}</span>`;
       if (rank === 1) {
         rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-black text-xs inline-flex items-center justify-center shadow-xs">🥇 1</span>`;
@@ -3045,7 +3189,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const stuKey = getStudentConsultKey(r);
       const tr = document.createElement('tr');
-      tr.className = "border-b border-slate-100 hover:bg-slate-50 transition text-xs";
+      tr.className = `border-b border-slate-100 hover:bg-slate-50 transition text-xs${animateRows ? ' cbt-result-row-in' : ''}`;
+      if (animateRows) {
+        tr.style.setProperty('--row-idx', String(rowIdx));
+      }
       tr.innerHTML = `
         <td class="px-2.5 py-2.5 text-center font-bold">${rankBadge}</td>
         <td class="px-2.5 py-2.5">
@@ -6386,14 +6533,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       btnSyncCloudResults.disabled = true;
       btnSyncCloudResults.innerText = "Menyinkronkan...";
-      const res = await window.supabaseSync.fetchCloudResults();
-      btnSyncCloudResults.disabled = false;
-      btnSyncCloudResults.innerText = "🔄 Sinkron Cloud";
-      if (res.success) {
-        alert(`Sinkronisasi sukses! Mengambil ${res.count} data hasil ujian dari cloud.`);
-        renderAdminAnalyticsAndResults();
-      } else {
-        alert(`Gagal sinkron cloud: ${res.message}`);
+      showResultsLoadingSkeleton(6);
+      try {
+        const res = await window.supabaseSync.fetchCloudResults();
+        if (res.success) {
+          renderAdminAnalyticsAndResults({ animateRows: true });
+          alert(`Sinkronisasi sukses! Mengambil ${res.count} data hasil ujian dari cloud.`);
+        } else {
+          renderAdminAnalyticsAndResults({ animateRows: false });
+          alert(`Gagal sinkron cloud: ${res.message}`);
+        }
+      } catch (err) {
+        renderAdminAnalyticsAndResults({ animateRows: false });
+        alert(`Gagal sinkron cloud: ${err.message || err}`);
+      } finally {
+        btnSyncCloudResults.disabled = false;
+        btnSyncCloudResults.innerText = "🔄 Sinkron Cloud";
       }
     });
   }
@@ -6776,7 +6931,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderMonitoringDashboard(false);
     }
     if (resPane && !resPane.classList.contains('hidden')) {
-      renderAdminAnalyticsAndResults();
+      renderAdminAnalyticsAndResults({ animateRows: false });
     }
   }
 
