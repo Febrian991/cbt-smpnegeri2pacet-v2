@@ -1,5 +1,5 @@
 // Service Worker untuk PWA & Caching Responsif CBT
-const CACHE_NAME = 'cbt-pwa-v3.44';
+const CACHE_NAME = 'cbt-pwa-v3.45';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -12,7 +12,8 @@ const ASSETS_TO_CACHE = [
   './js/admin.js',
   './js/app.js',
   './manifest.json',
-  './icons/icon.svg'
+  './icons/icon.svg',
+  './assets/dev-emblem-mf.png'
 ];
 
 self.addEventListener('install', (event) => {
