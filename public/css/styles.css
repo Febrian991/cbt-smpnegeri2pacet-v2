@@ -179,168 +179,489 @@ body.exam-locked img {
 }
 
 /* ==========================================================================
-   ERGONOMIC DARK MODE (Tailwind class="dark" + Dynamic Content Surfaces)
-   Soft Slate Palette (#0f172a / #1e293b) for Low-Light Classroom Comfort
+   MIDNIGHT NAVY & NEON MAGENTA-VIOLET DARK MODE
+   Canvas: #070817 | Card: #0e112a | Elevated: #161b3d | Hover/Pill: #21295c
+   Accents: Magenta #f4177b | Violet #9b2cf5 | Coral #ff6b52 | Gold #fdbb2d
    ========================================================================== */
 @media screen {
   html.dark body {
-    background-color: #0b1120;
-    color: #e2e8f0;
+    background:
+      radial-gradient(circle at 12% 8%, rgba(155, 44, 245, 0.11), transparent 36%),
+      radial-gradient(circle at 88% 84%, rgba(244, 23, 123, 0.08), transparent 34%),
+      #070817 !important;
+    background-color: #070817 !important;
+    color: #f8fafc !important;
   }
 
-  html.dark .bg-white:not([class*="bg-gradient-"]) {
-    background-color: #111827 !important;
+  html.dark #appTopHeader {
+    background: linear-gradient(90deg, rgba(11, 13, 36, 0.96) 0%, rgba(18, 17, 48, 0.96) 55%, rgba(28, 15, 56, 0.96) 100%) !important;
+    border-bottom: 1px solid rgba(155, 44, 245, 0.22) !important;
+    box-shadow: 0 8px 28px -10px rgba(4, 5, 18, 0.85) !important;
   }
 
-  html.dark .bg-slate-50:not([class*="bg-gradient-"]),
-  html.dark .bg-slate-50\/40:not([class*="bg-gradient-"]),
-  html.dark .bg-slate-50\/60:not([class*="bg-gradient-"]) {
-    background-color: #1e293b !important;
+  /* Login Portal Left Showcase Column in Dark Mode */
+  html.dark #viewLogin .lg\:col-span-6.bg-gradient-to-br {
+    background: linear-gradient(145deg, #0b0e28 0%, #171444 52%, #311056 100%) !important;
   }
 
-  html.dark .bg-slate-100:not([class*="bg-gradient-"]) {
-    background-color: #1e293b !important;
+  /* Primary Cards, Modals & Question Surfaces */
+  html.dark .bg-white:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .dark\:bg-slate-900:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .dark\:bg-slate-900\/95:not([class*="bg-gradient-"]):not(.naskah-paper-sheet) {
+    background-color: #0e112a !important;
   }
 
-  html.dark .border-slate-100,
-  html.dark .border-slate-200,
-  html.dark .border-slate-200\/80,
-  html.dark .border-slate-200\/70,
-  html.dark .border-slate-200\/60,
-  html.dark .border-slate-300 {
-    border-color: #334155 !important;
+  /* Elevated Inner Surfaces, Secondary Tiles & Pill Highlights */
+  html.dark .bg-slate-50:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-50\/40:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-50\/60:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-50\/70:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-50\/80:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-100:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .dark\:bg-slate-800:not([class*="bg-gradient-"]),
+  html.dark .dark\:bg-slate-800\/60:not([class*="bg-gradient-"]),
+  html.dark .dark\:bg-slate-800\/70:not([class*="bg-gradient-"]),
+  html.dark .dark\:bg-slate-800\/75:not([class*="bg-gradient-"]),
+  html.dark .dark\:bg-slate-800\/80:not([class*="bg-gradient-"]) {
+    background-color: #161b3d !important;
   }
 
-  html.dark .text-slate-900 {
-    color: #f1f5f9 !important;
+  html.dark .bg-slate-200:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .bg-slate-200\/80:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .dark\:bg-slate-700:not([class*="bg-gradient-"]),
+  html.dark .hover\:bg-white:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .hover\:bg-slate-50:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .hover\:bg-slate-50\/70:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .hover\:bg-slate-50\/80:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .hover\:bg-slate-100:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .hover\:bg-slate-200:hover:not([class*="bg-gradient-"]):not(.naskah-paper-sheet),
+  html.dark .dark\:hover\:bg-slate-800:hover:not([class*="bg-gradient-"]),
+  html.dark .dark\:hover\:bg-slate-700:hover:not([class*="bg-gradient-"]) {
+    background-color: #21295c !important;
   }
 
-  html.dark .text-slate-800 {
-    color: #e2e8f0 !important;
+  /* Soft Indigo Hairline Borders */
+  html.dark .border-slate-100:not(.naskah-paper-sheet),
+  html.dark .border-slate-200:not(.naskah-paper-sheet),
+  html.dark .border-slate-200\/80:not(.naskah-paper-sheet),
+  html.dark .border-slate-200\/70:not(.naskah-paper-sheet),
+  html.dark .border-slate-200\/60:not(.naskah-paper-sheet),
+  html.dark .border-slate-300:not(.naskah-paper-sheet),
+  html.dark .hover\:border-slate-300:hover:not(.naskah-paper-sheet),
+  html.dark .dark\:border-slate-800:not(.naskah-paper-sheet),
+  html.dark .dark\:border-slate-700:not(.naskah-paper-sheet),
+  html.dark .dark\:border-slate-600:not(.naskah-paper-sheet),
+  html.dark .dark\:divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(148, 163, 248, 0.2) !important;
   }
 
-  html.dark .text-slate-700 {
-    color: #cbd5e1 !important;
+  /* Crisp Typography (High-Contrast White + Bright Periwinkle Subtitles for Small Text) */
+  html.dark .text-slate-900:not(.naskah-paper-sheet),
+  html.dark .dark\:text-slate-100:not(.naskah-paper-sheet),
+  html.dark .dark\:text-white:not(.naskah-paper-sheet),
+  html.dark .hover\:text-slate-900:hover:not(.naskah-paper-sheet),
+  html.dark .hover\:text-slate-800:hover:not(.naskah-paper-sheet),
+  html.dark .hover\:text-slate-700:hover:not(.naskah-paper-sheet),
+  html.dark .dark\:hover\:text-white:hover:not(.naskah-paper-sheet) {
+    color: #ffffff !important;
   }
 
-  html.dark .text-slate-600 {
-    color: #94a3b8 !important;
+  html.dark .text-slate-800:not(.naskah-paper-sheet),
+  html.dark .dark\:text-slate-200:not(.naskah-paper-sheet) {
+    color: #eef2ff !important;
   }
 
-  html.dark .text-slate-500,
-  html.dark .text-slate-400 {
-    color: #94a3b8 !important;
+  html.dark .text-slate-700:not(.naskah-paper-sheet),
+  html.dark .text-slate-300:not(.naskah-paper-sheet),
+  html.dark .dark\:text-slate-300:not(.naskah-paper-sheet) {
+    color: #dce3fa !important;
   }
 
+  html.dark .text-slate-600:not(.naskah-paper-sheet) {
+    color: #cdd6f6 !important;
+  }
+
+  html.dark .text-slate-500:not(.naskah-paper-sheet),
+  html.dark .text-slate-400:not(.naskah-paper-sheet),
+  html.dark .dark\:text-slate-400:not(.naskah-paper-sheet),
+  html.dark .dark\:text-slate-500:not(.naskah-paper-sheet) {
+    color: #b8c3ec !important;
+  }
+
+  html.dark tbody tr:nth-child(even) {
+    background-color: rgba(139, 92, 246, 0.05);
+  }
+
+  /* Midnight Sidebar + Signature Magenta-to-Violet Active Pill */
+  html.dark #adminTabsBar {
+    background-color: #0c0f26 !important;
+    border-color: rgba(139, 92, 246, 0.2) !important;
+    box-shadow: 0 16px 36px -14px rgba(3, 4, 16, 0.85) !important;
+  }
+
+  html.dark #adminTabsBar .admin-tab-btn:not(.from-\[\#124196\]) {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    color: #c2ccf0 !important;
+  }
+
+  html.dark #adminTabsBar .admin-tab-btn:not(.from-\[\#124196\]):hover {
+    background-color: #1a204a !important;
+    color: #ffffff !important;
+  }
+
+  html.dark .admin-tab-btn.from-\[\#124196\],
+  html.dark .dash-jump-btn.from-\[\#124196\],
+  html.dark #tabLoginStudent.bg-\[\#0066eb\],
+  html.dark #tabLoginAdmin.bg-\[\#0066eb\],
+  html.dark button.bg-blue-600,
+  html.dark button.bg-\[\#0066eb\] {
+    background: #f4177b !important;
+    background-image: linear-gradient(135deg, #f4177b 0%, #9b2cf5 100%) !important;
+    color: #ffffff !important;
+    border-color: transparent !important;
+    box-shadow: 0 10px 26px -8px rgba(244, 23, 123, 0.55) !important;
+  }
+
+  html.dark button.bg-blue-600:hover,
+  html.dark button.bg-\[\#0066eb\]:hover {
+    filter: brightness(1.08);
+  }
+
+  /* Sleek Midnight KPI Cards (#tabDashboard & #tabResults) with Neon Accents */
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div {
+    background: #101432 !important;
+    background-image: none !important;
+    border: 1px solid rgba(155, 44, 245, 0.24) !important;
+    box-shadow: 0 16px 32px -14px rgba(3, 4, 16, 0.85) !important;
+    color: #ffffff !important;
+  }
+
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div p,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div p {
+    color: #c7d0f2 !important;
+  }
+
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(1) > div:first-child,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(1) > div:first-child {
+    background: linear-gradient(135deg, rgba(155, 44, 245, 0.26), rgba(108, 93, 211, 0.24)) !important;
+    color: #dcb4ff !important;
+    border: 1px solid rgba(155, 44, 245, 0.5);
+    box-shadow: 0 0 18px -6px rgba(155, 44, 245, 0.55) !important;
+  }
+
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(2) > div:first-child,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(2) > div:first-child {
+    background: linear-gradient(135deg, rgba(244, 23, 123, 0.26), rgba(155, 44, 245, 0.22)) !important;
+    color: #ff85c0 !important;
+    border: 1px solid rgba(244, 23, 123, 0.5);
+    box-shadow: 0 0 18px -6px rgba(244, 23, 123, 0.55) !important;
+  }
+
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(3) > div:first-child,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(3) > div:first-child {
+    background: linear-gradient(135deg, rgba(255, 107, 82, 0.25), rgba(244, 23, 123, 0.2)) !important;
+    color: #ffa68e !important;
+    border: 1px solid rgba(255, 107, 82, 0.5);
+    box-shadow: 0 0 18px -6px rgba(255, 107, 82, 0.55) !important;
+  }
+
+  html.dark #tabDashboard > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(4) > div:first-child,
+  html.dark #tabResults > .grid.grid-cols-2.lg\:grid-cols-4 > div:nth-child(4) > div:first-child {
+    background: linear-gradient(135deg, rgba(253, 187, 45, 0.24), rgba(255, 107, 82, 0.2)) !important;
+    color: #ffe07d !important;
+    border: 1px solid rgba(253, 187, 45, 0.5);
+    box-shadow: 0 0 18px -6px rgba(253, 187, 45, 0.5) !important;
+  }
+
+  /* Form Controls */
   html.dark input:not([type="checkbox"]):not([type="radio"]),
   html.dark select,
-  html.dark textarea {
-    background-color: #1e293b !important;
-    color: #f1f5f9 !important;
-    border-color: #475569 !important;
+  html.dark textarea,
+  html.dark .focus\:bg-white:focus {
+    background-color: #141836 !important;
+    color: #ffffff !important;
+    border-color: rgba(148, 163, 248, 0.25) !important;
+  }
+
+  html.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+  html.dark select:focus,
+  html.dark textarea:focus {
+    background-color: #181d42 !important;
+    border-color: #f4177b !important;
+    box-shadow: 0 0 0 3px rgba(244, 23, 123, 0.24) !important;
   }
 
   html.dark input::placeholder,
   html.dark textarea::placeholder {
-    color: #64748b !important;
+    color: #9aa7d6 !important;
+  }
+
+  /* Exam Question Options & Palette */
+  html.dark .option-label {
+    background-color: #111533;
+    border-color: rgba(139, 92, 246, 0.22);
   }
 
   html.dark .option-label:hover {
-    border-color: #60a5fa !important;
-    background-color: #1e293b !important;
+    border-color: #9b2cf5 !important;
+    background-color: #191f49 !important;
   }
 
   html.dark .option-label.selected {
-    border-color: #3b82f6 !important;
-    background-color: rgba(30, 58, 138, 0.45) !important;
+    border-color: #f4177b !important;
+    background-color: rgba(244, 23, 123, 0.18) !important;
+    box-shadow: 0 0 0 1px rgba(244, 23, 123, 0.38), 0 8px 20px -10px rgba(244, 23, 123, 0.45);
   }
 
   html.dark .q-btn.unanswered {
-    background-color: #1e293b !important;
-    color: #e2e8f0 !important;
-    border-color: #475569 !important;
+    background-color: #161b3d !important;
+    color: #e4e9fb !important;
+    border-color: rgba(139, 92, 246, 0.26) !important;
+  }
+
+  html.dark .q-btn.current {
+    outline-color: #f4177b;
   }
 
   html.dark .kbd-hint {
-    background-color: #0f172a;
-    border-color: #475569;
-    color: #94a3b8;
+    background-color: #0b0e24 !important;
+    border-color: rgba(155, 44, 245, 0.36) !important;
+    color: #d2dbf8 !important;
   }
 
+  html.dark #btnNextQuestion .kbd-hint {
+    background-color: rgba(255, 255, 255, 0.18) !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
+    color: #ffffff !important;
+  }
+
+  /* Semantic Status Surfaces, Badges, Opacity Text & Hover Buttons */
   html.dark .bg-blue-50,
-  html.dark .bg-blue-50\/60 {
-    background-color: rgba(30, 58, 138, 0.32) !important;
+  html.dark .bg-blue-50\/60,
+  html.dark .bg-blue-50\/70,
+  html.dark .bg-blue-100,
+  html.dark .bg-sky-50,
+  html.dark .bg-sky-100,
+  html.dark .dark\:bg-blue-950\/60,
+  html.dark .dark\:bg-sky-950\/60 {
+    background-color: rgba(123, 47, 247, 0.2) !important;
+  }
+
+  html.dark .hover\:bg-blue-50:hover,
+  html.dark .hover\:bg-blue-100:hover {
+    background-color: rgba(123, 47, 247, 0.32) !important;
   }
 
   html.dark .text-blue-900,
   html.dark .text-blue-800,
-  html.dark .text-blue-700 {
-    color: #93c5fd !important;
+  html.dark .text-blue-700,
+  html.dark .text-blue-600,
+  html.dark .text-blue-500,
+  html.dark .text-\[\#0052cc\],
+  html.dark .text-sky-800,
+  html.dark .text-sky-700,
+  html.dark .dark\:text-blue-300,
+  html.dark .dark\:text-sky-300,
+  html.dark .hover\:text-blue-800:hover,
+  html.dark .hover\:text-blue-700:hover {
+    color: #d2c4ff !important;
   }
 
   html.dark .border-blue-200,
-  html.dark .border-blue-300 {
-    border-color: rgba(59, 130, 246, 0.4) !important;
+  html.dark .border-blue-300,
+  html.dark .border-sky-200,
+  html.dark .dark\:border-blue-800\/60,
+  html.dark .dark\:border-sky-800\/60 {
+    border-color: rgba(155, 44, 245, 0.4) !important;
   }
 
   html.dark .bg-indigo-50,
-  html.dark .bg-indigo-50\/70 {
-    background-color: rgba(49, 46, 129, 0.35) !important;
+  html.dark .bg-indigo-50\/70,
+  html.dark .bg-indigo-100,
+  html.dark .bg-violet-50,
+  html.dark .bg-purple-50,
+  html.dark .bg-purple-100,
+  html.dark .dark\:bg-purple-950\/50,
+  html.dark .dark\:bg-purple-950\/60 {
+    background-color: rgba(155, 44, 245, 0.22) !important;
+  }
+
+  html.dark .hover\:bg-indigo-100:hover,
+  html.dark .hover\:bg-purple-100:hover {
+    background-color: rgba(155, 44, 245, 0.34) !important;
   }
 
   html.dark .text-indigo-950,
   html.dark .text-indigo-900,
-  html.dark .text-indigo-700 {
-    color: #c7d2fe !important;
+  html.dark .text-indigo-800,
+  html.dark .text-indigo-700,
+  html.dark .text-indigo-600,
+  html.dark .text-violet-700,
+  html.dark .text-purple-950,
+  html.dark .text-purple-900,
+  html.dark .text-purple-700,
+  html.dark .text-purple-600,
+  html.dark .hover\:text-indigo-800:hover {
+    color: #e5c6ff !important;
   }
 
-  html.dark .bg-red-50 {
-    background-color: rgba(127, 29, 29, 0.35) !important;
+  html.dark .border-indigo-200,
+  html.dark .border-indigo-200\/80,
+  html.dark .border-indigo-300,
+  html.dark .border-violet-200,
+  html.dark .border-purple-200,
+  html.dark .dark\:border-indigo-800,
+  html.dark .dark\:border-purple-800\/60 {
+    border-color: rgba(168, 85, 247, 0.42) !important;
+  }
+
+  html.dark .bg-teal-50,
+  html.dark .bg-teal-100,
+  html.dark .bg-cyan-50,
+  html.dark .bg-cyan-100 {
+    background-color: rgba(56, 189, 248, 0.16) !important;
+  }
+
+  html.dark .hover\:bg-teal-100:hover,
+  html.dark .hover\:bg-cyan-100:hover {
+    background-color: rgba(56, 189, 248, 0.28) !important;
+  }
+
+  html.dark .text-teal-800,
+  html.dark .text-teal-700,
+  html.dark .text-cyan-800,
+  html.dark .text-cyan-700 {
+    color: #93e2fe !important;
+  }
+
+  html.dark .border-teal-200,
+  html.dark .border-cyan-200 {
+    border-color: rgba(56, 189, 248, 0.36) !important;
+  }
+
+  html.dark .bg-red-50,
+  html.dark .bg-red-100,
+  html.dark .bg-rose-50,
+  html.dark .bg-rose-100,
+  html.dark .dark\:bg-rose-900\/40,
+  html.dark .dark\:bg-rose-900\/50,
+  html.dark .dark\:bg-rose-950\/60 {
+    background-color: rgba(244, 23, 123, 0.2) !important;
+  }
+
+  html.dark .hover\:bg-red-50:hover,
+  html.dark .hover\:bg-red-100:hover,
+  html.dark .hover\:bg-rose-50:hover {
+    background-color: rgba(244, 23, 123, 0.32) !important;
   }
 
   html.dark .text-red-900,
   html.dark .text-red-800,
   html.dark .text-red-700,
-  html.dark .text-red-600 {
-    color: #fca5a5 !important;
+  html.dark .text-red-600,
+  html.dark .text-red-500,
+  html.dark .text-red-400,
+  html.dark .text-rose-800,
+  html.dark .text-rose-700,
+  html.dark .text-rose-700\/80,
+  html.dark .text-rose-600,
+  html.dark .dark\:text-rose-300,
+  html.dark .dark\:text-rose-400,
+  html.dark .hover\:text-red-800:hover,
+  html.dark .hover\:text-red-700:hover,
+  html.dark .hover\:text-red-600:hover,
+  html.dark .hover\:text-rose-600:hover {
+    color: #ff9bc5 !important;
   }
 
-  html.dark .bg-amber-50 {
-    background-color: rgba(120, 53, 15, 0.35) !important;
+  html.dark .border-rose-200,
+  html.dark .border-rose-300,
+  html.dark .border-red-200,
+  html.dark .border-red-300,
+  html.dark .dark\:border-rose-700\/70,
+  html.dark .dark\:border-rose-800\/60 {
+    border-color: rgba(244, 23, 123, 0.4) !important;
   }
 
+  html.dark .bg-amber-50,
+  html.dark .bg-amber-100,
+  html.dark .bg-orange-50,
+  html.dark .bg-orange-100,
+  html.dark .dark\:bg-amber-900\/40,
+  html.dark .dark\:bg-amber-950\/60,
+  html.dark .dark\:bg-orange-950\/60 {
+    background-color: rgba(253, 187, 45, 0.18) !important;
+  }
+
+  html.dark .hover\:bg-amber-100:hover {
+    background-color: rgba(253, 187, 45, 0.3) !important;
+  }
+
+  html.dark .text-amber-900,
   html.dark .text-amber-800,
-  html.dark .text-amber-700 {
-    color: #fcd34d !important;
+  html.dark .text-amber-800\/80,
+  html.dark .text-amber-700,
+  html.dark .text-amber-600,
+  html.dark .text-orange-800,
+  html.dark .text-orange-700,
+  html.dark .dark\:text-amber-300,
+  html.dark .dark\:text-amber-400,
+  html.dark .dark\:text-orange-300 {
+    color: #ffe07d !important;
+  }
+
+  html.dark .border-amber-200,
+  html.dark .border-amber-300,
+  html.dark .border-orange-200,
+  html.dark .dark\:border-amber-800\/60,
+  html.dark .dark\:border-orange-800\/60 {
+    border-color: rgba(253, 187, 45, 0.38) !important;
   }
 
   html.dark .bg-emerald-50,
-  html.dark .bg-emerald-100 {
-    background-color: rgba(6, 78, 59, 0.38) !important;
+  html.dark .bg-emerald-50\/60,
+  html.dark .bg-emerald-50\/70,
+  html.dark .bg-emerald-100,
+  html.dark .bg-green-50,
+  html.dark .dark\:bg-emerald-900\/40,
+  html.dark .dark\:bg-emerald-900\/50,
+  html.dark .dark\:bg-emerald-950\/60 {
+    background-color: rgba(16, 185, 129, 0.18) !important;
   }
 
+  html.dark .hover\:bg-emerald-100:hover {
+    background-color: rgba(16, 185, 129, 0.3) !important;
+  }
+
+  html.dark .text-emerald-800,
   html.dark .text-emerald-700,
-  html.dark .text-emerald-600 {
-    color: #6ee7b7 !important;
+  html.dark .text-emerald-700\/80,
+  html.dark .text-emerald-600,
+  html.dark .text-green-800,
+  html.dark .text-green-600,
+  html.dark .dark\:text-emerald-300,
+  html.dark .dark\:text-emerald-400 {
+    color: #7ef4c6 !important;
   }
 
-  html.dark .bg-purple-50,
-  html.dark .bg-purple-100 {
-    background-color: rgba(88, 28, 135, 0.35) !important;
-  }
-
-  html.dark .text-purple-700 {
-    color: #d8b4fe !important;
+  html.dark .border-emerald-200,
+  html.dark .border-emerald-300,
+  html.dark .border-green-200,
+  html.dark .dark\:border-emerald-700\/70,
+  html.dark .dark\:border-emerald-800\/60 {
+    border-color: rgba(16, 185, 129, 0.36) !important;
   }
 
   html.dark ::-webkit-scrollbar-track {
-    background: #0f172a;
+    background: #070817;
   }
   html.dark ::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: #232952;
   }
   html.dark ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+    background: #9b2cf5;
   }
 }
 
@@ -410,6 +731,16 @@ body.exam-locked img {
   body.printing-cards #printableCardsArea .exam-card-9x5 {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }
+  body.printing-cards #printableCardsArea .cbt-cards-page-sheet {
+    page-break-after: always !important;
+    break-after: page !important;
+    margin: 0 auto !important;
+    padding: 4mm 8mm !important;
+  }
+  body.printing-cards #printableCardsArea .cbt-cards-page-sheet:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
   }
 
   /* 2. CETAK REKAP LAPORAN RESMI GURU */

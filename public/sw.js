@@ -1,5 +1,5 @@
 // Service Worker untuk PWA & Caching Responsif CBT
-const CACHE_NAME = 'cbt-pwa-v3.30';
+const CACHE_NAME = 'cbt-pwa-v3.44';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -41,6 +41,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  try {
+    const reqUrl = new URL(event.request.url);
+    if (reqUrl.pathname.startsWith('/api/')) return;
+  } catch (e) {}
 
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request).then(res => res || caches.match('./index.html')))

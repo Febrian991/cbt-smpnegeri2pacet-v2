@@ -74,9 +74,16 @@ document.addEventListener('DOMContentLoaded', () => {
         switchAdminTab(savedTab);
       }
       if (!window.cbtAdmin.isSuperAdminUser()) {
-        syncFromCloud(false);
+        syncFromCloud(false, { publicOnly: false });
       }
       return;
+    }
+
+    if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
+      window.studentManager.scrubSensitiveDataForStudentMode();
+    }
+    if (window.examEngine && typeof window.examEngine.enterStudentPrivacyMode === 'function') {
+      window.examEngine.enterStudentPrivacyMode();
     }
 
     // 3. Jika siswa sedang di layar konfirmasi saat refresh, pertahankan layar konfirmasi
@@ -86,13 +93,13 @@ document.addEventListener('DOMContentLoaded', () => {
         tempStudent = JSON.parse(savedConfirm);
         populateConfirmView(tempStudent);
         showView('confirm');
-        syncFromCloud(false);
+        syncFromCloud(false, { publicOnly: true });
         return;
       }
     } catch (e) {}
 
     showView('login');
-    syncFromCloud(false);
+    syncFromCloud(false, { publicOnly: true });
 
     // Shortcut URL ?admin / #admin / #guru untuk Proktor & Guru
     const hashLower = (window.location.hash || '').toLowerCase();
@@ -108,15 +115,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!stateMap || typeof stateMap !== 'object') return false;
     let changed = false;
 
+    const isStaff = Boolean(window.cbtAdmin && window.cbtAdmin.isAuthenticated && window.cbtAdmin.getCurrentTeacher());
+    const isSuperAdmin = Boolean(isStaff && window.cbtAdmin.isSuperAdminUser());
+
     if (stateMap.cbt_school_config && typeof stateMap.cbt_school_config === 'object' && window.cbtAdmin) {
       window.cbtAdmin.saveSchoolConfig(stateMap.cbt_school_config, true);
       changed = true;
     }
-    if (Array.isArray(stateMap.cbt_teachers_list) && stateMap.cbt_teachers_list.length > 0 && window.cbtAdmin) {
+    if (isSuperAdmin && Array.isArray(stateMap.cbt_teachers_list) && stateMap.cbt_teachers_list.length > 0 && window.cbtAdmin) {
       window.cbtAdmin.saveTeachers(stateMap.cbt_teachers_list, true);
       changed = true;
     }
-    if (Array.isArray(stateMap.cbt_students_list) && stateMap.cbt_students_list.length > 0 && window.studentManager) {
+    if (isStaff && Array.isArray(stateMap.cbt_students_list) && stateMap.cbt_students_list.length > 0 && window.studentManager) {
       window.studentManager.saveStudents(stateMap.cbt_students_list, true);
       changed = true;
     }
@@ -124,8 +134,12 @@ document.addEventListener('DOMContentLoaded', () => {
       window.cbtAdmin.saveSchedules(stateMap.cbt_exam_schedules, true);
       changed = true;
     }
-    if (Array.isArray(stateMap.cbt_questions) && stateMap.cbt_questions.length > 0 && window.examEngine) {
-      window.examEngine.saveQuestions(stateMap.cbt_questions, true);
+    if (Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || stateMap.cbt_questions_migrated === true) && window.examEngine) {
+      if (typeof window.examEngine.applyRemoteQuestions === 'function') {
+        window.examEngine.applyRemoteQuestions(stateMap.cbt_questions);
+      } else {
+        window.examEngine.saveQuestions(stateMap.cbt_questions, true);
+      }
       changed = true;
     }
     if (stateMap.cbt_config && typeof stateMap.cbt_config === 'object' && window.examEngine) {
@@ -136,12 +150,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let cloudSyncPromise = null;
-  async function syncFromCloud(force = false) {
+  let cloudSyncPublicOnly = true;
+  async function syncFromCloud(force = false, options = {}) {
     if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) return false;
-    if (cloudSyncPromise && !force) return cloudSyncPromise;
+    const isStaff = Boolean(window.cbtAdmin && window.cbtAdmin.isAuthenticated && window.cbtAdmin.getCurrentTeacher());
+    const publicOnly = options && options.publicOnly !== undefined ? Boolean(options.publicOnly) : !isStaff;
 
-    cloudSyncPromise = (async () => {
-      const res = await window.supabaseSync.pullAllSchoolState();
+    if (cloudSyncPromise && !force && !(cloudSyncPublicOnly && !publicOnly)) {
+      return cloudSyncPromise;
+    }
+
+    cloudSyncPublicOnly = publicOnly;
+    const myPromise = (async () => {
+      const res = await window.supabaseSync.pullAllSchoolState({ publicOnly });
       if (res && res.success && res.state) {
         const hasCloudData = Object.keys(res.state).length > 0;
         if (hasCloudData) {
@@ -156,16 +177,94 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     })();
 
+    cloudSyncPromise = myPromise;
     try {
-      return await cloudSyncPromise;
+      return await myPromise;
     } finally {
-      cloudSyncPromise = null;
+      if (cloudSyncPromise === myPromise) {
+        cloudSyncPromise = null;
+      }
     }
+  }
+
+  let questionsCloudSyncPromise = null;
+  let realtimeQuestionRefreshTimer = null;
+  let realtimeQuestionPollTick = 0;
+
+  function getQuestionsListSignature(list) {
+    if (!Array.isArray(list)) return '[]';
+    return JSON.stringify(list.map(q => [q && q.id, q && q.updatedAt || '', q && q.subject || '', q && q.question || '']));
+  }
+
+  async function syncQuestionsFromCloud(reRenderIfOpen = true, forceRender = false) {
+    if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured() || !window.examEngine) return false;
+    if (questionsCloudSyncPromise) return questionsCloudSyncPromise;
+
+    questionsCloudSyncPromise = (async () => {
+      try {
+        await window.supabaseSync.flushPendingQuestionOps();
+        const qRes = await window.supabaseSync.fetchAllQuestionRows();
+        if (qRes && qRes.success && Array.isArray(qRes.rows)) {
+          const canApply = qRes.rows.length > 0 || (
+            typeof window.supabaseSync.isQuestionsMigrationCompleted === 'function' &&
+            await window.supabaseSync.isQuestionsMigrationCompleted()
+          );
+
+          if (canApply) {
+            const prevSig = getQuestionsListSignature(window.examEngine.questions);
+            if (typeof window.examEngine.applyRemoteQuestions === 'function') {
+              window.examEngine.applyRemoteQuestions(qRes.rows);
+            } else {
+              window.examEngine.saveQuestions(qRes.rows, true);
+            }
+            const nextSig = getQuestionsListSignature(window.examEngine.questions);
+            const hasChanged = prevSig !== nextSig;
+
+            if (reRenderIfOpen && (hasChanged || forceRender) && viewAdmin && !viewAdmin.classList.contains('hidden')) {
+              const tabQ = document.getElementById('tabQuestions');
+              if (tabQ && !tabQ.classList.contains('hidden')) {
+                const prevSub = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+                const prevCls = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+                setupQuestionBankFilters();
+                const subEl = document.getElementById('filterQuestionsSubject');
+                const clsEl = document.getElementById('filterQuestionsClass');
+                if (subEl && Array.from(subEl.options).some(o => o.value === prevSub)) subEl.value = prevSub;
+                if (clsEl && Array.from(clsEl.options).some(o => o.value === prevCls)) clsEl.value = prevCls;
+                renderAdminQuestionList();
+              } else {
+                renderAdminTeacherQuestionProgress();
+              }
+              renderAdminSchedulesList();
+            }
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal sinkron soal per-baris:', e);
+      }
+      return false;
+    })();
+
+    try {
+      return await questionsCloudSyncPromise;
+    } finally {
+      questionsCloudSyncPromise = null;
+    }
+  }
+
+  function scheduleRealtimeQuestionRefresh() {
+    if (realtimeQuestionRefreshTimer) clearTimeout(realtimeQuestionRefreshTimer);
+    realtimeQuestionRefreshTimer = setTimeout(() => {
+      realtimeQuestionRefreshTimer = null;
+      syncQuestionsFromCloud(true);
+    }, 650);
   }
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && viewLogin && !viewLogin.classList.contains('hidden')) {
-      syncFromCloud(true);
+      syncFromCloud(true, { publicOnly: true });
+    } else if (!document.hidden && viewAdmin && !viewAdmin.classList.contains('hidden')) {
+      syncQuestionsFromCloud(true);
     }
   });
 
@@ -438,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else htmlEl.classList.remove('dark');
 
     const themeMeta = document.querySelector('meta[name="theme-color"]');
-    if (themeMeta) themeMeta.setAttribute('content', isDark ? '#0f172a' : '#2563eb');
+    if (themeMeta) themeMeta.setAttribute('content', isDark ? '#070817' : '#2563eb');
 
     const sunSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>';
     const moonSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>';
@@ -491,8 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const key = e.key.toUpperCase();
       const type = q.type || 'single';
-      const keyMap = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
-      const selectedOptionKey = ['A', 'B', 'C', 'D'].includes(key) ? key : keyMap[e.key];
+      const selectedOptionKey = ['A', 'B', 'C', 'D'].includes(key) ? key : null;
 
       if (selectedOptionKey) {
         if (type === 'single') {
@@ -668,11 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        let loginRes = window.cbtAdmin.login(identifier, pin);
-        if ((!loginRes || !loginRes.success) && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-          await syncFromCloud(true);
-          loginRes = window.cbtAdmin.login(identifier, pin);
-        }
+        const loginRes = await window.cbtAdmin.loginWithCloud(identifier, pin);
 
         if (loginRes && loginRes.success) {
           try {
@@ -684,8 +778,16 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (err) {}
           if (pinInput) pinInput.value = '';
           showView('admin');
+          if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+            syncFromCloud(true, { publicOnly: false })
+              .then(() => typeof window.supabaseSync.fetchCloudResults === 'function' ? window.supabaseSync.fetchCloudResults() : null)
+              .then(() => {
+                if (viewAdmin && !viewAdmin.classList.contains('hidden')) renderAdminDashboard();
+              })
+              .catch(() => {});
+          }
         } else {
-          showInlineAdminBanner('Username / NIP atau Kata Sandi (PIN) tidak sesuai!');
+          showInlineAdminBanner((loginRes && loginRes.message) || 'Username / NIP atau Kata Sandi (PIN) tidak sesuai!');
         }
       });
     }
@@ -721,7 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (tokenHintEl) {
       const span = tokenHintEl.querySelector('span');
-      const hintText = `Token Ujian Aktif: ${targetToken}`;
+      const hintText = 'Token Ujian dibagikan oleh Pengawas Ruang / Proktor';
       if (span) span.innerText = hintText;
       else tokenHintEl.innerText = hintText;
     }
@@ -813,6 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
       viewAdmin.classList.remove('hidden');
       renderAdminDashboard();
       startAdminRealtimeNotifications();
+      syncQuestionsFromCloud(true);
     }
 
     updateCloudBadge();
@@ -826,31 +929,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const studentFoundClass = document.getElementById('studentFoundClass');
 
     if (studentNisnInput) {
-      studentNisnInput.addEventListener('input', () => {
-        showLoginRejection('');
-        const nisn = studentNisnInput.value.trim();
-        if (nisn.length >= 3 && window.studentManager) {
-          const student = window.studentManager.getStudentByNisn(nisn);
-          if (student) {
-            if (studentFoundName) studentFoundName.innerText = student.name;
-            if (studentFoundClass) studentFoundClass.innerText = `Kelas ${student.class}`;
-            if (studentFoundHint) studentFoundHint.classList.remove('hidden');
+      let lookupTimer = null;
+      const applyHintResult = (student) => {
+        if (student) {
+          if (studentFoundName) studentFoundName.innerText = student.name;
+          if (studentFoundClass) studentFoundClass.innerText = `Kelas ${student.class}`;
+          if (studentFoundHint) studentFoundHint.classList.remove('hidden');
 
-            const activeList = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
-            const selectEl = document.getElementById('studentScheduleSelect');
-            if (activeList.length > 1 && selectEl && window.examEngine) {
-              const matchingSch = activeList.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', student.class));
-              if (matchingSch) {
-                selectEl.value = matchingSch.id;
-                updateLoginDisplayForSchedule(matchingSch);
-              }
+          const activeList = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
+          const selectEl = document.getElementById('studentScheduleSelect');
+          if (activeList.length > 1 && selectEl && window.examEngine) {
+            const matchingSch = activeList.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', student.class));
+            if (matchingSch) {
+              selectEl.value = matchingSch.id;
+              updateLoginDisplayForSchedule(matchingSch);
             }
-          } else {
-            if (studentFoundHint) studentFoundHint.classList.add('hidden');
           }
         } else {
           if (studentFoundHint) studentFoundHint.classList.add('hidden');
         }
+      };
+
+      studentNisnInput.addEventListener('input', () => {
+        showLoginRejection('');
+        if (lookupTimer) clearTimeout(lookupTimer);
+        const nisn = studentNisnInput.value.trim();
+        if (nisn.length < 4 || !window.studentManager) {
+          if (studentFoundHint) studentFoundHint.classList.add('hidden');
+          return;
+        }
+        const immediate = window.studentManager.getStudentByNisn(nisn);
+        if (immediate) {
+          applyHintResult(immediate);
+          return;
+        }
+        lookupTimer = setTimeout(async () => {
+          if (studentNisnInput.value.trim() !== nisn) return;
+          if (typeof window.studentManager.lookupStudentHintWithCloud === 'function') {
+            const hintRes = await window.studentManager.lookupStudentHintWithCloud(nisn);
+            if (studentNisnInput.value.trim() !== nisn) return;
+            applyHintResult(hintRes && hintRes.found ? hintRes : null);
+          } else {
+            applyHintResult(null);
+          }
+        }, 250);
       });
     }
   }
@@ -900,20 +1022,26 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
         const activeTokens = (window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : []).map(s => String(s.token || '').toUpperCase());
         const cfgToken = String(window.examEngine.config.examToken || '').toUpperCase();
-        const needsRefresh =
-          (token && token !== cfgToken && !activeTokens.includes(token)) ||
-          (window.studentManager && !window.studentManager.getStudentByNisn(nisn));
+        const needsRefresh = Boolean(token && token !== cfgToken && !activeTokens.includes(token));
         if (cloudSyncPromise) {
           await cloudSyncPromise;
         } else if (needsRefresh) {
-          await syncFromCloud(true);
+          await syncFromCloud(true, { publicOnly: true });
         }
       }
 
       if (nisn.toLowerCase() === 'admin' || nisn.toLowerCase().includes('proktor')) {
-        const adminRes = window.cbtAdmin.login('admin', password);
+        const adminRes = await window.cbtAdmin.loginWithCloud('admin', password);
         if (adminRes && adminRes.success) {
           showView('admin');
+          if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+            syncFromCloud(true, { publicOnly: false })
+              .then(() => typeof window.supabaseSync.fetchCloudResults === 'function' ? window.supabaseSync.fetchCloudResults() : null)
+              .then(() => {
+                if (viewAdmin && !viewAdmin.classList.contains('hidden')) renderAdminDashboard();
+              })
+              .catch(() => {});
+          }
           return;
         } else {
           switchLoginPortalTab('admin');
@@ -936,7 +1064,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let authenticatedStudent = null;
       if (window.studentManager) {
-        const auth = window.studentManager.authenticateStudent(nisn, password);
+        const auth = typeof window.studentManager.authenticateStudentWithCloud === 'function'
+          ? await window.studentManager.authenticateStudentWithCloud(nisn, password)
+          : window.studentManager.authenticateStudent(nisn, password);
         if (!auth.success) {
           showLoginRejection(auth.message);
           return;
@@ -965,8 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!matchedSchedule) {
-          const hintToken = selectedSchObj ? selectedSchObj.token : window.examEngine.config.examToken;
-          showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian yang sedang aktif! Token untuk jadwal terpilih (${selectedSchObj?.subject || '-'}): ${hintToken}`);
+          showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
           return;
         }
 
@@ -978,7 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         const validToken = window.examEngine.config.examToken.toUpperCase();
         if (token !== validToken) {
-          showLoginRejection(`Token ujian salah! Masukkan token aktif: ${validToken}`);
+          showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
           return;
         }
         if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
@@ -1003,6 +1132,18 @@ document.addEventListener('DOMContentLoaded', () => {
         ...window.examEngine.config
       };
 
+      if (window.supabaseSync && window.supabaseSync.isCloudConfigured() && typeof window.supabaseSync.checkActiveDeviceSessionConflict === 'function') {
+        const devConflict = await window.supabaseSync.checkActiveDeviceSessionConflict(
+          authenticatedStudent.nisn,
+          targetExamConfig.subject,
+          window.examEngine.getDeviceId()
+        );
+        if (devConflict && devConflict.conflict) {
+          showLoginRejection(`⛔ Login Ditolak: Akun NISN ${authenticatedStudent.nisn} (${authenticatedStudent.name}) sedang aktif mengerjakan ujian "${targetExamConfig.subject}" di perangkat lain. Hubungi Proktor untuk reset sesi jika perangkat sebelumnya bermasalah.`);
+          return;
+        }
+      }
+
       const maxAttempts = window.examEngine.getMaxAttemptsForSubject(targetExamConfig.subject, matchedSchedule);
       const attemptStats = await window.examEngine.getStudentAttemptStats(authenticatedStudent.nisn, targetExamConfig.subject);
 
@@ -1022,6 +1163,10 @@ document.addEventListener('DOMContentLoaded', () => {
         examConfig: targetExamConfig
       };
 
+      if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
+        window.studentManager.scrubSensitiveDataForStudentMode();
+      }
+
       try {
         localStorage.setItem('cbt_confirm_student', JSON.stringify(tempStudent));
         const chkRememberStudent = document.getElementById('chkRememberStudent');
@@ -1031,6 +1176,14 @@ document.addEventListener('DOMContentLoaded', () => {
           localStorage.removeItem('cbt_remember_student_nisn');
         }
       } catch (err) {}
+
+      if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+        // Pastikan bank soal terbaru ditarik dari Cloud sebelum siswa masuk ruang ujian (batas tunggu aman 3,5 detik)
+        await Promise.race([
+          syncQuestionsFromCloud(false),
+          new Promise(resolve => setTimeout(resolve, 3500))
+        ]);
+      }
 
       if (window.supabaseSync) {
         const qCount = window.examEngine.getQuestionsForExam(targetExamConfig.subject, authenticatedStudent.class || targetExamConfig.targetClass).questions.length;
@@ -1045,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', () => {
           totalQuestions: qCount,
           remainingSeconds: (targetExamConfig.durationMinutes || 80) * 60,
           cheatCount: 0,
+          deviceId: window.examEngine.getDeviceId(),
           loginAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
@@ -1465,6 +1619,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnReturnHome) {
     btnReturnHome.addEventListener('click', () => {
       openLogoutConfirmModal('student_result', () => {
+        tempStudent = null;
+        try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
+        if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
+          window.studentManager.scrubSensitiveDataForStudentMode();
+        }
+        if (window.examEngine && typeof window.examEngine.enterStudentPrivacyMode === 'function') {
+          window.examEngine.enterStudentPrivacyMode();
+        }
         showView('login');
       });
     });
@@ -1504,19 +1666,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      let loginRes = window.cbtAdmin.login(identifier, pin);
-      if ((!loginRes || !loginRes.success) && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-        await syncFromCloud(true);
-        loginRes = window.cbtAdmin.login(identifier, pin);
-      }
+      const loginRes = await window.cbtAdmin.loginWithCloud(identifier, pin);
 
       if (loginRes && loginRes.success) {
         modalAdminPin.classList.add('hidden');
         if (usernameInput) usernameInput.value = '';
         if (pinInput) pinInput.value = '';
         showView('admin');
+        if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+          syncFromCloud(true, { publicOnly: false })
+            .then(() => typeof window.supabaseSync.fetchCloudResults === 'function' ? window.supabaseSync.fetchCloudResults() : null)
+            .then(() => {
+              if (viewAdmin && !viewAdmin.classList.contains('hidden')) renderAdminDashboard();
+            })
+            .catch(() => {});
+        }
       } else {
-        alert("Username / NIP atau PIN salah!");
+        alert((loginRes && loginRes.message) || "Username / NIP atau PIN salah!");
       }
     });
   }
@@ -1633,7 +1799,11 @@ document.addEventListener('DOMContentLoaded', () => {
       openLogoutConfirmModal('admin', () => {
         stopMonitoringAutoRefresh();
         resetAdminRealtimeStateOnLogout();
-        try { localStorage.removeItem('cbt_active_admin_tab'); } catch (e) {}
+        tempStudent = null;
+        try {
+          localStorage.removeItem('cbt_active_admin_tab');
+          localStorage.removeItem('cbt_confirm_student');
+        } catch (e) {}
         window.cbtAdmin.logout();
         showView('login');
       });
@@ -1647,7 +1817,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
 
-    if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings')) {
+    if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
       targetTab = 'tabDashboard';
     }
 
@@ -1691,6 +1861,16 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (targetTab === 'tabQuestions') {
         setupQuestionBankFilters();
         renderAdminQuestionList();
+        const tpPanel = document.getElementById('adminTeacherQuestionProgressPanel');
+        if (tpPanel) {
+          if (isAdmin) {
+            tpPanel.classList.remove('hidden');
+            renderAdminTeacherQuestionProgress();
+          } else {
+            tpPanel.classList.add('hidden');
+          }
+        }
+        syncQuestionsFromCloud(true);
       } else if (targetTab === 'tabStudents' && isAdmin) {
         renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
       } else if (targetTab === 'tabTeachers' && isAdmin) {
@@ -1698,6 +1878,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (targetTab === 'tabSettings' && isAdmin) {
         renderAdminConfigForm();
         renderSchoolConfigForm();
+      } else if (targetTab === 'tabDatabase' && isAdmin) {
         renderSupabaseConfigForm();
       }
     } catch (err) {
@@ -1719,11 +1900,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabStudentsBtn = document.getElementById('adminTabBtnStudents');
     const tabTeachersBtn = document.getElementById('adminTabBtnTeachers');
     const tabSettingsBtn = document.getElementById('adminTabBtnSettings');
+    const tabDatabaseBtn = document.getElementById('adminTabBtnDatabase');
+    const tabBackupBtn = document.getElementById('adminTabBtnBackup');
 
     const tabSchedulesPane = document.getElementById('tabSchedules');
     const tabStudentsPane = document.getElementById('tabStudents');
     const tabTeachersPane = document.getElementById('tabTeachers');
     const tabSettingsPane = document.getElementById('tabSettings');
+    const tabDatabasePane = document.getElementById('tabDatabase');
+    const tabBackupPane = document.getElementById('tabBackup');
 
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
 
@@ -1754,10 +1939,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabStudentsBtn) tabStudentsBtn.classList.add('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.add('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.add('hidden');
+        if (tabDatabaseBtn) tabDatabaseBtn.classList.add('hidden');
+        if (tabBackupBtn) tabBackupBtn.classList.add('hidden');
         if (tabSchedulesPane) tabSchedulesPane.classList.add('hidden');
         if (tabStudentsPane) tabStudentsPane.classList.add('hidden');
         if (tabTeachersPane) tabTeachersPane.classList.add('hidden');
         if (tabSettingsPane) tabSettingsPane.classList.add('hidden');
+        if (tabDatabasePane) tabDatabasePane.classList.add('hidden');
+        if (tabBackupPane) tabBackupPane.classList.add('hidden');
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
         const allowedGuruTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabQuestions'];
         switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabDashboard');
@@ -1766,8 +1955,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabStudentsBtn) tabStudentsBtn.classList.remove('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.remove('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.remove('hidden');
+        if (tabDatabaseBtn) tabDatabaseBtn.classList.remove('hidden');
+        if (tabBackupBtn) tabBackupBtn.classList.remove('hidden');
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
-        const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings'];
+        const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
         switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard');
       }
     }
@@ -1777,6 +1968,27 @@ document.addEventListener('DOMContentLoaded', () => {
       else btnResetQs.classList.add('hidden');
     }
 
+    const btnImportQs = document.getElementById('btnImportQuestions');
+    if (btnImportQs) {
+      if (isAdmin) btnImportQs.classList.remove('hidden');
+      else btnImportQs.classList.add('hidden');
+    }
+
+    const btnExportQs = document.getElementById('btnExportQuestions');
+    if (btnExportQs) {
+      if (isAdmin) btnExportQs.classList.remove('hidden');
+      else btnExportQs.classList.add('hidden');
+    }
+
+    const tpPanel = document.getElementById('adminTeacherQuestionProgressPanel');
+    if (tpPanel) {
+      if (isAdmin) tpPanel.classList.remove('hidden');
+      else tpPanel.classList.add('hidden');
+    }
+
+    const consultStuSel = document.getElementById('filterResultsStudent');
+    if (consultStuSel) consultStuSel.value = 'ALL';
+
     setupSubjectAndClassFilters();
     setupQuestionBankFilters();
     setupMonitoringControls();
@@ -1785,6 +1997,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAdminQuestionList();
 
     if (isAdmin) {
+      renderAdminTeacherQuestionProgress();
       renderAdminSchedulesList();
       renderAdminStudentsList();
       renderAdminTeachersList();
@@ -1836,12 +2049,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const isDark = document.documentElement.classList.contains('dark');
     return {
       isDark,
-      axisText: isDark ? '#94a3b8' : '#475569',
-      axisLine: isDark ? '#475569' : '#94a3b8',
-      gridLine: isDark ? '#334155' : '#e2e8f0',
-      idealBg: isDark ? 'rgba(16, 185, 129, 0.14)' : 'rgba(16, 185, 129, 0.10)',
-      idealStroke: isDark ? '#34d399' : '#10b981',
-      labelBg: isDark ? '#0f172a' : '#ffffff'
+      axisText: isDark ? '#c5cff5' : '#475569',
+      axisLine: isDark ? 'rgba(139, 92, 246, 0.32)' : '#94a3b8',
+      gridLine: isDark ? 'rgba(139, 92, 246, 0.16)' : '#e2e8f0',
+      idealBg: isDark ? 'rgba(155, 44, 245, 0.12)' : 'rgba(16, 185, 129, 0.10)',
+      idealStroke: isDark ? '#fdbb2d' : '#10b981',
+      labelBg: isDark ? '#0e112a' : '#ffffff'
     };
   }
 
@@ -1898,6 +2111,25 @@ document.addEventListener('DOMContentLoaded', () => {
       .append('svg')
       .attr('viewBox', `0 0 ${width} ${height}`)
       .attr('class', 'w-full h-auto overflow-visible');
+
+    if (theme.isDark) {
+      const defs = svg.append('defs');
+      const neonSpecs = [
+        { id: 'cbtNeonBar0', top: '#f4177b', bottom: '#ff6b52' },
+        { id: 'cbtNeonBar1', top: '#ec2f7a', bottom: '#fdbb2d' },
+        { id: 'cbtNeonBar2', top: '#ff6b52', bottom: '#fdbb2d' },
+        { id: 'cbtNeonBar3', top: '#9b2cf5', bottom: '#f4177b' },
+        { id: 'cbtNeonBar4', top: '#7b2ff7', bottom: '#f4177b' }
+      ];
+      neonSpecs.forEach(spec => {
+        const lg = defs.append('linearGradient')
+          .attr('id', spec.id)
+          .attr('x1', '0%').attr('y1', '0%')
+          .attr('x2', '0%').attr('y2', '100%');
+        lg.append('stop').attr('offset', '0%').attr('stop-color', spec.top);
+        lg.append('stop').attr('offset', '100%').attr('stop-color', spec.bottom);
+      });
+    }
 
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
@@ -1972,8 +2204,8 @@ document.addEventListener('DOMContentLoaded', () => {
       .attr('y', innerH)
       .attr('height', 0)
       .attr('rx', 6)
-      .attr('fill', d => d.color)
-      .attr('opacity', 0.9);
+      .attr('fill', (d, idx) => theme.isDark ? `url(#cbtNeonBar${idx})` : d.color)
+      .attr('opacity', 0.92);
 
     bars.transition()
       .duration(350)
@@ -2039,8 +2271,8 @@ document.addEventListener('DOMContentLoaded', () => {
       : [];
     if (teacherClasses.length > 0) {
       allStudents = allStudents.filter(st => {
-        const cls = String(st.class || '').trim().toUpperCase();
-        return teacherClasses.some(tc => cls === tc || cls.startsWith(tc));
+        const cls = String(st.class || '').trim();
+        return cls && window.examEngine.matchesClassLevel(teacherClasses.join(', '), cls);
       });
     }
     const uniqueClasses = new Set(allStudents.map(s => String(s.class || '').trim()).filter(Boolean));
@@ -2059,9 +2291,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isAdmin && currentTeacher) {
       const tSubs = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
       liveSessions = liveSessions.filter(sess => {
-        const subOk = tSubs.length === 0 || tSubs.some(ts => String(sess.subject || '').toLowerCase().includes(ts));
-        const cls = String(sess.class_name || '').trim().toUpperCase();
-        const clsOk = teacherClasses.length === 0 || teacherClasses.some(tc => cls === tc || cls.startsWith(tc));
+        const subOk = tSubs.length > 0 && tSubs.some(ts => window.examEngine.matchesSubject(sess.subject, ts));
+        const cls = String(sess.class_name || '').trim();
+        const clsOk = teacherClasses.length === 0 || (cls && window.examEngine.matchesClassLevel(teacherClasses.join(', '), cls));
         return subOk && clsOk;
       });
     }
@@ -2483,6 +2715,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ===================== FILTER MAPEL & KELAS =====================
+  let selectedConsultAttemptIdx = 0;
+
+  function getStudentConsultKey(resultRecord) {
+    const nisn = String(resultRecord?.student?.nisn || '').trim();
+    const name = String(resultRecord?.student?.name || '').trim();
+    return nisn ? `NISN:${nisn}` : `NAME:${name.toLowerCase()}`;
+  }
+
   function setupSubjectAndClassFilters() {
     const subjSelect = document.getElementById('filterResultsSubject');
     const classSelect = document.getElementById('filterResultsClass');
@@ -2490,25 +2730,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentTeacher = window.cbtAdmin.getCurrentTeacher();
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher);
     const assignedClasses = (!isAdmin && currentTeacher && currentTeacher.classes)
       ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes)
       : [];
 
     const allSubjects = window.cbtAdmin.getAllSubjects();
-    subjSelect.innerHTML = isAdmin
-      ? '<option value="ALL">Semua Mata Pelajaran</option>'
-      : `<option value="ALL">Mapel Diampu (${currentTeacher?.subject || 'Semua'})</option>`;
-    allSubjects.forEach(s => {
+    const ownedSubjects = isAdmin ? allSubjects : teacherSubjects;
+
+    subjSelect.innerHTML = '';
+    if (isAdmin) {
+      const optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.innerText = 'Semua Mata Pelajaran';
+      subjSelect.appendChild(optAll);
+    } else if (ownedSubjects.length > 1) {
+      const optOwned = document.createElement('option');
+      optOwned.value = 'ALL';
+      optOwned.innerText = `Mapel Diampu (${ownedSubjects.join(' / ')})`;
+      subjSelect.appendChild(optOwned);
+    } else if (ownedSubjects.length === 0) {
+      const optEmpty = document.createElement('option');
+      optEmpty.value = 'ALL';
+      optEmpty.innerText = 'Belum Ada Mapel Diampu';
+      subjSelect.appendChild(optEmpty);
+    }
+
+    ownedSubjects.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s;
       opt.innerText = s;
-      if (window.cbtAdmin.selectedSubjectFilter === s) opt.selected = true;
       subjSelect.appendChild(opt);
     });
 
+    const allowedVals = Array.from(subjSelect.options).map(o => o.value);
+    if (window.cbtAdmin.selectedSubjectFilter && allowedVals.includes(window.cbtAdmin.selectedSubjectFilter)) {
+      subjSelect.value = window.cbtAdmin.selectedSubjectFilter;
+    } else if (!isAdmin && ownedSubjects.length === 1) {
+      subjSelect.value = ownedSubjects[0];
+    } else if (subjSelect.options.length > 0) {
+      subjSelect.selectedIndex = 0;
+    }
+    window.cbtAdmin.setSubjectFilter(subjSelect.value || 'ALL');
+
     const studentClasses = window.studentManager ? window.studentManager.getAllClasses() : [];
+    const matchedStudentClasses = assignedClasses.length > 0
+      ? studentClasses.filter(c => window.examEngine.matchesClassLevel(assignedClasses.join(', '), c))
+      : studentClasses;
     const classesToShow = assignedClasses.length > 0
-      ? Array.from(new Set([...assignedClasses, ...studentClasses.filter(c => assignedClasses.some(ac => String(c).toUpperCase().startsWith(ac)))])).sort()
+      ? (matchedStudentClasses.length > 0 ? matchedStudentClasses : assignedClasses)
       : studentClasses;
 
     classSelect.innerHTML = assignedClasses.length > 0
@@ -2518,17 +2788,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const opt = document.createElement('option');
       opt.value = c;
       opt.innerText = `Kelas ${c}`;
-      if (window.cbtAdmin.selectedClassFilter === c) opt.selected = true;
       classSelect.appendChild(opt);
     });
+    const allowedClasses = Array.from(classSelect.options).map(o => o.value);
+    if (window.cbtAdmin.selectedClassFilter && allowedClasses.includes(window.cbtAdmin.selectedClassFilter)) {
+      classSelect.value = window.cbtAdmin.selectedClassFilter;
+    } else {
+      classSelect.value = 'ALL';
+    }
+    window.cbtAdmin.setClassFilter(classSelect.value || 'ALL');
 
     subjSelect.onchange = (e) => {
       window.cbtAdmin.setSubjectFilter(e.target.value);
+      selectedConsultAttemptIdx = 0;
       renderAdminAnalyticsAndResults();
     };
 
     classSelect.onchange = (e) => {
       window.cbtAdmin.setClassFilter(e.target.value);
+      selectedConsultAttemptIdx = 0;
       renderAdminAnalyticsAndResults();
     };
 
@@ -2536,6 +2814,155 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchResultsInput) {
       searchResultsInput.oninput = () => renderAdminAnalyticsAndResults();
     }
+
+    const filterResultsStudent = document.getElementById('filterResultsStudent');
+    if (filterResultsStudent) {
+      filterResultsStudent.onchange = () => {
+        selectedConsultAttemptIdx = 0;
+        renderAdminAnalyticsAndResults();
+      };
+    }
+
+    const btnResetConsult = document.getElementById('btnResetConsultStudent');
+    if (btnResetConsult) {
+      btnResetConsult.onclick = () => {
+        const stuSel = document.getElementById('filterResultsStudent');
+        if (stuSel) stuSel.value = 'ALL';
+        selectedConsultAttemptIdx = 0;
+        renderAdminAnalyticsAndResults();
+      };
+    }
+  }
+
+  function renderStudentConsultationPanel(sortedResults = []) {
+    const panel = document.getElementById('studentConsultationPanel');
+    const stuSel = document.getElementById('filterResultsStudent');
+    if (!panel || !stuSel || !window.cbtAdmin) return;
+
+    const prevKey = stuSel.value || 'ALL';
+    const studentMap = new Map();
+    sortedResults.forEach(r => {
+      const key = getStudentConsultKey(r);
+      if (!studentMap.has(key)) {
+        studentMap.set(key, {
+          key,
+          name: r.student?.name || '-',
+          nisn: r.student?.nisn || '-',
+          cls: r.student?.class || '-',
+          attempts: []
+        });
+      }
+      studentMap.get(key).attempts.push(r);
+    });
+
+    const uniqueStudents = Array.from(studentMap.values())
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'id'));
+
+    stuSel.innerHTML = '<option value="ALL">👤 Konsultasi 1 Siswa (Semua)</option>';
+    uniqueStudents.forEach(st => {
+      const opt = document.createElement('option');
+      opt.value = st.key;
+      const clsTxt = st.cls && st.cls !== '-' ? ` • ${st.cls}` : '';
+      const countTxt = st.attempts.length > 1 ? ` (${st.attempts.length}x)` : '';
+      opt.innerText = `${st.name} (${st.nisn}${clsTxt})${countTxt}`;
+      stuSel.appendChild(opt);
+    });
+
+    const selectedKey = studentMap.has(prevKey) ? prevKey : 'ALL';
+    stuSel.value = selectedKey;
+
+    if (selectedKey === 'ALL') {
+      panel.classList.add('hidden');
+      return;
+    }
+
+    const studentGroup = studentMap.get(selectedKey);
+    const attempts = studentGroup ? studentGroup.attempts : [];
+    if (attempts.length === 0) {
+      panel.classList.add('hidden');
+      return;
+    }
+
+    panel.classList.remove('hidden');
+    if (selectedConsultAttemptIdx >= attempts.length) selectedConsultAttemptIdx = 0;
+    const activeRecord = attempts[selectedConsultAttemptIdx] || attempts[0];
+
+    const attemptSelect = document.getElementById('consultAttemptSelect');
+    if (attemptSelect) {
+      if (attempts.length > 1) {
+        attemptSelect.classList.remove('hidden');
+        attemptSelect.innerHTML = '';
+        attempts.forEach((att, idx) => {
+          const opt = document.createElement('option');
+          opt.value = String(idx);
+          opt.innerText = `Riwayat #${idx + 1}: ${att.subject || '-'} • Nilai ${att.finalScore ?? 0} (${att.completedAt || '-'})`;
+          attemptSelect.appendChild(opt);
+        });
+        attemptSelect.value = String(selectedConsultAttemptIdx);
+        attemptSelect.onchange = (e) => {
+          selectedConsultAttemptIdx = parseInt(e.target.value, 10) || 0;
+          renderStudentConsultationPanel(sortedResults);
+        };
+      } else {
+        attemptSelect.classList.add('hidden');
+      }
+    }
+
+    const titleEl = document.getElementById('consultStudentTitle');
+    const metaEl = document.getElementById('consultStudentMeta');
+    if (titleEl) titleEl.innerText = `${activeRecord.student?.name || '-'} (${activeRecord.student?.nisn || '-'})`;
+    if (metaEl) {
+      const clsDisplay = activeRecord.student?.class ? `Kelas ${activeRecord.student.class}` : 'Kelas -';
+      metaEl.innerText = `${clsDisplay} • Mapel: ${activeRecord.subject || '-'} • Selesai: ${activeRecord.completedAt || '-'}`;
+    }
+
+    const setTxt = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = String(val);
+    };
+    setTxt('consultScoreVal', activeRecord.finalScore ?? 0);
+    setTxt('consultCorrectVal', activeRecord.correctCount ?? 0);
+    setTxt('consultWrongVal', activeRecord.incorrectCount ?? 0);
+    setTxt('consultEmptyVal', activeRecord.unattemptedCount ?? 0);
+    const cheats = Number(activeRecord.cheatCount || 0);
+    setTxt('consultCheatVal', cheats > 0 ? `${cheats}x Pelanggaran` : 'Tertib (0)');
+
+    const tbody = document.getElementById('consultBreakdownTbody');
+    if (!tbody) return;
+    const items = window.cbtAdmin.getAnswerBreakdownItems(activeRecord);
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Rincian jawaban per nomor tidak tersedia pada riwayat ini.</td></tr>`;
+      return;
+    }
+
+    const bankQuestions = (window.examEngine && Array.isArray(window.examEngine.questions))
+      ? window.examEngine.questions
+      : [];
+    const byId = new Map(bankQuestions.map(q => [String(q.id), q]));
+
+    tbody.innerHTML = items.map(it => {
+      const matchedQ = (it.id !== undefined && it.id !== null) ? byId.get(String(it.id)) : null;
+      const snippet = matchedQ && matchedQ.question
+        ? escapeHtmlSafe(String(matchedQ.question).replace(/\s+/g, ' ').slice(0, 140)) + (String(matchedQ.question).length > 140 ? '…' : '')
+        : `<span class="text-slate-400 italic">Butir Soal Nomor ${it.num}</span>`;
+
+      let badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">Kosong</span>`;
+      if (it.status === 'correct') {
+        badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">✓ Benar</span>`;
+      } else if (it.status === 'wrong') {
+        badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold text-[10px]">✗ Salah</span>`;
+      }
+
+      return `
+        <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/70">
+          <td class="p-2.5 text-center font-black text-slate-600">${it.num}</td>
+          <td class="p-2.5 text-slate-700 dark:text-slate-200 leading-snug">${snippet}</td>
+          <td class="p-2.5 text-center font-mono font-bold text-slate-800">${escapeHtmlSafe(it.studentVal || '-')}</td>
+          <td class="p-2.5 text-center font-mono font-bold text-blue-700">${escapeHtmlSafe(it.correctVal || '-')}</td>
+          <td class="p-2.5 text-center">${badgeHtml}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   // ===================== TAB 1: REKAP NILAI & EVALUASI JAWABAN PER NOMOR =====================
@@ -2543,6 +2970,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const analytics = window.cbtAdmin.getExamAnalytics();
     const sortedResults = window.cbtAdmin.getAllResultsSorted();
     const searchQuery = (document.getElementById('searchResultsInput')?.value || '').trim().toLowerCase();
+
+    renderStudentConsultationPanel(sortedResults);
+    const selectedConsultStudentKey = document.getElementById('filterResultsStudent')?.value || 'ALL';
 
     document.getElementById('kpiAvgScore').innerText = analytics.averageScore;
     document.getElementById('kpiHighestScore').innerText = analytics.highestScore;
@@ -2566,6 +2996,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const rankedResults = sortedResults
       .map((r, idx) => ({ r, rank: idx + 1 }))
       .filter(({ r }) => {
+        if (selectedConsultStudentKey !== 'ALL' && getStudentConsultKey(r) !== selectedConsultStudentKey) {
+          return false;
+        }
         if (!searchQuery) return true;
         const name = String(r.student?.name || '').toLowerCase();
         const nisn = String(r.student?.nisn || '').toLowerCase();
@@ -2578,7 +3011,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tbody.innerHTML = `
         <tr>
           <td colspan="9" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
-            Tidak ada peserta yang cocok dengan pencarian "<strong>${escapeHtmlSafe(searchQuery)}</strong>".
+            Tidak ada peserta yang cocok dengan filter pencarian aktif.
           </td>
         </tr>
       `;
@@ -2610,17 +3043,21 @@ document.addEventListener('DOMContentLoaded', () => {
           }).join('')}</div>`
         : `<span class="text-[11px] text-slate-400">Belum ada rincian jawaban</span>`;
 
+      const stuKey = getStudentConsultKey(r);
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition text-xs";
       tr.innerHTML = `
         <td class="px-2.5 py-2.5 text-center font-bold">${rankBadge}</td>
         <td class="px-2.5 py-2.5">
-          <div class="font-bold text-slate-900">${r.student?.name || '-'}</div>
-          <div class="text-[10px] text-slate-400">${r.subject}</div>
+          <div class="font-bold text-slate-900">${escapeHtmlSafe(r.student?.name || '-')}</div>
+          <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+            <span class="text-[10px] text-slate-400">${escapeHtmlSafe(r.subject || '-')}</span>
+            <button type="button" class="btn-consult-student text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer" title="Buka riwayat jawaban lengkap siswa ini untuk konsultasi nilai">💬 Konsultasi</button>
+          </div>
         </td>
-        <td class="px-2.5 py-2.5 font-mono font-semibold text-slate-700">${r.student?.nisn || '-'}</td>
+        <td class="px-2.5 py-2.5 font-mono font-semibold text-slate-700">${escapeHtmlSafe(r.student?.nisn || '-')}</td>
         <td class="px-2.5 py-2.5 whitespace-nowrap">
-          <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-xs">${r.student?.class ? 'Kelas ' + r.student.class : '-'}</span>
+          <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-xs">${r.student?.class ? 'Kelas ' + escapeHtmlSafe(r.student.class) : '-'}</span>
         </td>
         <td class="px-2.5 py-2.5 text-center">
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-black ${
@@ -2632,7 +3069,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </span>
         </td>
         <td class="px-2.5 py-2.5">${answerChipsHtml}</td>
-        <td class="px-2.5 py-2.5 text-slate-600 font-mono text-[11px] whitespace-nowrap">${r.completedAt}</td>
+        <td class="px-2.5 py-2.5 text-slate-600 font-mono text-[11px] whitespace-nowrap">${escapeHtmlSafe(r.completedAt || '-')}</td>
         <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
           <div class="inline-flex items-center gap-1.5 font-bold">
             <span class="text-emerald-600">✓${r.correctCount}</span>
@@ -2647,6 +3084,16 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         </td>
       `;
+      const btnConsult = tr.querySelector('.btn-consult-student');
+      if (btnConsult) {
+        btnConsult.addEventListener('click', () => {
+          const stuSel = document.getElementById('filterResultsStudent');
+          if (stuSel) stuSel.value = stuKey;
+          selectedConsultAttemptIdx = 0;
+          renderAdminAnalyticsAndResults();
+          document.getElementById('studentConsultationPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
       tbody.appendChild(tr);
     });
   }
@@ -2687,9 +3134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnRefreshMon = document.getElementById('btnRefreshMonitoring');
 
     const allSubjects = window.cbtAdmin.getAllSubjects();
-    const ownedSubjects = isAdmin
-      ? allSubjects
-      : (teacherSubjects.length > 0 ? teacherSubjects : (currentTeacher && currentTeacher.subject ? [currentTeacher.subject] : []));
+    const ownedSubjects = isAdmin ? allSubjects : teacherSubjects;
 
     if (ruleSubjEl) {
       const prevRuleSub = ruleSubjEl.value;
@@ -2742,7 +3187,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const prevMonSub = monSubjEl.value;
       monSubjEl.innerHTML = isAdmin
         ? '<option value="ALL">Semua Mata Pelajaran</option>'
-        : (ownedSubjects.length > 1 ? `<option value="ALL">Semua Mapel Diampu</option>` : '');
+        : (ownedSubjects.length > 1
+            ? `<option value="ALL">Semua Mapel Diampu</option>`
+            : (ownedSubjects.length === 0 ? '<option value="ALL">Belum Ada Mapel Diampu</option>' : ''));
       ownedSubjects.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s;
@@ -2760,8 +3207,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (monClassEl) {
       const prevMonCls = monClassEl.value;
       const studentClasses = window.studentManager ? window.studentManager.getAllClasses() : [];
+      const matchedStudentClasses = assignedClasses.length > 0
+        ? studentClasses.filter(c => window.examEngine.matchesClassLevel(assignedClasses.join(', '), c))
+        : studentClasses;
       const classesToShow = assignedClasses.length > 0
-        ? Array.from(new Set([...assignedClasses, ...studentClasses.filter(c => assignedClasses.some(ac => String(c).toUpperCase().startsWith(ac)))])).sort()
+        ? (matchedStudentClasses.length > 0 ? matchedStudentClasses : assignedClasses)
         : studentClasses;
 
       monClassEl.innerHTML = assignedClasses.length > 0
@@ -2934,15 +3384,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const scopedRows = Array.from(rowMap.values()).filter(row => {
       if (!isAdmin) {
-        const subOk = teacherSubjects.length === 0 || teacherSubjects.some(ts => window.examEngine.matchesSubject(row.subject, ts));
+        const subOk = teacherSubjects.length > 0 && teacherSubjects.some(ts => window.examEngine.matchesSubject(row.subject, ts));
         if (!subOk) return false;
         if (assignedClasses.length > 0) {
-          const stuCls = String(row.class || '').trim().toUpperCase();
-          if (!assignedClasses.some(ac => stuCls === ac || stuCls.startsWith(ac))) return false;
+          const stuCls = String(row.class || '').trim();
+          if (!stuCls || !window.examEngine.matchesClassLevel(assignedClasses.join(', '), stuCls)) return false;
         }
       }
       if (subjFilter !== 'ALL' && !window.examEngine.matchesSubject(row.subject, subjFilter)) return false;
-      if (classFilter !== 'ALL' && String(row.class || '').trim().toUpperCase() !== String(classFilter).trim().toUpperCase()) return false;
+      if (classFilter !== 'ALL' && !window.examEngine.matchesClassLevel(classFilter, row.class || '')) return false;
       return true;
     });
 
@@ -3101,15 +3551,18 @@ document.addEventListener('DOMContentLoaded', () => {
           subjFilterEl.appendChild(opt);
         });
       } else {
-        const ownedList = teacherSubjects.length > 0
-          ? teacherSubjects
-          : (currentTeacher && currentTeacher.subject ? [currentTeacher.subject] : []);
+        const ownedList = teacherSubjects;
 
         if (ownedList.length > 1) {
           const optOwnedAll = document.createElement('option');
           optOwnedAll.value = 'ALL';
           optOwnedAll.innerText = `Semua Mapel Diampu (${ownedList.join(' / ')})`;
           subjFilterEl.appendChild(optOwnedAll);
+        } else if (ownedList.length === 0) {
+          const optEmpty = document.createElement('option');
+          optEmpty.value = 'ALL';
+          optEmpty.innerText = 'Belum Ada Mapel Diampu';
+          subjFilterEl.appendChild(optEmpty);
         }
 
         ownedList.forEach(s => {
@@ -3181,7 +3634,9 @@ document.addEventListener('DOMContentLoaded', () => {
       classFilterEl.onchange = () => renderAdminQuestionList();
     }
 
-    if (modalSubjEl) {
+    const isQuestionModalOpen = Boolean(modalQuestionForm && !modalQuestionForm.classList.contains('hidden'));
+
+    if (modalSubjEl && !isQuestionModalOpen) {
       const prevModalVal = modalSubjEl.value;
       modalSubjEl.innerHTML = '';
 
@@ -3198,9 +3653,7 @@ document.addEventListener('DOMContentLoaded', () => {
           modalSubjEl.appendChild(opt);
         });
       } else {
-        const ownedList = teacherSubjects.length > 0
-          ? teacherSubjects
-          : (currentTeacher && currentTeacher.subject ? [currentTeacher.subject] : ['Umum']);
+        const ownedList = teacherSubjects.length > 0 ? teacherSubjects : ['Umum'];
 
         ownedList.forEach(s => {
           const opt = document.createElement('option');
@@ -3216,7 +3669,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    if (modalClassEl) {
+    if (modalClassEl && !isQuestionModalOpen) {
       const prevModalCls = modalClassEl.value;
       modalClassEl.innerHTML = '';
 
@@ -3915,6 +4368,149 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   }
 
+  let teacherProgressCollapsed = false;
+
+  function renderAdminTeacherQuestionProgress() {
+    const panel = document.getElementById('adminTeacherQuestionProgressPanel');
+    if (!panel || !window.cbtAdmin) return;
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    if (!isAdmin) {
+      panel.classList.add('hidden');
+      return;
+    }
+    panel.classList.remove('hidden');
+
+    const targetInput = document.getElementById('teacherProgressTargetInput');
+    const targetMin = Math.max(1, parseInt(targetInput ? targetInput.value : '20', 10) || 20);
+    const searchQ = String(document.getElementById('searchTeacherProgress')?.value || '').trim().toLowerCase();
+    const statusFilter = document.getElementById('filterTeacherProgressStatus')?.value || 'ALL';
+
+    const list = window.cbtAdmin.getTeacherQuestionProgressList();
+    let readyCount = 0;
+    let partialCount = 0;
+    let emptyCount = 0;
+
+    list.forEach(item => {
+      if (item.totalQuestions >= targetMin) readyCount++;
+      else if (item.totalQuestions > 0) partialCount++;
+      else emptyCount++;
+    });
+
+    const setEl = (id, txt) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = txt;
+    };
+    setEl('tpKpiTotalTeachers', `${list.length} Guru`);
+    setEl('tpKpiReadyTeachers', `${readyCount} Guru`);
+    setEl('tpKpiPartialTeachers', `${partialCount} Guru`);
+    setEl('tpKpiEmptyTeachers', `${emptyCount} Guru`);
+
+    const filtered = list.filter(item => {
+      const st = item.totalQuestions >= targetMin ? 'ready' : (item.totalQuestions > 0 ? 'partial' : 'empty');
+      if (statusFilter !== 'ALL' && st !== statusFilter) return false;
+      if (!searchQ) return true;
+      const name = String(item.teacher.name || '').toLowerCase();
+      const nip = String(item.teacher.nip || '').toLowerCase();
+      const subStr = item.subjects.join(' ').toLowerCase();
+      return name.includes(searchQ) || nip.includes(searchQ) || subStr.includes(searchQ);
+    });
+
+    const tbody = document.getElementById('adminTeacherProgressTbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="p-5 text-center text-slate-400">Tidak ada data guru yang cocok dengan filter progres.</td></tr>`;
+      return;
+    }
+
+    filtered.forEach((item, idx) => {
+      const pct = Math.min(100, Math.round((item.totalQuestions / targetMin) * 100));
+      let barCls = 'bg-rose-500';
+      let badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold text-[10px]">Belum Mengisi (0)</span>`;
+      if (item.totalQuestions >= targetMin) {
+        barCls = 'bg-emerald-500';
+        badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">✓ Memenuhi Target</span>`;
+      } else if (item.totalQuestions > 0) {
+        barCls = 'bg-amber-500';
+        badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">Proses (${pct}%)</span>`;
+      }
+
+      const subjPills = item.subjectBreakdown.length > 0
+        ? item.subjectBreakdown.map(sb => {
+            const cls = sb.total >= targetMin ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : (sb.total > 0 ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-rose-50 text-rose-700 border-rose-200');
+            return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold ${cls}">${escapeHtmlSafe(sb.subject)}: ${sb.total} soal${sb.createdByMe > 0 ? ` (✍️${sb.createdByMe})` : ''}</span>`;
+          }).join(' ')
+        : `<span class="text-[11px] text-slate-400 italic">Belum ada mapel</span>`;
+
+      const firstSub = item.subjects[0] || 'ALL';
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/70';
+      tr.innerHTML = `
+        <td class="p-2.5 text-center font-bold text-slate-400">${idx + 1}</td>
+        <td class="p-2.5">
+          <div class="font-bold text-slate-900 dark:text-slate-100">${escapeHtmlSafe(item.teacher.name || '-')}</div>
+          <div class="text-[10px] text-slate-400 font-mono">NIP: ${escapeHtmlSafe(item.teacher.nip || '-')}${item.teacherClasses.length > 0 ? ` • Kls: ${escapeHtmlSafe(item.teacherClasses.join(', '))}` : ''}</div>
+          <div class="text-[10px] text-indigo-700 font-semibold mt-0.5">✍️ Diinput sendiri: <strong>${item.createdByCount}</strong> soal</div>
+        </td>
+        <td class="p-2.5"><div class="flex flex-wrap gap-1">${subjPills}</div></td>
+        <td class="p-2.5 text-center whitespace-nowrap">
+          <div class="inline-flex items-center gap-1 text-[10px] font-bold">
+            <span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700" title="PG Tunggal">PG:${item.singleCount}</span>
+            <span class="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700" title="PG Kompleks">PGK:${item.multipleCount}</span>
+            <span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800" title="Benar/Salah">BS:${item.trueFalseCount}</span>
+          </div>
+        </td>
+        <td class="p-2.5">
+          <div class="flex items-center justify-between text-[11px] font-extrabold mb-1">
+            <span>${item.totalQuestions} / ${targetMin} Soal</span>
+            ${badgeHtml}
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div class="${barCls} h-full transition-all" style="width:${pct}%"></div>
+          </div>
+        </td>
+        <td class="p-2.5 text-center">
+          <button type="button" class="btn-jump-teacher-q px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] cursor-pointer transition">
+            🔍 Lihat Soal
+          </button>
+        </td>
+      `;
+
+      const jumpBtn = tr.querySelector('.btn-jump-teacher-q');
+      if (jumpBtn) {
+        jumpBtn.addEventListener('click', () => {
+          const subjFilterEl = document.getElementById('filterQuestionsSubject');
+          if (subjFilterEl && firstSub !== 'ALL') {
+            const hasOpt = Array.from(subjFilterEl.options).some(o => o.value === firstSub);
+            if (hasOpt) subjFilterEl.value = firstSub;
+          }
+          renderAdminQuestionList();
+          document.getElementById('adminQuestionList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  const btnToggleTeacherProgress = document.getElementById('btnToggleTeacherProgress');
+  if (btnToggleTeacherProgress) {
+    btnToggleTeacherProgress.addEventListener('click', () => {
+      teacherProgressCollapsed = !teacherProgressCollapsed;
+      const body = document.getElementById('teacherProgressBody');
+      if (body) body.classList.toggle('hidden', teacherProgressCollapsed);
+      btnToggleTeacherProgress.innerText = teacherProgressCollapsed ? '▸ Tampilkan Progres' : '▾ Sembunyikan';
+    });
+  }
+  const searchTeacherProgressEl = document.getElementById('searchTeacherProgress');
+  if (searchTeacherProgressEl) searchTeacherProgressEl.addEventListener('input', () => renderAdminTeacherQuestionProgress());
+  const filterTeacherProgressStatusEl = document.getElementById('filterTeacherProgressStatus');
+  if (filterTeacherProgressStatusEl) filterTeacherProgressStatusEl.addEventListener('change', () => renderAdminTeacherQuestionProgress());
+  const teacherProgressTargetEl = document.getElementById('teacherProgressTargetInput');
+  if (teacherProgressTargetEl) teacherProgressTargetEl.addEventListener('input', () => renderAdminTeacherQuestionProgress());
+
   function renderAdminQuestionList() {
     const listContainer = document.getElementById('adminQuestionList');
     const totalCountEl = document.getElementById('adminTotalQuestionsCount');
@@ -3948,17 +4544,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    renderAdminTeacherQuestionProgress();
+
     if (!listContainer) return;
 
     listContainer.innerHTML = '';
 
     if (questions.length === 0) {
+      const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
+      const isAdminUser = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
       const activeSubName = subjFilter === 'ALL' ? 'mata pelajaran yang dipilih' : `"${subjLabel}"`;
       const activeClsName = classFilter === 'ALL' ? '' : ` untuk ${classFilter}`;
+      const emptyHint = isAdminUser
+        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
+        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> untuk menambahkan butir soal ${activeSubName}.`;
       listContainer.innerHTML = `
         <div class="text-center py-12 px-4 text-slate-500 bg-white rounded-3xl border border-slate-200">
           <p class="font-bold text-base text-slate-700">Belum ada soal untuk ${activeSubName}${activeClsName}.</p>
-          <p class="text-xs sm:text-sm text-slate-400 mt-1">Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.</p>
+          <p class="text-xs sm:text-sm text-slate-400 mt-1">${emptyHint}</p>
         </div>
       `;
       return;
@@ -4807,6 +5410,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const btnRefreshQuestionsCloud = document.getElementById('btnRefreshQuestionsCloud');
+  if (btnRefreshQuestionsCloud) {
+    btnRefreshQuestionsCloud.addEventListener('click', async () => {
+      if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+        alert("Supabase Cloud belum aktif.");
+        return;
+      }
+      const origText = btnRefreshQuestionsCloud.innerHTML;
+      btnRefreshQuestionsCloud.disabled = true;
+      btnRefreshQuestionsCloud.innerText = '⏳ Menyegarkan...';
+      await syncQuestionsFromCloud(true, true);
+      btnRefreshQuestionsCloud.disabled = false;
+      btnRefreshQuestionsCloud.innerHTML = origText;
+    });
+  }
+
   // ===================== TAB 3: MANAJEMEN 250 SISWA & KARTU PESERTA =====================
   function renderAdminStudentsList(searchQuery = "") {
     const tbody = document.getElementById('adminStudentsTbody');
@@ -4971,7 +5590,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Modal Preview, Download PDF, & Cetak Kartu Peserta (9,0 x 5,3 cm)
+  // Modal Preview, Download PDF, & Cetak Kartu Peserta
   const modalPrintCardsPreview = document.getElementById('modalPrintCardsPreview');
   const cardPreviewContainer = document.getElementById('cardPreviewContainer');
   const cardPreviewClassFilter = document.getElementById('cardPreviewClassFilter');
@@ -4979,6 +5598,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseCardPreview = document.getElementById('btnCloseCardPreview');
   const btnCancelCardPreview = document.getElementById('btnCancelCardPreview');
   const btnExecuteDirectPrintCards = document.getElementById('btnExecuteDirectPrintCards');
+  const btnDownloadCardsPerClassPdf = document.getElementById('btnDownloadCardsPerClassPdf');
   const btnDownloadCardsPdf = document.getElementById('btnDownloadCardsPdf');
 
   function getFilteredPreviewCardStudents() {
@@ -4988,6 +5608,14 @@ document.addEventListener('DOMContentLoaded', () => {
       students = students.filter(s => String(s.class).trim().toUpperCase() === String(selectedClass).trim().toUpperCase());
     }
     return students;
+  }
+
+  function updateCardModalButtonLabels(selectedClass = "ALL") {
+    if (btnDownloadCardsPerClassPdf) {
+      btnDownloadCardsPerClassPdf.innerHTML = selectedClass === "ALL"
+        ? '<span>📥 Download PDF Per Kelas</span>'
+        : `<span>📥 Download PDF Kelas ${escapeHtmlSafe(selectedClass)}</span>`;
+    }
   }
 
   function openCardPreviewModal() {
@@ -5000,11 +5628,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (cardPreviewClassFilter) {
       const classes = window.studentManager.getAllClasses();
-      cardPreviewClassFilter.innerHTML = '<option value="ALL">Semua Kelas (Semua Kartu)</option>';
+      cardPreviewClassFilter.innerHTML = `<option value="ALL">Semua Kelas (${students.length} Siswa)</option>`;
       classes.forEach(c => {
+        const count = students.filter(s => String(s.class).trim().toUpperCase() === String(c).trim().toUpperCase()).length;
         const opt = document.createElement('option');
         opt.value = c;
-        opt.innerText = `Kelas ${c}`;
+        opt.innerText = `Kelas ${c} (${count} Siswa)`;
         cardPreviewClassFilter.appendChild(opt);
       });
       cardPreviewClassFilter.value = "ALL";
@@ -5016,13 +5645,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderCardPreviewContent(selectedClass = "ALL") {
     if (!cardPreviewContainer || !window.studentManager) return;
-    let students = window.studentManager.getAllStudents();
+    const allStudents = window.studentManager.getAllStudents();
+    let students = allStudents;
     if (selectedClass !== "ALL") {
-      students = students.filter(s => String(s.class).trim().toUpperCase() === String(selectedClass).trim().toUpperCase());
+      students = allStudents.filter(s => String(s.class).trim().toUpperCase() === String(selectedClass).trim().toUpperCase());
     }
+
+    updateCardModalButtonLabels(selectedClass);
 
     if (cardPreviewCountBadge) {
       cardPreviewCountBadge.innerText = `${students.length} Kartu (${selectedClass === "ALL" ? "Semua Kelas" : "Kelas " + selectedClass})`;
+    }
+
+    if (selectedClass === "ALL") {
+      const classes = window.studentManager.getAllClasses();
+      if (classes.length > 1) {
+        const groupedHtml = classes.map(cls => {
+          const clsStudents = allStudents.filter(s => String(s.class).trim().toUpperCase() === String(cls).trim().toUpperCase());
+          if (clsStudents.length === 0) return '';
+          const clsCardsHtml = window.studentManager.generateCardsHtml(clsStudents, window.examEngine.config.examTitle);
+          return `
+            <div class="mb-6 last:mb-0">
+              <div class="max-w-4xl mx-auto mb-3 px-3.5 py-2 rounded-xl bg-white border border-slate-200 flex items-center justify-between shadow-xs">
+                <span class="text-xs font-extrabold text-slate-800">Kelas ${escapeHtmlSafe(cls)}</span>
+                <span class="text-[11px] font-bold text-blue-700">${clsStudents.length} Siswa</span>
+              </div>
+              <div class="cards-grid grid grid-cols-1 md:grid-cols-2 gap-4 justify-items-center max-w-4xl mx-auto">
+                ${clsCardsHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+        cardPreviewContainer.innerHTML = groupedHtml;
+        return;
+      }
     }
 
     const cardsHtml = window.studentManager.generateCardsHtml(students, window.examEngine.config.examTitle);
@@ -5045,17 +5701,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnExecuteDirectPrintCards) {
     btnExecuteDirectPrintCards.addEventListener('click', () => {
+      const selectedClass = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
       const students = getFilteredPreviewCardStudents();
       closeCardPreviewModal();
-      window.studentManager.printExamCards(students, window.examEngine.config.examTitle);
+      window.studentManager.printExamCards(students, window.examEngine.config.examTitle, {
+        classLabel: selectedClass === "ALL" ? "" : selectedClass,
+        groupByClass: selectedClass === "ALL"
+      });
+    });
+  }
+
+  if (btnDownloadCardsPerClassPdf) {
+    btnDownloadCardsPerClassPdf.addEventListener('click', async () => {
+      const selectedClass = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
+      const allStudents = window.studentManager.getAllStudents();
+      const classes = window.studentManager.getAllClasses();
+
+      if (selectedClass === "ALL" && classes.length > 1) {
+        if (!confirm(`Akan mengunduh ${classes.length} file PDF terpisah (1 file PDF untuk setiap kelas: ${classes.join(', ')}). Lanjutkan?`)) {
+          return;
+        }
+      }
+
+      btnDownloadCardsPerClassPdf.disabled = true;
+      if (btnDownloadCardsPdf) btnDownloadCardsPdf.disabled = true;
+      try {
+        if (selectedClass !== "ALL") {
+          btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(selectedClass)}...</span>`;
+          const students = getFilteredPreviewCardStudents();
+          await window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle, {
+            classLabel: selectedClass,
+            groupByClass: false
+          });
+        } else {
+          await window.studentManager.downloadCardsPerClassSeparatePdfs(
+            allStudents,
+            window.examEngine.config.examTitle,
+            (done, total, cls) => {
+              btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ PDF ${done}/${total} (${escapeHtmlSafe(cls)})...</span>`;
+            }
+          );
+        }
+        closeCardPreviewModal();
+      } finally {
+        btnDownloadCardsPerClassPdf.disabled = false;
+        if (btnDownloadCardsPdf) btnDownloadCardsPdf.disabled = false;
+        updateCardModalButtonLabels(cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL");
+      }
     });
   }
 
   if (btnDownloadCardsPdf) {
-    btnDownloadCardsPdf.addEventListener('click', () => {
-      const students = getFilteredPreviewCardStudents();
-      closeCardPreviewModal();
-      window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle);
+    btnDownloadCardsPdf.addEventListener('click', async () => {
+      const students = window.studentManager.getAllStudents();
+      const prevHtml = btnDownloadCardsPdf.innerHTML;
+      btnDownloadCardsPdf.disabled = true;
+      if (btnDownloadCardsPerClassPdf) btnDownloadCardsPerClassPdf.disabled = true;
+      btnDownloadCardsPdf.innerHTML = '<span>⏳ Membuat PDF Semua...</span>';
+      try {
+        await window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle, {
+          classLabel: "",
+          groupByClass: true
+        });
+        closeCardPreviewModal();
+      } finally {
+        btnDownloadCardsPdf.disabled = false;
+        if (btnDownloadCardsPerClassPdf) btnDownloadCardsPerClassPdf.disabled = false;
+        btnDownloadCardsPdf.innerHTML = prevHtml;
+      }
     });
   }
 
@@ -5198,6 +5911,9 @@ document.addEventListener('DOMContentLoaded', () => {
               alert(delRes.message);
               renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value || '');
               setupSubjectAndClassFilters();
+              setupQuestionBankFilters();
+              setupMonitoringControls();
+              renderAdminTeacherQuestionProgress();
             } else {
               alert(delRes.message);
             }
@@ -5284,6 +6000,9 @@ document.addEventListener('DOMContentLoaded', () => {
           closeEditTeacherModal();
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
+          setupQuestionBankFilters();
+          setupMonitoringControls();
+          renderAdminTeacherQuestionProgress();
         } else {
           alert(`Gagal menambah guru: ${res.message}`);
         }
@@ -5294,6 +6013,9 @@ document.addEventListener('DOMContentLoaded', () => {
           closeEditTeacherModal();
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
+          setupQuestionBankFilters();
+          setupMonitoringControls();
+          renderAdminTeacherQuestionProgress();
           const cur = window.cbtAdmin.getCurrentTeacher();
           if (cur && cur.id === id) renderAdminDashboard();
         } else {
@@ -5314,6 +6036,118 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===================== PRATINJAU, DOWNLOAD PDF, & CETAK KARTU LOGIN GURU =====================
+  const modalPrintTeacherCardsPreview = document.getElementById('modalPrintTeacherCardsPreview');
+  const teacherCardFilter = document.getElementById('teacherCardFilter');
+  const teacherCardPreviewContainer = document.getElementById('teacherCardPreviewContainer');
+  const teacherCardPreviewCountBadge = document.getElementById('teacherCardPreviewCountBadge');
+  const btnCloseTeacherCardPreview = document.getElementById('btnCloseTeacherCardPreview');
+  const btnCancelTeacherCardPreview = document.getElementById('btnCancelTeacherCardPreview');
+  const btnExecuteDirectPrintTeacherCards = document.getElementById('btnExecuteDirectPrintTeacherCards');
+  const btnDownloadTeacherCardsPdf = document.getElementById('btnDownloadTeacherCardsPdf');
+  const btnPrintTeacherCards = document.getElementById('btnPrintTeacherCards');
+
+  function getFilteredPreviewCardTeachers(filterValOverride) {
+    const filterVal = filterValOverride !== undefined
+      ? filterValOverride
+      : (teacherCardFilter ? teacherCardFilter.value : 'GURU_ONLY');
+    const allTeachers = window.cbtAdmin ? window.cbtAdmin.getAllTeachers() : [];
+
+    if (filterVal === 'ALL') {
+      return allTeachers;
+    }
+    if (filterVal.startsWith('TEACHER:')) {
+      const targetId = filterVal.slice('TEACHER:'.length);
+      return allTeachers.filter(t => String(t.id) === String(targetId));
+    }
+    return allTeachers.filter(t => t && t.role !== 'admin' && t.id !== 'admin');
+  }
+
+  function renderTeacherCardPreviewContent(filterValOverride) {
+    if (!teacherCardPreviewContainer || !window.cbtAdmin) return;
+    const filterVal = filterValOverride !== undefined
+      ? filterValOverride
+      : (teacherCardFilter ? teacherCardFilter.value : 'GURU_ONLY');
+    const teachers = getFilteredPreviewCardTeachers(filterVal);
+
+    if (teacherCardPreviewCountBadge) {
+      let labelDesc = 'Hanya Guru Mapel';
+      if (filterVal === 'ALL') labelDesc = 'Semua Akun';
+      else if (filterVal.startsWith('TEACHER:') && teachers[0]) labelDesc = teachers[0].name;
+      teacherCardPreviewCountBadge.innerText = `${teachers.length} Kartu (${labelDesc})`;
+    }
+
+    const cardsHtml = window.cbtAdmin.generateTeacherCardsHtml(teachers, window.examEngine.config.examTitle);
+    teacherCardPreviewContainer.innerHTML = `
+      <div class="cards-grid grid grid-cols-1 md:grid-cols-2 gap-4 justify-items-center max-w-4xl mx-auto">
+        ${cardsHtml}
+      </div>
+    `;
+  }
+
+  function openTeacherCardPreviewModal() {
+    if (!modalPrintTeacherCardsPreview || !window.cbtAdmin) return;
+    const allTeachers = window.cbtAdmin.getAllTeachers();
+    if (allTeachers.length === 0) {
+      alert("Belum ada data akun guru.");
+      return;
+    }
+
+    if (teacherCardFilter) {
+      const guruOnlyList = allTeachers.filter(t => t && t.role !== 'admin' && t.id !== 'admin');
+      teacherCardFilter.innerHTML = `
+        <option value="GURU_ONLY">Hanya Guru Mapel (${guruOnlyList.length} Guru)</option>
+        <option value="ALL">Semua Akun (Guru + Proktor/Admin: ${allTeachers.length})</option>
+      `;
+      allTeachers.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = `TEACHER:${t.id}`;
+        const roleTag = (t.role === 'admin' || t.id === 'admin') ? 'Admin' : (t.subject || 'Guru');
+        opt.innerText = `${t.name} (${roleTag})`;
+        teacherCardFilter.appendChild(opt);
+      });
+      teacherCardFilter.value = guruOnlyList.length > 0 ? 'GURU_ONLY' : 'ALL';
+    }
+
+    renderTeacherCardPreviewContent();
+    modalPrintTeacherCardsPreview.classList.remove('hidden');
+  }
+
+  function closeTeacherCardPreviewModal() {
+    if (modalPrintTeacherCardsPreview) modalPrintTeacherCardsPreview.classList.add('hidden');
+  }
+
+  if (btnPrintTeacherCards) btnPrintTeacherCards.addEventListener('click', openTeacherCardPreviewModal);
+  if (teacherCardFilter) {
+    teacherCardFilter.addEventListener('change', (e) => renderTeacherCardPreviewContent(e.target.value));
+  }
+  if (btnCloseTeacherCardPreview) btnCloseTeacherCardPreview.addEventListener('click', closeTeacherCardPreviewModal);
+  if (btnCancelTeacherCardPreview) btnCancelTeacherCardPreview.addEventListener('click', closeTeacherCardPreviewModal);
+
+  if (btnExecuteDirectPrintTeacherCards) {
+    btnExecuteDirectPrintTeacherCards.addEventListener('click', () => {
+      const teachers = getFilteredPreviewCardTeachers();
+      closeTeacherCardPreviewModal();
+      window.cbtAdmin.printTeacherCards(teachers, window.examEngine.config.examTitle);
+    });
+  }
+
+  if (btnDownloadTeacherCardsPdf) {
+    btnDownloadTeacherCardsPdf.addEventListener('click', async () => {
+      const teachers = getFilteredPreviewCardTeachers();
+      const prevHtml = btnDownloadTeacherCardsPdf.innerHTML;
+      btnDownloadTeacherCardsPdf.disabled = true;
+      btnDownloadTeacherCardsPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+      try {
+        await window.cbtAdmin.downloadTeacherCardsPdf(teachers, window.examEngine.config.examTitle);
+        closeTeacherCardPreviewModal();
+      } finally {
+        btnDownloadTeacherCardsPdf.disabled = false;
+        btnDownloadTeacherCardsPdf.innerHTML = prevHtml;
+      }
+    });
+  }
+
   // ===================== TAB 5: PENGATURAN JADWAL, TITI MANGSA & LOGO, DAN CLOUD =====================
   function renderAdminConfigForm() {
     const config = window.examEngine.config;
@@ -5326,7 +6160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (maxAttEl) maxAttEl.value = config.maxAttempts || 1;
 
     const currentTeacher = window.cbtAdmin.getCurrentTeacher();
-    document.getElementById('cfgAdminPin').value = currentTeacher ? currentTeacher.pin : 'admin123';
+    document.getElementById('cfgAdminPin').value = currentTeacher && currentTeacher.pin ? currentTeacher.pin : '';
   }
 
   const formExamConfig = document.getElementById('formExamConfig');
@@ -5547,7 +6381,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnSyncCloudResults) {
     btnSyncCloudResults.addEventListener('click', async () => {
       if (!window.supabaseSync.isCloudConfigured()) {
-        alert("Supabase Cloud belum dikonfigurasi. Masukkan Project URL dan Anon Key di tab 'Pengaturan, Kop & Cloud'.");
+        alert("Supabase Cloud belum dikonfigurasi. Masukkan Project URL dan Anon Key di menu 'Database'.");
         return;
       }
       btnSyncCloudResults.disabled = true;
@@ -5596,6 +6430,46 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.value = '';
     });
   }
+
+  const isDevWorkspacePreview = typeof window !== 'undefined' && (
+    window.location.hostname.includes('ais-dev-') ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
+  const setupZipDownloadBtn = (btnId, endpoint, filename) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (!isDevWorkspacePreview) {
+      btn.classList.add('hidden');
+      return;
+    }
+    btn.classList.remove('hidden');
+    btn.addEventListener('click', async () => {
+      const orig = btn.innerText;
+      btn.disabled = true;
+      btn.innerText = '⏳ Menyiapkan ZIP...';
+      try {
+        const res = await fetch(endpoint, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      } catch (err) {
+        alert('Gagal mengunduh ZIP: ' + (err && err.message ? err.message : err));
+      } finally {
+        btn.disabled = false;
+        btn.innerText = orig;
+      }
+    });
+  };
+  setupZipDownloadBtn('btnDownloadCodeUpdateV337', '/api/download-v337.zip', 'cbt-update-v3.37.zip');
+  setupZipDownloadBtn('btnDownloadProjectZipV337', '/api/download-project.zip', 'cbt-smpn2pacet-v3.37.zip');
 
   // ===================== DASHBOARD QUICK JUMP & CLOUD REFRESH =====================
   document.querySelectorAll('.dash-jump-btn').forEach(btn => {
@@ -6082,6 +6956,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     realtimeNotifActive = true;
     realtimeBaselineReady = false;
+    realtimeQuestionPollTick = 0;
     updateRealtimeNotifVisibility(true);
 
     pollRealtimeStudentEvents(true);
@@ -6089,7 +6964,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.supabaseSync && window.supabaseSync.isCloudConfigured() && typeof window.supabaseSync.subscribeToRealtimeNotifications === 'function') {
       window.supabaseSync.subscribeToRealtimeNotifications(
         (sess) => processSessionDelta(sess, true),
-        (resObj) => processResultInsertDelta(resObj)
+        (resObj) => processResultInsertDelta(resObj),
+        () => scheduleRealtimeQuestionRefresh()
       );
     }
 
@@ -6099,6 +6975,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       pollRealtimeStudentEvents(false);
+
+      // Cadangan polling bank soal otomatis (setiap 12 detik di tab Bank Soal, 30 detik di tab lain) jika WebSocket Realtime belum aktif
+      realtimeQuestionPollTick += 1;
+      const tabQ = document.getElementById('tabQuestions');
+      const isQuestionsTabOpen = Boolean(tabQ && !tabQ.classList.contains('hidden'));
+      if ((isQuestionsTabOpen && realtimeQuestionPollTick % 2 === 0) || realtimeQuestionPollTick % 5 === 0) {
+        syncQuestionsFromCloud(true);
+      }
     }, 6000);
   }
 

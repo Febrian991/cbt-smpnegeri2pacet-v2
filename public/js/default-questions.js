@@ -17,8 +17,7 @@ const DEFAULT_EXAM_CONFIG = {
   showScoreToStudent: false, // Nilai dirahasiakan dari siswa
   maxCheatViolations: 3,
   maxAttempts: 1,
-  subjectMaxAttempts: {},
-  adminPin: "admin123"
+  subjectMaxAttempts: {}
 };
 
 const DEFAULT_QUESTIONS = [

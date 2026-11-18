@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.30">
+  <link rel="stylesheet" href="css/styles.css?v=3.42">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -280,7 +280,7 @@
               <input type="text" id="studentToken" required placeholder="Masukkan Token Ujian" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/40 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-bold tracking-widest text-blue-700 uppercase transition outline-none">
               <p id="loginTokenHint" class="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1 font-medium">
                 <svg class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <span>Token Ujian Aktif: CBT80M</span>
+                <span>Token Ujian dibagikan oleh Pengawas Ruang / Proktor</span>
               </p>
             </div>
 
@@ -688,7 +688,13 @@
                 <span>👨‍🏫 Data Guru</span>
               </button>
               <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>⚙️ Pengaturan, Kop &amp; Cloud</span>
+                <span>⚙️ Pengaturan &amp; Kop</span>
+              </button>
+              <button id="adminTabBtnDatabase" type="button" data-tab="tabDatabase" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+                <span>🗄️ Database</span>
+              </button>
+              <button id="adminTabBtnBackup" type="button" data-tab="tabBackup" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+                <span>💾 Backup</span>
               </button>
             </div>
             <div class="hidden lg:block pt-3 mt-4 border-t border-slate-200/80 dark:border-slate-800 px-2.5">
@@ -843,7 +849,7 @@
 
         <!-- Filter Bar: Mapel, Kelas & Pencarian Siswa -->
         <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap xl:flex-nowrap items-center justify-between gap-2.5 text-xs sm:text-sm">
-          <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
             <span class="font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">Filter Rekap:</span>
             <select id="filterResultsSubject" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-blue-700 bg-white outline-none max-w-[200px]">
               <option value="ALL">Semua Mata Pelajaran</option>
@@ -851,13 +857,73 @@
             <select id="filterResultsClass" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-slate-700 bg-white outline-none">
               <option value="ALL">Semua Kelas</option>
             </select>
-            <input id="searchResultsInput" type="search" placeholder="🔍 Cari nama atau NISN siswa..." class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[170px] max-w-[280px]">
+            <input id="searchResultsInput" type="search" placeholder="🔍 Cari nama atau NISN siswa..." class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[170px] max-w-[260px]">
+            <select id="filterResultsStudent" class="px-3 py-1.5 rounded-xl border border-indigo-300 bg-indigo-50/70 font-bold text-indigo-800 outline-none max-w-[230px]" title="Pilih 1 siswa tertentu untuk membuka riwayat jawaban lengkap saat konsultasi nilai">
+              <option value="ALL">👤 Konsultasi 1 Siswa (Semua)</option>
+            </select>
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
             <button id="btnSyncCloudResults" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1 whitespace-nowrap" title="Tarik data terbaru yang disubmit 250 siswa">
               <span>🔄 Sinkron Cloud</span>
             </button>
+          </div>
+        </div>
+
+        <!-- Panel Konsultasi Riwayat Jawaban Lengkap 1 Siswa -->
+        <div id="studentConsultationPanel" class="hidden bg-white dark:bg-slate-900 rounded-3xl border-2 border-indigo-200 dark:border-indigo-800 p-4 sm:p-5 flex flex-col gap-4 shadow-sm">
+          <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div>
+              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold text-[10px] uppercase tracking-wider mb-1">
+                💬 Mode Konsultasi Hasil Nilai Siswa
+              </span>
+              <h3 id="consultStudentTitle" class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100">-</h3>
+              <p id="consultStudentMeta" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">-</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <select id="consultAttemptSelect" class="hidden px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-700 outline-none"></select>
+              <button id="btnResetConsultStudent" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                ✕ Tutup Konsultasi
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-center">
+            <div class="p-2.5 rounded-2xl bg-indigo-50 border border-indigo-200">
+              <div class="text-[10px] font-bold text-indigo-700 uppercase">Nilai Akhir</div>
+              <div id="consultScoreVal" class="text-lg font-black text-indigo-900 mt-0.5">0</div>
+            </div>
+            <div class="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+              <div class="text-[10px] font-bold text-emerald-700 uppercase">Benar</div>
+              <div id="consultCorrectVal" class="text-lg font-black text-emerald-700 mt-0.5">0</div>
+            </div>
+            <div class="p-2.5 rounded-2xl bg-rose-50 border border-rose-200">
+              <div class="text-[10px] font-bold text-rose-700 uppercase">Salah</div>
+              <div id="consultWrongVal" class="text-lg font-black text-rose-700 mt-0.5">0</div>
+            </div>
+            <div class="p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div class="text-[10px] font-bold text-slate-600 uppercase">Kosong</div>
+              <div id="consultEmptyVal" class="text-lg font-black text-slate-700 mt-0.5">0</div>
+            </div>
+            <div class="p-2.5 rounded-2xl bg-amber-50 border border-amber-200 col-span-2 sm:col-span-1">
+              <div class="text-[10px] font-bold text-amber-800 uppercase">Pindah Tab</div>
+              <div id="consultCheatVal" class="text-sm font-black text-amber-800 mt-1">-</div>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto max-h-[360px] rounded-2xl border border-slate-200 dark:border-slate-700">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 uppercase tracking-wider font-bold text-[10px]">
+                <tr>
+                  <th class="p-2.5 text-center w-12">No</th>
+                  <th class="p-2.5 min-w-[230px]">Butir Pertanyaan</th>
+                  <th class="p-2.5 text-center">Jawaban Siswa</th>
+                  <th class="p-2.5 text-center">Kunci Jawaban</th>
+                  <th class="p-2.5 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody id="consultBreakdownTbody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -1202,6 +1268,9 @@
               <button id="btnResetDefaultQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition cursor-pointer">
                 ↺ Reset Soal
               </button>
+              <button id="btnRefreshQuestionsCloud" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 transition cursor-pointer" title="Ambil soal terbaru dari Cloud (per-baris)">
+                🔄 Segarkan Soal
+              </button>
               <button id="btnOpenAddQuestion" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1">
                 <span>+ Tambah Soal</span>
               </button>
@@ -1221,6 +1290,76 @@
                 <option value="Kelas 8">Kelas 8</option>
                 <option value="Kelas 9">Kelas 9</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel Khusus Admin: Cek Progres Pengisian Soal Semua Guru -->
+        <div id="adminTeacherQuestionProgressPanel" class="hidden bg-white dark:bg-slate-900 rounded-3xl border border-indigo-200/80 dark:border-slate-800 p-4 sm:p-5 flex flex-col gap-3.5 shadow-xs">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100">📊 Cek Progres Pengisian Soal Semua Guru</h3>
+                <span class="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px]">Khusus Admin / Proktor</span>
+              </div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Pantau jumlah soal per mapel diampu sekaligus soal yang diinput langsung oleh masing-masing guru.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label for="teacherProgressTargetInput" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                <span>Target Min:</span>
+                <input id="teacherProgressTargetInput" type="number" min="1" max="200" value="20" class="w-12 px-1.5 py-0.5 rounded-lg border border-slate-300 bg-white text-center font-extrabold text-blue-700 outline-none">
+                <span>Soal</span>
+              </label>
+              <button id="btnToggleTeacherProgress" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                ▾ Sembunyikan
+              </button>
+            </div>
+          </div>
+
+          <div id="teacherProgressBody" class="flex flex-col gap-3">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Guru Mapel</p>
+                <div id="tpKpiTotalTeachers" class="text-lg font-black text-slate-900 dark:text-slate-100 mt-0.5">0 Guru</div>
+              </div>
+              <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Memenuhi Target</p>
+                <div id="tpKpiReadyTeachers" class="text-lg font-black text-emerald-700 mt-0.5">0 Guru</div>
+              </div>
+              <div class="p-3 rounded-2xl bg-amber-50 border border-amber-200">
+                <p class="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Sedang Mengisi</p>
+                <div id="tpKpiPartialTeachers" class="text-lg font-black text-amber-700 mt-0.5">0 Guru</div>
+              </div>
+              <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200">
+                <p class="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Belum Mengisi (0)</p>
+                <div id="tpKpiEmptyTeachers" class="text-lg font-black text-rose-700 mt-0.5">0 Guru</div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs">
+              <input id="searchTeacherProgress" type="search" placeholder="🔍 Cari nama guru, NIP, atau mapel..." class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[200px] max-w-sm">
+              <select id="filterTeacherProgressStatus" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700 outline-none">
+                <option value="ALL">Semua Status Progres</option>
+                <option value="empty">Belum Mengisi (0 Soal)</option>
+                <option value="partial">Masih Kurang (&lt; Target)</option>
+                <option value="ready">Sudah Siap (≥ Target)</option>
+              </select>
+            </div>
+
+            <div class="overflow-x-auto max-h-[360px] rounded-2xl border border-slate-200 dark:border-slate-700">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 uppercase tracking-wider font-bold text-[10px]">
+                  <tr>
+                    <th class="p-2.5 text-center w-10">No</th>
+                    <th class="p-2.5 min-w-[180px]">Nama Guru &amp; NIP</th>
+                    <th class="p-2.5 min-w-[210px]">Rincian Mapel Diampu</th>
+                    <th class="p-2.5 text-center">Tipe Soal</th>
+                    <th class="p-2.5 min-w-[175px]">Progres vs Target</th>
+                    <th class="p-2.5 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="adminTeacherProgressTbody"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1440,7 +1579,7 @@
             </button>
 
             <button id="btnPrintStudentCards" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center gap-1.5">
-              <span>🪪 Kartu Peserta (9x5,3 cm)</span>
+              <span>🪪 Kartu Peserta Ujian</span>
             </button>
 
             <button id="btnResetAllStudentPasswords" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer flex items-center gap-1.5" title="Reset password seluruh siswa ke 123">
@@ -1506,6 +1645,10 @@
 
             <button id="btnOpenAddTeacher" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1.5">
               <span>+ Tambah Guru Baru</span>
+            </button>
+
+            <button id="btnPrintTeacherCards" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center gap-1.5" title="Pratinjau, Download PDF, &amp; Cetak Kartu Login Guru">
+              <span>🪪 Kartu Login Guru</span>
             </button>
 
             <button id="btnResetAllTeacherPasswords" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer flex items-center gap-1.5" title="Reset password seluruh guru ke guru123">
@@ -1718,69 +1861,79 @@
             </form>
           </div>
 
-          <!-- Box 3: Koneksi Database Cloud Supabase -->
-          <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-black text-sm flex items-center justify-center">⚡</span>
-              <div>
-                <h3 class="text-sm sm:text-base font-bold text-slate-900">Database Cloud Gratis (Supabase)</h3>
-                <p class="text-[11px] text-slate-500">Sinkronisasi hasil ujian 250 siswa secara real-time ke laptop 13 guru</p>
-              </div>
-            </div>
+        </div>
+      </div>
 
-            <p class="text-xs text-slate-600 leading-relaxed my-3 bg-emerald-50/70 p-3 rounded-2xl border border-emerald-200">
-              💡 <strong>Otomatis Lintas Perangkat:</strong> Database cloud sudah terhubung otomatis di semua perangkat (Laptop &amp; HP). Setiap kali Anda menyimpan pengaturan, jadwal, soal, data siswa/guru, perubahan otomatis terkirim ke seluruh HP siswa &amp; guru.
-            </p>
-
-            <form id="formSupabaseConfig" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm items-end">
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseUrl">Supabase Project URL</label>
-                <input type="url" id="cfgSupabaseUrl" placeholder="https://xyzabcdefghijklm.supabase.co" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none">
-              </div>
-
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseKey">Supabase Anon Public API Key</label>
-                <input type="text" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none mono-font text-xs">
-              </div>
-
-              <div class="md:col-span-2 flex flex-wrap gap-2 pt-1">
-                <button type="button" id="btnTestSupabase" class="flex-1 min-w-[140px] py-2.5 px-3 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
-                  ⚡ Uji Koneksi Cloud
-                </button>
-                <button type="button" id="btnPullFromCloud" class="flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition cursor-pointer">
-                  ⬇️ Ambil Data dari Cloud
-                </button>
-                <button type="button" id="btnPushAllToCloud" class="flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer">
-                  ☁️ Kirim Semua Data ke Cloud
-                </button>
-                <button type="submit" class="flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition cursor-pointer">
-                  💾 Simpan &amp; Sinkron Cloud
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Box 4: Backup & Pulihkan Semua Data (1 Klik Anti Hilang) -->
-          <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 font-black text-sm flex items-center justify-center">💾</span>
-              <div>
-                <h3 class="text-sm sm:text-base font-bold text-slate-900">Backup &amp; Pulihkan Seluruh Data Sekolah (Anti Hilang)</h3>
-                <p class="text-[11px] text-slate-500">Simpan cadangan Data Guru, Data Siswa, Jadwal Ujian, Bank Soal, Logo Kop, &amp; Pengaturan Cloud ke dalam 1 file agar aman saat ganti laptop atau update.</p>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2.5 mt-3">
-              <input type="file" id="fileImportFullBackup" accept=".json" class="hidden">
-              <button type="button" id="btnExportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer">
-                📥 Download Backup Semua Data (.json)
-              </button>
-              <button type="button" id="btnTriggerImportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer">
-                📤 Pulihkan Data dari File Backup (.json)
-              </button>
+      <!-- TAB 6: DATABASE CLOUD (SUPABASE) -->
+      <div id="tabDatabase" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-black text-sm flex items-center justify-center">⚡</span>
+            <div>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900">Database Cloud Gratis (Supabase)</h3>
+              <p class="text-[11px] text-slate-500">Sinkronisasi hasil ujian 250 siswa secara real-time ke laptop 13 guru</p>
             </div>
           </div>
 
+          <p class="text-xs text-slate-600 leading-relaxed my-3 bg-emerald-50/70 p-3 rounded-2xl border border-emerald-200">
+            💡 <strong>Otomatis Lintas Perangkat:</strong> Database cloud sudah terhubung otomatis di semua perangkat (Laptop &amp; HP). Setiap kali Anda menyimpan pengaturan, jadwal, soal, data siswa/guru, perubahan otomatis terkirim ke seluruh HP siswa &amp; guru.
+          </p>
+
+          <form id="formSupabaseConfig" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm items-end">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseUrl">Supabase Project URL</label>
+              <input type="url" id="cfgSupabaseUrl" placeholder="https://xyzabcdefghijklm.supabase.co" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none">
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1" for="cfgSupabaseKey">Supabase Anon Public API Key</label>
+              <input type="text" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 outline-none mono-font text-xs">
+            </div>
+
+            <div class="md:col-span-2 flex flex-wrap gap-2 pt-1">
+              <button type="button" id="btnTestSupabase" class="flex-1 min-w-[140px] py-2.5 px-3 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+                ⚡ Uji Koneksi Cloud
+              </button>
+              <button type="button" id="btnPullFromCloud" class="flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition cursor-pointer">
+                ⬇️ Ambil Data dari Cloud
+              </button>
+              <button type="button" id="btnPushAllToCloud" class="flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer">
+                ☁️ Kirim Semua Data ke Cloud
+              </button>
+              <button type="submit" class="flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition cursor-pointer">
+                💾 Simpan &amp; Sinkron Cloud
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- TAB 7: BACKUP & PULIHKAN DATA SEKOLAH -->
+      <div id="tabBackup" class="admin-tab-pane hidden flex flex-col gap-4">
+        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 font-black text-sm flex items-center justify-center">💾</span>
+            <div>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900">Backup &amp; Pulihkan Seluruh Data Sekolah (Anti Hilang)</h3>
+              <p class="text-[11px] text-slate-500">Simpan cadangan Data Guru, Data Siswa, Jadwal Ujian, Bank Soal, Logo Kop, &amp; Pengaturan Cloud ke dalam 1 file agar aman saat ganti laptop atau update.</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5 mt-4">
+            <input type="file" id="fileImportFullBackup" accept=".json" class="hidden">
+            <button type="button" id="btnExportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer">
+              📥 Download Backup Semua Data (.json)
+            </button>
+            <button type="button" id="btnTriggerImportFullBackup" class="flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer">
+              📤 Pulihkan Data dari File Backup (.json)
+            </button>
+            <button type="button" id="btnDownloadCodeUpdateV337" class="hidden flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer">
+              📦 Download Update Kode v3.37 (.zip)
+            </button>
+            <button type="button" id="btnDownloadProjectZipV337" class="hidden flex-1 min-w-[200px] py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer">
+              🗂️ Download Proyek Lengkap (.zip)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2273,7 +2426,7 @@
         <div class="flex items-center gap-2.5">
           <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-xl">🪪</div>
           <div>
-            <h3 class="font-bold text-base text-slate-900">Kartu Peserta Ujian (Ukuran 9,0 x 5,3 cm + Kop Surat)</h3>
+            <h3 class="font-bold text-base text-slate-900">Kartu Peserta Ujian (+ Kop Surat Sekolah)</h3>
             <p class="text-xs text-slate-500" id="cardPreviewSubtitle">Format: NISN, Nama, TTL, Jenis Kelamin, Alamat, &amp; Pengesahan Kepala Sekolah</p>
           </div>
         </div>
@@ -2297,10 +2450,59 @@
           <button id="btnCancelCardPreview" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
             Tutup
           </button>
-          <button id="btnDownloadCardsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
-            <span>📥 Download PDF Kartu</span>
+          <button id="btnDownloadCardsPerClassPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition cursor-pointer flex items-center gap-1.5" title="Unduh PDF per masing-masing kelas (atau kelas yang dipilih)">
+            <span>📥 Download PDF Per Kelas</span>
+          </button>
+          <button id="btnDownloadCardsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer flex items-center gap-1.5" title="Unduh semua siswa semua kelas dalam 1 file PDF lengkap">
+            <span>📥 Download PDF Semua</span>
           </button>
           <button id="btnExecuteDirectPrintCards" type="button" class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-md shadow-purple-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            <span>🖨️ Cetak Sekarang</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: PRATINJAU, DOWNLOAD PDF, & CETAK KARTU LOGIN GURU (9,0 x 5,3 CM) -->
+  <div id="modalPrintTeacherCardsPreview" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200">
+
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-xl">🪪</div>
+          <div>
+            <h3 class="font-bold text-base text-slate-900">Kartu Login Akun Guru (+ Kop Surat Sekolah)</h3>
+            <p class="text-xs text-slate-500">Format: NIP / Username, Nama Guru, Mapel &amp; Kelas Diampu, Password / PIN, &amp; Pengesahan Kepala Sekolah</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-600">Filter Akun:</span>
+          <select id="teacherCardFilter" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-xs bg-white text-blue-700 outline-none max-w-[230px]">
+            <option value="GURU_ONLY">Hanya Guru Mapel</option>
+            <option value="ALL">Semua Akun (Guru + Admin)</option>
+          </select>
+          <button id="btnCloseTeacherCardPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50" id="teacherCardPreviewContainer"></div>
+
+      <div class="p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+        <div class="text-xs text-slate-500 font-medium">
+          Total kartu: <span id="teacherCardPreviewCountBadge" class="font-bold text-purple-700">0 Kartu</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnCancelTeacherCardPreview" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+          <button id="btnDownloadTeacherCardsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF Kartu</span>
+          </button>
+          <button id="btnExecuteDirectPrintTeacherCards" type="button" class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-md shadow-purple-600/20 transition cursor-pointer flex items-center gap-1.5">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
             <span>🖨️ Cetak Sekarang</span>
           </button>
@@ -2421,13 +2623,13 @@
   <div id="cbtRealtimeToastStack" class="fixed bottom-4 right-4 z-[75] flex flex-col-reverse gap-2.5 max-w-sm w-[calc(100vw-2rem)] pointer-events-none no-print"></div>
 
   <!-- ======================== SCRIPTS ======================== -->
-  <script src="js/default-questions.js?v=3.30"></script>
-  <script src="js/default-teachers.js?v=3.18"></script>
-  <script src="js/default-students.js?v=3.18"></script>
-  <script src="js/supabase-config.js?v=3.30"></script>
-  <script src="js/exam-engine.js?v=3.30"></script>
-  <script src="js/admin.js?v=3.30"></script>
-  <script src="js/app.js?v=3.30"></script>
+  <script src="js/default-questions.js?v=3.39"></script>
+  <script src="js/default-teachers.js?v=3.39"></script>
+  <script src="js/default-students.js?v=3.39"></script>
+  <script src="js/supabase-config.js?v=3.39"></script>
+  <script src="js/exam-engine.js?v=3.39"></script>
+  <script src="js/admin.js?v=3.39"></script>
+  <script src="js/app.js?v=3.44"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
