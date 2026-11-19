@@ -705,7 +705,7 @@ class CBTAdmin {
     if (!q || typeof q !== 'object') return false;
     if (q.isTrial === false || q.isTrial === 'false') return false;
     if (q.isTrial === true || q.isTrial === 'true') return true;
-    return /^\[Soal Uji Coba/i.test(String(q.question || '').trim());
+    return /^\[Soal\s+(?:Simulasi|Uji Coba)/i.test(String(q.question || '').trim());
   }
 
   getQuestionsFiltered(subjectFilter = 'ALL', classFilter = 'ALL', categoryFilter = 'ALL') {
@@ -925,10 +925,10 @@ class CBTAdmin {
     const buildFallbackTrialTemplates = (subjName) => [
       {
         type: 'single',
-        question: `[Soal Uji Coba - ${subjName}] Soal ini disediakan untuk menguji tampilan Pilihan Ganda Tunggal, navigasi nomor soal, serta perhitungan skor otomatis pada aplikasi CBT. Pilihlah pernyataan yang paling tepat mengenai fungsi uji coba bank soal:`,
+        question: `[Soal Simulasi - ${subjName}] Soal ini disediakan untuk menguji tampilan Pilihan Ganda Tunggal, navigasi nomor soal, serta perhitungan skor otomatis pada aplikasi CBT. Pilihlah pernyataan yang paling tepat mengenai fungsi soal simulasi:`,
         image: '',
         options: [
-          { key: 'A', text: 'Memastikan soal tampil rapi, waktu berjalan akurat, dan nilai terekam di Rekap Nilai' },
+          { key: 'A', text: 'Memastikan soal tampil rapi, waktu berjalan akurat, dan nilai terekam di Rekap Nilai & Peringkat' },
           { key: 'B', text: 'Menghapus seluruh data siswa peserta ujian secara otomatis' },
           { key: 'C', text: 'Menonaktifkan fitur pengawasan dan penyimpanan hasil ujian' },
           { key: 'D', text: 'Mengubah token jadwal ujian tanpa persetujuan proktor' }
@@ -938,7 +938,7 @@ class CBTAdmin {
       },
       {
         type: 'multiple',
-        question: `[Soal Uji Coba - ${subjName}] Pilihlah SEMUA hal yang dapat diperiksa melalui soal uji coba Pilihan Ganda Kompleks pada sistem CBT sebelum hari pelaksanaan ujian:`,
+        question: `[Soal Simulasi - ${subjName}] Pilihlah SEMUA hal yang dapat diperiksa melalui soal simulasi Pilihan Ganda Kompleks pada sistem CBT sebelum hari pelaksanaan ujian:`,
         image: '',
         options: [
           { key: 'A', text: 'Kemampuan mencentang lebih dari satu pilihan jawaban pada perangkat siswa' },
@@ -951,12 +951,12 @@ class CBTAdmin {
       },
       {
         type: 'true_false',
-        question: `[Soal Uji Coba - ${subjName}] Tentukan kebenaran pernyataan mengenai alur pengerjaan ujian CBT oleh siswa berikut ini:`,
+        question: `[Soal Simulasi - ${subjName}] Tentukan kebenaran pernyataan mengenai alur pengerjaan ujian CBT oleh siswa berikut ini:`,
         image: '',
         statements: [
           { id: 's1', text: 'Siswa dapat meninjau kembali jawaban pada setiap nomor sebelum menekan tombol Selesai Ujian.', correct: 'B' },
-          { id: 's2', text: 'Jawaban yang telah dikumpulkan oleh siswa otomatis masuk ke Rekap Nilai Guru Mata Pelajaran.', correct: 'B' },
-          { id: 's3', text: 'Guru dapat mengedit atau mengganti soal uji coba ini dengan soal asli sebelum ujian dimulai.', correct: 'B' }
+          { id: 's2', text: 'Jawaban yang telah dikumpulkan oleh siswa otomatis masuk ke Rekap Nilai & Peringkat Guru Mata Pelajaran.', correct: 'B' },
+          { id: 's3', text: 'Guru dapat mengedit atau mengganti soal simulasi ini dengan soal asli sebelum ujian dimulai.', correct: 'B' }
         ],
         weight: 35
       }
@@ -1795,7 +1795,7 @@ class CBTAdmin {
 
   normalizeQuestionCategory(cat) {
     const val = String(cat || 'ALL').trim().toLowerCase();
-    if (val === 'trial' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
+    if (val === 'trial' || val === 'simulasi' || val === 'simulation' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
     if (val === 'exam' || val === 'real' || val === 'asli') return 'exam';
     return 'ALL';
   }

@@ -1,11 +1,11 @@
-// Bank Soal Uji Coba Aplikasi CBT (Mencakup 13 Mata Pelajaran Guru)
+// Bank Soal Simulasi Aplikasi CBT (Mencakup 13 Mata Pelajaran Guru)
 // Mendukung 3 Tipe Soal di setiap Mapel:
 // 1. 'single'     : Pilihan Ganda Tunggal (1 jawaban benar, bobot 30)
 // 2. 'multiple'   : Pilihan Ganda Kompleks (>= 2 jawaban benar, bobot 35)
 // 3. 'true_false' : Tabel Pernyataan Benar / Salah (3 pernyataan, bobot 35)
 
 const DEFAULT_EXAM_CONFIG = {
-  examTitle: "Uji Coba Asesmen Sumatif CBT",
+  examTitle: "Simulasi Asesmen Sumatif CBT",
   subject: "Bahasa Indonesia",
   targetClass: "Semua Kelas",
   scheduleDay: "",
@@ -29,7 +29,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Budi Santoso, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Bacalah paragraf berikut:\n\n'Kebersihan lingkungan sekolah adalah tanggung jawab bersama seluruh warga sekolah. Dengan menjaga kebersihan kelas dan halaman, proses belajar mengajar menjadi lebih nyaman, sehat, dan kondusif.'\n\nGagasan utama paragraf tersebut adalah...",
+    question: "[Soal Simulasi] Bacalah paragraf berikut:\n\n'Kebersihan lingkungan sekolah adalah tanggung jawab bersama seluruh warga sekolah. Dengan menjaga kebersihan kelas dan halaman, proses belajar mengajar menjadi lebih nyaman, sehat, dan kondusif.'\n\nGagasan utama paragraf tersebut adalah...",
     image: "",
     options: [
       { key: "A", text: "Jadwal piket kelas harus dibuat setiap hari Senin" },
@@ -46,7 +46,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Budi Santoso, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Manakah kalimat di bawah ini yang menggunakan huruf kapital dan ejaan bahasa Indonesia secara tepat? (Pilih semua jawaban yang benar):",
+    question: "[Soal Simulasi] Manakah kalimat di bawah ini yang menggunakan huruf kapital dan ejaan bahasa Indonesia secara tepat? (Pilih semua jawaban yang benar):",
     image: "",
     options: [
       { key: "A", text: "Siswa SMP Negeri 2 Pacet mengikuti upacara bendera setiap hari Senin." },
@@ -63,7 +63,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Budi Santoso, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai struktur dan kaidah teks dalam Bahasa Indonesia berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai struktur dan kaidah teks dalam Bahasa Indonesia berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Teks berita disusun berdasarkan fakta yang bersifat aktual dan dapat dipertanggungjawabkan.", correct: "B" },
@@ -80,7 +80,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Siti Rahmawati, M.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Sebuah toko memberikan diskon 20% untuk sebuah tas sekolah dengan harga awal Rp150.000,00. Berapakah harga tas tersebut setelah mendapat diskon?",
+    question: "[Soal Simulasi] Sebuah toko memberikan diskon 20% untuk sebuah tas sekolah dengan harga awal Rp150.000,00. Berapakah harga tas tersebut setelah mendapat diskon?",
     image: "",
     options: [
       { key: "A", text: "Rp110.000,00" },
@@ -97,7 +97,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Siti Rahmawati, M.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Perhatikan himpunan bilangan bulat berikut! Pilihlah SEMUA bilangan yang merupakan bilangan prima:",
+    question: "[Soal Simulasi] Perhatikan himpunan bilangan bulat berikut! Pilihlah SEMUA bilangan yang merupakan bilangan prima:",
     image: "",
     options: [
       { key: "A", text: "2" },
@@ -114,7 +114,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Siti Rahmawati, M.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran dari pernyataan bangun datar dan aljabar sederhana berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran dari pernyataan bangun datar dan aljabar sederhana berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Jumlah besar ketiga sudut dalam sebuah segitiga selalu 180 derajat.", correct: "B" },
@@ -131,7 +131,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dedi Irawan, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Read the dialogue carefully:\n\nRani: \"What does your father do every morning before going to work?\"\nBagus: \"He usually ___ a cup of coffee and reads the newspaper.\"\n\nChoose the best verb to complete the sentence:",
+    question: "[Soal Simulasi] Read the dialogue carefully:\n\nRani: \"What does your father do every morning before going to work?\"\nBagus: \"He usually ___ a cup of coffee and reads the newspaper.\"\n\nChoose the best verb to complete the sentence:",
     image: "",
     options: [
       { key: "A", text: "drink" },
@@ -148,7 +148,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dedi Irawan, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Which expressions below are polite ways to ask for permission in English? (Choose all correct answers):",
+    question: "[Soal Simulasi] Which expressions below are polite ways to ask for permission in English? (Choose all correct answers):",
     image: "",
     options: [
       { key: "A", text: "May I go to the restroom, please?" },
@@ -165,7 +165,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dedi Irawan, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Determine whether each statement about English grammar and text types is True (B) or False (S):",
+    question: "[Soal Simulasi] Determine whether each statement about English grammar and text types is True (B) or False (S):",
     image: "",
     statements: [
       { id: "s1", text: "Simple Past Tense is used to describe events that happened and finished in the past.", correct: "B" },
@@ -182,7 +182,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Nurul Hidayah, M.Si.",
     type: "single",
-    question: "[Soal Uji Coba] Dalam sistem peredaran darah manusia, pembuluh darah yang berfungsi mengalirkan darah kaya oksigen keluar dari jantung menuju ke seluruh tubuh adalah...",
+    question: "[Soal Simulasi] Dalam sistem peredaran darah manusia, pembuluh darah yang berfungsi mengalirkan darah kaya oksigen keluar dari jantung menuju ke seluruh tubuh adalah...",
     image: "",
     options: [
       { key: "A", text: "Vena kava superior" },
@@ -199,7 +199,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Nurul Hidayah, M.Si.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA faktor yang secara langsung memengaruhi kelancaran proses fotosintesis pada tumbuhan hijau:",
+    question: "[Soal Simulasi] Pilihlah SEMUA faktor yang secara langsung memengaruhi kelancaran proses fotosintesis pada tumbuhan hijau:",
     image: "",
     options: [
       { key: "A", text: "Ketersediaan gas Karbon Dioksida (CO₂)" },
@@ -216,7 +216,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Nurul Hidayah, M.Si.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai besaran fisika dan tata surya berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai besaran fisika dan tata surya berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Satuan Internasional (SI) untuk besaran suhu adalah Kelvin (K).", correct: "B" },
@@ -233,7 +233,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Agus Pratama, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Letak geografis Indonesia yang berada di antara dua benua (Asia dan Australia) serta dua samudra (Hindia dan Pasifik) memberikan keuntungan besar bagi Indonesia terutama di bidang...",
+    question: "[Soal Simulasi] Letak geografis Indonesia yang berada di antara dua benua (Asia dan Australia) serta dua samudra (Hindia dan Pasifik) memberikan keuntungan besar bagi Indonesia terutama di bidang...",
     image: "",
     options: [
       { key: "A", text: "Terjadinya musim dingin bersalju sepanjang tahun" },
@@ -250,7 +250,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Agus Pratama, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA negara yang merupakan pendiri organisasi kerja sama kawasan ASEAN pada Deklarasi Bangkok tahun 1967:",
+    question: "[Soal Simulasi] Pilihlah SEMUA negara yang merupakan pendiri organisasi kerja sama kawasan ASEAN pada Deklarasi Bangkok tahun 1967:",
     image: "",
     options: [
       { key: "A", text: "Indonesia" },
@@ -267,7 +267,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Agus Pratama, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai kegiatan ekonomi dan sejarah Indonesia berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai kegiatan ekonomi dan sejarah Indonesia berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Kegiatan menyalurkan barang dari produsen hingga sampai ke tangan konsumen disebut distribusi.", correct: "B" },
@@ -284,7 +284,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dewi Lestari, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Pengambilan keputusan bersama melalui musyawarah untuk mencapai mufakat sesuai dengan nilai-nilai Pancasila khususnya sila ke...",
+    question: "[Soal Simulasi] Pengambilan keputusan bersama melalui musyawarah untuk mencapai mufakat sesuai dengan nilai-nilai Pancasila khususnya sila ke...",
     image: "",
     options: [
       { key: "A", text: "Sila Kedua" },
@@ -301,7 +301,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dewi Lestari, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA contoh perilaku yang mencerminkan semangat persatuan dan kesatuan di lingkungan sekolah:",
+    question: "[Soal Simulasi] Pilihlah SEMUA contoh perilaku yang mencerminkan semangat persatuan dan kesatuan di lingkungan sekolah:",
     image: "",
     options: [
       { key: "A", text: "Bekerja sama membersihkan ruang kelas tanpa membeda-bedakan latar belakang teman" },
@@ -318,7 +318,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Dewi Lestari, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan terkait konstitusi dan tata negara Indonesia berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan terkait konstitusi dan tata negara Indonesia berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Undang-Undang Dasar Negara Republik Indonesia Tahun 1945 disahkan oleh PPKI pada tanggal 18 Agustus 1945.", correct: "B" },
@@ -335,7 +335,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "H. Ahmad Fauzi, S.Ag., M.Pd.I.",
     type: "single",
-    question: "[Soal Uji Coba] Sifat jujur, dapat dipercaya, dan menjaga titipan orang lain dengan penuh tanggung jawab dalam perilaku akhlak mulia disebut...",
+    question: "[Soal Simulasi] Sifat jujur, dapat dipercaya, dan menjaga titipan orang lain dengan penuh tanggung jawab dalam perilaku akhlak mulia disebut...",
     image: "",
     options: [
       { key: "A", text: "Amanah" },
@@ -352,7 +352,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "H. Ahmad Fauzi, S.Ag., M.Pd.I.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA perilaku terpuji (akhlakul karimah) yang wajib diterapkan pelajar terhadap orang tua dan guru:",
+    question: "[Soal Simulasi] Pilihlah SEMUA perilaku terpuji (akhlakul karimah) yang wajib diterapkan pelajar terhadap orang tua dan guru:",
     image: "",
     options: [
       { key: "A", text: "Berbicara dengan tutur kata yang sopan dan santun" },
@@ -369,7 +369,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "H. Ahmad Fauzi, S.Ag., M.Pd.I.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai sikap jujur, disiplin, dan toleransi beragama berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai sikap jujur, disiplin, dan toleransi beragama berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Menyontek saat ujian merupakan perbuatan yang bertentangan dengan nilai kejujuran.", correct: "B" },
@@ -386,7 +386,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Rian Hidayat, S.Pd.Jas.",
     type: "single",
-    question: "[Soal Uji Coba] Tujuan utama melakukan gerakan pemanasan (warming up) sebelum berolahraga inti adalah...",
+    question: "[Soal Simulasi] Tujuan utama melakukan gerakan pemanasan (warming up) sebelum berolahraga inti adalah...",
     image: "",
     options: [
       { key: "A", text: "Membuat otot cepat lelah sebelum bertanding" },
@@ -403,7 +403,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Rian Hidayat, S.Pd.Jas.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA teknik dasar yang terdapat dalam permainan bola basket:",
+    question: "[Soal Simulasi] Pilihlah SEMUA teknik dasar yang terdapat dalam permainan bola basket:",
     image: "",
     options: [
       { key: "A", text: "Dribbling (menggiring bola)" },
@@ -420,7 +420,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Rian Hidayat, S.Pd.Jas.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan seputar kebugaran jasmani dan pola hidup sehat berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan seputar kebugaran jasmani dan pola hidup sehat berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Jumlah pemain inti dalam satu regu permainan bola voli di lapangan adalah 6 orang.", correct: "B" },
@@ -437,7 +437,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Sri Mulyani, S.Sn.",
     type: "single",
-    question: "[Soal Uji Coba] Dalam teori warna seni rupa, tiga warna pokok (warna primer) yang dapat dicampur untuk menghasilkan warna lainnya adalah...",
+    question: "[Soal Simulasi] Dalam teori warna seni rupa, tiga warna pokok (warna primer) yang dapat dicampur untuk menghasilkan warna lainnya adalah...",
     image: "",
     options: [
       { key: "A", text: "Hijau, Ungu, dan Oranye" },
@@ -454,7 +454,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Sri Mulyani, S.Sn.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA alat musik tradisional khas Indonesia yang dimainkan dengan cara dipukul atau ditabuh:",
+    question: "[Soal Simulasi] Pilihlah SEMUA alat musik tradisional khas Indonesia yang dimainkan dengan cara dipukul atau ditabuh:",
     image: "",
     options: [
       { key: "A", text: "Gamelan (Saron / Bonang)" },
@@ -471,7 +471,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Sri Mulyani, S.Sn.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai cabang seni rupa, musik, dan tari daerah berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai cabang seni rupa, musik, dan tari daerah berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Karya seni rupa tiga dimensi memiliki ukuran panjang, lebar, dan tinggi (volume) sehingga dapat dilihat dari berbagai sisi.", correct: "B" },
@@ -488,7 +488,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Fajar Nugraha, S.Kom.",
     type: "single",
-    question: "[Soal Uji Coba] Komponen perangkat keras komputer yang berfungsi sebagai otak pemroses instruksi program dan perhitungan logika disebut...",
+    question: "[Soal Simulasi] Komponen perangkat keras komputer yang berfungsi sebagai otak pemroses instruksi program dan perhitungan logika disebut...",
     image: "",
     options: [
       { key: "A", text: "Printer" },
@@ -505,7 +505,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Fajar Nugraha, S.Kom.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA contoh tindakan keamanan digital (cyber safety) yang baik ketika menggunakan internet:",
+    question: "[Soal Simulasi] Pilihlah SEMUA contoh tindakan keamanan digital (cyber safety) yang baik ketika menggunakan internet:",
     image: "",
     options: [
       { key: "A", text: "Menggunakan kata sandi yang kuat dan tidak dibagikan kepada orang asing" },
@@ -522,7 +522,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Fajar Nugraha, S.Kom.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai jaringan internet dan perangkat lunak berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai jaringan internet dan perangkat lunak berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Protokol HTTPS mengenkripsi pengiriman data sehingga lebih aman dibanding HTTP biasa.", correct: "B" },
@@ -539,7 +539,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Endang Wulandari, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Pemanfaatan botol plastik bekas minuman menjadi pot tanaman hias atau tempat alat tulis merupakan penerapan prinsip pengolahan limbah yang disebut...",
+    question: "[Soal Simulasi] Pemanfaatan botol plastik bekas minuman menjadi pot tanaman hias atau tempat alat tulis merupakan penerapan prinsip pengolahan limbah yang disebut...",
     image: "",
     options: [
       { key: "A", text: "Recycle (mendaur ulang / mengolah kembali)" },
@@ -556,7 +556,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Endang Wulandari, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA bahan alam yang umum digunakan untuk membuat produk kerajinan anyaman tradisional di Indonesia:",
+    question: "[Soal Simulasi] Pilihlah SEMUA bahan alam yang umum digunakan untuk membuat produk kerajinan anyaman tradisional di Indonesia:",
     image: "",
     options: [
       { key: "A", text: "Bambu yang diiris tipis" },
@@ -573,7 +573,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Endang Wulandari, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan mengenai pengolahan pangan dan kewirausahaan berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan mengenai pengolahan pangan dan kewirausahaan berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Kemasan produk yang rapi, bersih, dan informatif dapat meningkatkan daya tarik pembeli.", correct: "B" },
@@ -590,7 +590,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Bambang Wijaya, S.Pd.",
     type: "single",
-    question: "[Soal Uji Coba] Dalam tata krama berbahasa daerah di Jawa Timur (Basa Jawa), ragam bahasa halus yang digunakan siswa ketika berbicara dengan guru atau orang yang lebih tua disebut...",
+    question: "[Soal Simulasi] Dalam tata krama berbahasa daerah di Jawa Timur (Basa Jawa), ragam bahasa halus yang digunakan siswa ketika berbicara dengan guru atau orang yang lebih tua disebut...",
     image: "",
     options: [
       { key: "A", text: "Ngoko kasar" },
@@ -607,7 +607,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Bambang Wijaya, S.Pd.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA contoh tembang Macapat yang merupakan bagian dari karya sastra tradisi Jawa:",
+    question: "[Soal Simulasi] Pilihlah SEMUA contoh tembang Macapat yang merupakan bagian dari karya sastra tradisi Jawa:",
     image: "",
     options: [
       { key: "A", text: "Pocung" },
@@ -624,7 +624,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Bambang Wijaya, S.Pd.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan tentang pelestarian bahasa daerah dan budaya lokal berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan tentang pelestarian bahasa daerah dan budaya lokal berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Unggah-ungguh atau tata krama berbicara membantu menjaga rasa hormat kepada orang yang lebih tua.", correct: "B" },
@@ -641,7 +641,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Ratna Sari, S.Psi.",
     type: "single",
-    question: "[Soal Uji Coba] Langkah terbaik ketika menghadapi perbedaan pendapat dengan teman sebaya di kelas agar tidak terjadi perundungan (bullying) atau pertengkaran adalah...",
+    question: "[Soal Simulasi] Langkah terbaik ketika menghadapi perbedaan pendapat dengan teman sebaya di kelas agar tidak terjadi perundungan (bullying) atau pertengkaran adalah...",
     image: "",
     options: [
       { key: "A", text: "Menyebarkan rumor buruk tentang teman tersebut di media sosial" },
@@ -658,7 +658,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Ratna Sari, S.Psi.",
     type: "multiple",
-    question: "[Soal Uji Coba] Pilihlah SEMUA kebiasaan belajar efektif dan literasi yang membantu meningkatkan kesiapan menghadapi ujian sekolah:",
+    question: "[Soal Simulasi] Pilihlah SEMUA kebiasaan belajar efektif dan literasi yang membantu meningkatkan kesiapan menghadapi ujian sekolah:",
     image: "",
     options: [
       { key: "A", text: "Membuat jadwal belajar teratur serta meringkas poin penting materi" },
@@ -675,7 +675,7 @@ const DEFAULT_QUESTIONS = [
     classLevel: "Semua Kelas",
     createdBy: "Ratna Sari, S.Psi.",
     type: "true_false",
-    question: "[Soal Uji Coba] Tentukan kebenaran pernyataan terkait etika pelajar, kesehatan mental, dan literasi digital berikut:",
+    question: "[Soal Simulasi] Tentukan kebenaran pernyataan terkait etika pelajar, kesehatan mental, dan literasi digital berikut:",
     image: "",
     statements: [
       { id: "s1", text: "Memeriksa kebenaran sumber informasi sebelum membagikannya membantu mencegah penyebaran hoaks.", correct: "B" },

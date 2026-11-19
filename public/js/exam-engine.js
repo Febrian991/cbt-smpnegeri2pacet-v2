@@ -597,7 +597,7 @@ class ExamEngine {
 
   normalizeQuestionCategory(category) {
     const val = String(category || 'ALL').trim().toLowerCase();
-    if (val === 'trial' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
+    if (val === 'trial' || val === 'simulasi' || val === 'simulation' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
     if (val === 'exam' || val === 'real' || val === 'asli') return 'exam';
     return 'ALL';
   }
@@ -606,7 +606,7 @@ class ExamEngine {
     if (!q || typeof q !== 'object') return false;
     if (q.isTrial === false || q.isTrial === 'false') return false;
     if (q.isTrial === true || q.isTrial === 'true') return true;
-    return /^\[Soal Uji Coba/i.test(String(q.question || '').trim());
+    return /^\[Soal\s+(?:Simulasi|Uji Coba)/i.test(String(q.question || '').trim());
   }
 
   getQuestionsForExam(subjectOverride = null, classOverride = null, categoryOverride = null) {

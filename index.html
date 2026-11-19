@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.50">
+  <link rel="stylesheet" href="css/styles.css?v=3.51">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -677,41 +677,41 @@
       <!-- Workspace 2 Kolom: Sidebar Menu Kiri + Konten Utama Kanan -->
       <div id="adminWorkspaceLayout" class="flex flex-col lg:flex-row items-start gap-4 sm:gap-5">
         <!-- Sidebar Menu Kiri (Berjajar ke Bawah di Desktop, Scroll Horizontal di HP) -->
-        <aside class="w-full lg:w-60 xl:w-64 shrink-0 lg:sticky lg:top-20">
+        <aside class="w-full lg:w-64 xl:w-[272px] shrink-0 lg:sticky lg:top-20">
           <div id="adminTabsBar" class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 sm:p-3.5 shadow-xs flex lg:flex-col lg:justify-between lg:min-h-[calc(100vh-11rem)] gap-2 overflow-x-auto lg:overflow-x-visible">
             <div class="flex lg:flex-col gap-1.5 sm:gap-2 w-full">
               <div class="hidden lg:flex items-center justify-between px-2.5 pt-1 pb-2.5 mb-1 border-b border-slate-200/80 dark:border-slate-800">
                 <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Menu</span>
               </div>
-              <button id="adminTabBtnDashboard" type="button" data-tab="tabDashboard" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-gradient-to-r from-[#124196] to-[#1a56c4] text-white border-transparent shadow-md shadow-blue-900/20 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <button id="adminTabBtnDashboard" type="button" data-tab="tabDashboard" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-gradient-to-r from-[#124196] to-[#1a56c4] text-white border-transparent shadow-md shadow-blue-900/20 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
                 <span>🏠 Dashboard</span>
               </button>
-              <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>📊 Rekap Nilai (Ranking)</span>
+              <button id="adminTabBtnResults" type="button" data-tab="tabResults" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>📊 Rekap Nilai &amp; Peringkat</span>
               </button>
-              <button id="adminTabBtnMonitoring" type="button" data-tab="tabMonitoring" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>📡 Pantau Login Siswa</span>
+              <button id="adminTabBtnMonitoring" type="button" data-tab="tabMonitoring" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>📡 Monitoring Login Siswa</span>
               </button>
-              <button id="adminTabBtnSchedules" type="button" data-tab="tabSchedules" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>📅 Jadwal &amp; Mapel</span>
+              <button id="adminTabBtnSchedules" type="button" data-tab="tabSchedules" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>📅 Jadwal &amp; Mata Pelajaran</span>
               </button>
-              <button id="adminTabBtnQuestions" type="button" data-tab="tabQuestions" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>📝 Bank Soal Ujian</span>
+              <button id="adminTabBtnQuestions" type="button" data-tab="tabQuestions" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>📝 Bank Soal</span>
               </button>
-              <button id="adminTabBtnStudents" type="button" data-tab="tabStudents" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <button id="adminTabBtnStudents" type="button" data-tab="tabStudents" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
                 <span>👥 Data Siswa</span>
               </button>
-              <button id="adminTabBtnTeachers" type="button" data-tab="tabTeachers" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
+              <button id="adminTabBtnTeachers" type="button" data-tab="tabTeachers" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
                 <span>👨‍🏫 Data Guru</span>
               </button>
-              <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>⚙️ Pengaturan &amp; Kop</span>
+              <button id="adminTabBtnSettings" type="button" data-tab="tabSettings" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>⚙️ Pengaturan &amp; Identitas Sekolah</span>
               </button>
-              <button id="adminTabBtnDatabase" type="button" data-tab="tabDatabase" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>🗄️ Database</span>
+              <button id="adminTabBtnDatabase" type="button" data-tab="tabDatabase" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>🗄️ Manajemen Database</span>
               </button>
-              <button id="adminTabBtnBackup" type="button" data-tab="tabBackup" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap">
-                <span>💾 Backup</span>
+              <button id="adminTabBtnBackup" type="button" data-tab="tabBackup" class="admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug">
+                <span>💾 Backup &amp; Restore</span>
               </button>
             </div>
             <div class="hidden lg:block pt-3 mt-4 border-t border-slate-200/80 dark:border-slate-800 px-2.5">
@@ -1228,12 +1228,12 @@
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="schInputQuestionCategory">Sumber / Kategori Soal Ujian</label>
                 <select id="schInputQuestionCategory" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="ALL">📚 Semua Soal (Asli &amp; Uji Coba)</option>
-                  <option value="trial">🧪 Khusus Soal Uji Coba (Simulasi / Gladi)</option>
+                  <option value="ALL">📚 Semua Soal (Asli &amp; Simulasi)</option>
+                  <option value="trial">🧪 Khusus Soal Simulasi</option>
                   <option value="exam">📝 Hanya Soal Ujian Asli (Hari-H)</option>
                 </select>
                 <p id="schCategoryHelper" class="text-[10px] text-slate-500 mt-1 leading-snug">
-                  Menarik semua butir soal mapel ini. Pilih <strong>Khusus Uji Coba</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.
+                  Menarik semua butir soal mapel ini. Pilih <strong>Khusus Soal Simulasi</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.
                 </p>
               </div>
 
@@ -1294,11 +1294,11 @@
               <button id="btnOpenPrintQuestions" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer flex items-center gap-1">
                 <span>📄 Download Naskah Soal</span>
               </button>
-              <button id="btnSeedTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer" title="Tambahkan 3 soal uji coba aplikasi ke bank soal yang masih kosong (atau ke mapel aktif)">
-                🧪 Soal Uji Coba
+              <button id="btnSeedTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer" title="Tambahkan 3 soal simulasi ke bank soal yang masih kosong (atau ke mapel aktif)">
+                🧪 Soal Simulasi
               </button>
-              <button id="btnClearTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer" title="Hapus sekaligus semua Soal Uji Coba pada filter/cakupan aktif tanpa menyentuh Soal Ujian Asli">
-                🗑️ Hapus Soal Uji Coba
+              <button id="btnClearTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer" title="Hapus sekaligus semua Soal Simulasi pada filter/cakupan aktif tanpa menyentuh Soal Ujian Asli">
+                🗑️ Hapus Soal Simulasi
               </button>
               <button id="btnResetDefaultQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition cursor-pointer">
                 ↺ Reset Soal
@@ -1329,9 +1329,9 @@
             <div>
               <label for="filterQuestionsCategory" class="block text-[11px] font-bold text-slate-600 mb-1">🏷️ Kategori Soal</label>
               <select id="filterQuestionsCategory" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-violet-700 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="ALL">Semua Kategori (Asli &amp; Uji Coba)</option>
+                <option value="ALL">Semua Kategori (Asli &amp; Simulasi)</option>
                 <option value="exam">📝 Soal Ujian Asli Saja</option>
-                <option value="trial">🧪 Soal Uji Coba Saja</option>
+                <option value="trial">🧪 Soal Simulasi Saja</option>
               </select>
             </div>
           </div>
@@ -1768,8 +1768,8 @@
                 <div>
                   <label class="block font-bold text-slate-700 mb-1" for="cfgQuestionCategory">Kategori Soal (Mode Manual)</label>
                   <select id="cfgQuestionCategory" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 focus:ring-2 focus:ring-blue-500 outline-none">
-                    <option value="ALL">📚 Semua Soal (Asli &amp; Uji Coba)</option>
-                    <option value="trial">🧪 Khusus Soal Uji Coba</option>
+                    <option value="ALL">📚 Semua Soal (Asli &amp; Simulasi)</option>
+                    <option value="trial">🧪 Khusus Soal Simulasi</option>
                     <option value="exam">📝 Hanya Soal Ujian Asli</option>
                   </select>
                 </div>
@@ -2206,7 +2206,7 @@
             <label class="block font-bold text-slate-700 mb-1" for="qInputCategory">Kategori Soal</label>
             <select id="qInputCategory" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 outline-none focus:ring-2 focus:ring-blue-500">
               <option value="exam">📝 Soal Ujian Asli (Hari-H)</option>
-              <option value="trial">🧪 Soal Uji Coba Aplikasi</option>
+              <option value="trial">🧪 Soal Simulasi</option>
             </select>
           </div>
           <div>
@@ -2219,7 +2219,7 @@
           </div>
         </div>
         <p id="qCategoryHelper" class="hidden text-[11px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-800 font-medium">
-          🧪 <strong>Mode Uji Coba:</strong> Soal ini ditandai khusus sebagai simulasi aplikasi dan bisa disaring atau dihapus 1 klik sebelum ujian asli dimulai.
+          🧪 <strong>Mode Simulasi:</strong> Soal ini ditandai khusus sebagai soal simulasi dan bisa disaring atau dihapus 1 klik sebelum ujian asli dimulai.
         </p>
 
         <div>
@@ -2688,13 +2688,13 @@
   <div id="cbtRealtimeToastStack" class="fixed bottom-4 right-4 z-[75] flex flex-col-reverse gap-2.5 max-w-sm w-[calc(100vw-2rem)] pointer-events-none no-print"></div>
 
   <!-- ======================== SCRIPTS ======================== -->
-  <script src="js/default-questions.js?v=3.50"></script>
+  <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.39"></script>
   <script src="js/supabase-config.js?v=3.50"></script>
-  <script src="js/exam-engine.js?v=3.50"></script>
-  <script src="js/admin.js?v=3.50"></script>
-  <script src="js/app.js?v=3.50"></script>
+  <script src="js/exam-engine.js?v=3.51"></script>
+  <script src="js/admin.js?v=3.51"></script>
+  <script src="js/app.js?v=3.51"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

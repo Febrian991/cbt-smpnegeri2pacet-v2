@@ -835,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetDate = sched ? (sched.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(sched.dateIso) : '')) : cfg.scheduleDate;
     const targetTime = sched ? (sched.timeRange || '') : cfg.scheduleTime;
     const targetCategory = sched ? (sched.questionCategory || 'ALL') : (cfg.questionCategory || 'ALL');
-    const trialSuffix = targetCategory === 'trial' ? ' • Mode Uji Coba' : '';
+    const trialSuffix = targetCategory === 'trial' ? ' • Mode Simulasi' : '';
 
     if (scheduleBadgeEl && scheduleTextEl) {
       const activeList = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
@@ -850,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleTextEl.innerText = `Jadwal Aktif: ${datePart}${timePart}${trialSuffix}`;
         scheduleBadgeEl.classList.remove('hidden');
       } else if (targetCategory === 'trial') {
-        scheduleTextEl.innerText = 'Mode Uji Coba Aplikasi Aktif';
+        scheduleTextEl.innerText = 'Mode Simulasi Aktif';
         scheduleBadgeEl.classList.remove('hidden');
       } else {
         scheduleBadgeEl.classList.add('hidden');
@@ -897,7 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeList.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.id;
-          const catSuffix = s.questionCategory === 'trial' ? ' — Uji Coba' : '';
+          const catSuffix = s.questionCategory === 'trial' ? ' — Simulasi' : '';
           opt.innerText = `${s.subject} (${s.classLevel || 'Semua Kelas'})${catSuffix}`;
           selectEl.appendChild(opt);
         });
@@ -1025,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmSubEl = document.getElementById('confirmSubject');
     if (confirmSubEl) {
       const catTag = cfg.questionCategory === 'trial'
-        ? ' [Uji Coba]'
+        ? ' [Simulasi]'
         : (cfg.questionCategory === 'exam' ? ' [Ujian Asli]' : '');
       confirmSubEl.innerText = `${cfg.subject}${classPart}${catTag}`;
     }
@@ -1236,7 +1236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         targetCat
       );
       if (!examQsCheck.questions || examQsCheck.questions.length === 0) {
-        const catLabel = targetCat === 'trial' ? 'Soal Uji Coba' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
+        const catLabel = targetCat === 'trial' ? 'Soal Simulasi' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
         showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Proktor / Guru Mapel.`);
         tempStudent = null;
         try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
@@ -2675,9 +2675,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (val === 'trial') {
       return {
         value: 'trial',
-        badgeText: '🧪 Khusus Uji Coba',
+        badgeText: '🧪 Khusus Simulasi',
         badgeClass: 'bg-violet-100 text-violet-800 border border-violet-200',
-        shortText: 'Khusus Soal Uji Coba'
+        shortText: 'Khusus Soal Simulasi'
       };
     }
     if (val === 'exam') {
@@ -2692,7 +2692,7 @@ document.addEventListener('DOMContentLoaded', () => {
       value: 'ALL',
       badgeText: '📚 Semua Soal',
       badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-      shortText: 'Semua Soal (Asli & Uji Coba)'
+      shortText: 'Semua Soal (Asli & Simulasi)'
     };
   }
 
@@ -2700,11 +2700,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!schCategoryHelper || !schInputQuestionCategory) return;
     const val = schInputQuestionCategory.value || 'ALL';
     if (val === 'trial') {
-      schCategoryHelper.innerHTML = 'Mode simulasi: siswa hanya menerima soal bertanda <strong class="text-violet-700">🧪 Uji Coba</strong> pada mapel &amp; kelas ini.';
+      schCategoryHelper.innerHTML = 'Mode simulasi: siswa hanya menerima soal bertanda <strong class="text-violet-700">🧪 Simulasi</strong> pada mapel &amp; kelas ini.';
     } else if (val === 'exam') {
-      schCategoryHelper.innerHTML = 'Mode ujian resmi: semua soal <strong class="text-violet-700">🧪 Uji Coba</strong> otomatis disaring agar tidak ikut tampil ke siswa.';
+      schCategoryHelper.innerHTML = 'Mode ujian resmi: semua soal <strong class="text-violet-700">🧪 Simulasi</strong> otomatis disaring agar tidak ikut tampil ke siswa.';
     } else {
-      schCategoryHelper.innerHTML = 'Menarik semua butir soal mapel ini. Pilih <strong>Khusus Uji Coba</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.';
+      schCategoryHelper.innerHTML = 'Menarik semua butir soal mapel ini. Pilih <strong>Khusus Soal Simulasi</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.';
     }
   }
 
@@ -2826,15 +2826,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (bannerTextEl) {
       if (activeSchedules.length > 1) {
-        const names = activeSchedules.map(s => `${s.subject} (${s.classLevel}${s.questionCategory === 'trial' ? ' • Uji Coba' : ''})`).join(', ');
+        const names = activeSchedules.map(s => `${s.subject} (${s.classLevel}${s.questionCategory === 'trial' ? ' • Simulasi' : ''})`).join(', ');
         bannerTextEl.innerText = `${activeSchedules.length} Mapel Aktif Serentak: ${names}`;
       } else if (activeSchedules.length === 1) {
         const s = activeSchedules[0];
         const classLabel = s.classLevel && s.classLevel !== 'Semua Kelas' ? ` (${s.classLevel})` : '';
-        const catTag = s.questionCategory === 'trial' ? ' • Mode Uji Coba' : (s.questionCategory === 'exam' ? ' • Soal Asli' : '');
+        const catTag = s.questionCategory === 'trial' ? ' • Mode Simulasi' : (s.questionCategory === 'exam' ? ' • Soal Asli' : '');
         bannerTextEl.innerText = `Mapel Aktif: ${s.subject}${classLabel} • ${s.day}, ${s.dateFormatted || window.cbtAdmin.formatIndonesianDate(s.dateIso)} • Token: ${s.token}${catTag}`;
       } else {
-        const manCatTag = cfg.questionCategory === 'trial' ? ' • Mode Uji Coba' : (cfg.questionCategory === 'exam' ? ' • Soal Asli' : '');
+        const manCatTag = cfg.questionCategory === 'trial' ? ' • Mode Simulasi' : (cfg.questionCategory === 'exam' ? ' • Soal Asli' : '');
         bannerTextEl.innerText = `Belum Ada Jadwal Aktif (Mode Manual: ${cfg.subject} • Token: ${cfg.examToken}${manCatTag})`;
       }
     }
@@ -2861,7 +2861,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? window.examEngine.getQuestionsForExam(s.subject, s.classLevel, catMeta.value)
         : { questions: [], isFallback: true };
       const emptyBadgeLabel = catMeta.value === 'trial'
-        ? '0 Soal Uji Coba'
+        ? '0 Soal Simulasi'
         : (catMeta.value === 'exam' ? '0 Soal Asli' : '0 Soal Khusus');
       const readinessBadge = (qInfo.isFallback || qInfo.questions.length === 0)
         ? `<span class="inline-block px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold text-[10px]">⚠️ ${emptyBadgeLabel}</span>`
@@ -2910,7 +2910,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activateBtn) {
         activateBtn.addEventListener('click', () => {
           if ((qInfo.isFallback || qInfo.questions.length === 0) && catMeta.value !== 'ALL') {
-            alert(`Belum ada butir ${catMeta.shortText} untuk "${s.subject}" (${s.classLevel}).\n\nTambahkan soal terlebih dahulu di menu Bank Soal Ujian atau ubah Sumber / Kategori Soal pada jadwal ini.`);
+            alert(`Belum ada butir ${catMeta.shortText} untuk "${s.subject}" (${s.classLevel}).\n\nTambahkan soal terlebih dahulu di menu Bank Soal atau ubah Sumber / Kategori Soal pada jadwal ini.`);
             return;
           }
           const res = window.cbtAdmin.activateSchedule(s.id);
@@ -4814,7 +4814,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? 'Semua Mapel'
       : (subjFilter === 'UMUM' ? 'Umum / Demo' : subjFilter);
     const clsLabel = classFilter === 'ALL' ? '' : ` • ${classFilter}`;
-    const catLabel = catFilter === 'trial' ? ' • Uji Coba' : (catFilter === 'exam' ? ' • Soal Asli' : '');
+    const catLabel = catFilter === 'trial' ? ' • Simulasi' : (catFilter === 'exam' ? ' • Soal Asli' : '');
 
     if (totalCountEl) {
       totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}${catLabel}) — Total Bank: ${totalAll}`;
@@ -4823,8 +4823,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnClearTrials = document.getElementById('btnClearTrialQuestions');
     if (btnClearTrials) {
       btnClearTrials.innerText = trialScopedCount > 0
-        ? `🗑️ Hapus Soal Uji Coba (${trialScopedCount})`
-        : '🗑️ Hapus Soal Uji Coba (0)';
+        ? `🗑️ Hapus Soal Simulasi (${trialScopedCount})`
+        : '🗑️ Hapus Soal Simulasi (0)';
       btnClearTrials.classList.toggle('opacity-60', trialScopedCount === 0);
     }
 
@@ -4848,10 +4848,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isAdminUser = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
       const activeSubName = subjFilter === 'ALL' ? 'mata pelajaran yang dipilih' : `"${subjLabel}"`;
       const activeClsName = classFilter === 'ALL' ? '' : ` untuk ${classFilter}`;
-      const catEmptyLabel = catFilter === 'trial' ? 'Soal Uji Coba' : (catFilter === 'exam' ? 'Soal Ujian Asli' : 'soal');
+      const catEmptyLabel = catFilter === 'trial' ? 'Soal Simulasi' : (catFilter === 'exam' ? 'Soal Ujian Asli' : 'soal');
       const emptyHint = isAdminUser
-        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>, <strong class="text-violet-700">🧪 Soal Uji Coba</strong>, atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
-        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>${catFilter === 'exam' ? ' untuk mulai menginput soal ujian asli' : ' atau muat soal uji coba aplikasi di bawah ini'}.`;
+        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>, <strong class="text-violet-700">🧪 Soal Simulasi</strong>, atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
+        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>${catFilter === 'exam' ? ' untuk mulai menginput soal ujian asli' : ' atau muat soal simulasi di bawah ini'}.`;
       listContainer.innerHTML = `
         <div class="text-center py-12 px-4 text-slate-500 bg-white rounded-3xl border border-slate-200 flex flex-col items-center gap-3">
           <div>
@@ -4860,7 +4860,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           ${catFilter !== 'exam' ? `
             <button id="btnEmptyStateSeedTrial" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer">
-              🧪 Muat 3 Soal Uji Coba Aplikasi${subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? ` (${escapeHtmlSafe(subjFilter)})` : ''}
+              🧪 Muat 3 Soal Simulasi${subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? ` (${escapeHtmlSafe(subjFilter)})` : ''}
             </button>
           ` : ''}
         </div>
@@ -4878,7 +4878,7 @@ document.addEventListener('DOMContentLoaded', () => {
           renderAdminTeacherQuestionProgress();
           renderAdminSchedulesList();
           if (res && res.addedCount > 0) {
-            alert(`Berhasil menambahkan ${res.addedCount} soal uji coba aplikasi ke bank soal (${res.affectedSubjects.join(', ')}).`);
+            alert(`Berhasil menambahkan ${res.addedCount} soal simulasi ke bank soal (${res.affectedSubjects.join(', ')}).`);
           } else {
             alert(res?.message || 'Bank soal sudah memiliki soal atau belum ada mata pelajaran guru yang cocok.');
           }
@@ -5004,7 +5004,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="text-[11px] font-bold px-2 py-0.5 bg-teal-100 text-teal-800 rounded-md">
               🏫 ${qClass}
             </span>
-            ${isTrialQ ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-violet-100 text-violet-800 border border-violet-200 rounded-md">🧪 Uji Coba</span>` : ''}
+            ${isTrialQ ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-violet-100 text-violet-800 border border-violet-200 rounded-md">🧪 Simulasi</span>` : ''}
             ${q.createdBy ? `<span class="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">✍️ ${q.createdBy}</span>` : ''}
             ${typeBadge}
             <span class="text-[11px] font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
@@ -5778,7 +5778,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const scopeLabel = targetSubjArg
           ? `mata pelajaran "${targetSubjArg}"`
           : (isAdminUser ? 'seluruh mata pelajaran guru' : 'mata pelajaran yang Anda ampu');
-        if (confirm(`Semua bank soal untuk ${scopeLabel} sudah memiliki soal.\n\nApakah Anda tetap ingin menambahkan 3 soal uji coba aplikasi per mapel ke dalamnya?`)) {
+        if (confirm(`Semua bank soal untuk ${scopeLabel} sudah memiliki soal.\n\nApakah Anda tetap ingin menambahkan 3 soal simulasi per mapel ke dalamnya?`)) {
           res = window.cbtAdmin.seedTrialQuestionsForTeachers({
             onlyForCurrentTeacher: !isAdminUser,
             onlyMissingSubjects: false,
@@ -5794,7 +5794,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAdminTeacherQuestionProgress();
       renderAdminSchedulesList();
       if (res && res.addedCount > 0) {
-        alert(`Berhasil menambahkan ${res.addedCount} soal uji coba aplikasi (${res.affectedSubjects.length} mapel):\n• ${res.affectedSubjects.join('\n• ')}`);
+        alert(`Berhasil menambahkan ${res.addedCount} soal simulasi (${res.affectedSubjects.length} mapel):\n• ${res.affectedSubjects.join('\n• ')}`);
       }
     });
   }
@@ -5810,13 +5810,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const examCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'exam').length;
 
       if (trialCount === 0) {
-        alert("Tidak ada Soal Uji Coba yang ditemukan pada filter Mata Pelajaran / Kelas yang aktif.");
+        alert("Tidak ada Soal Simulasi yang ditemukan pada filter Mata Pelajaran / Kelas yang aktif.");
         return;
       }
 
       const subjLabel = subjFilter === 'ALL' ? 'Semua Mapel pada cakupan Anda' : subjFilter;
       const clsLabel = classFilter === 'ALL' ? 'Semua Kelas' : classFilter;
-      const confirmMsg = `Hapus sekaligus ${trialCount} Soal Uji Coba untuk (${subjLabel} • ${clsLabel})?\n\nTenang, ${examCount} Soal Ujian Asli lainnya tetap aman dan tidak akan terhapus.`;
+      const confirmMsg = `Hapus sekaligus ${trialCount} Soal Simulasi untuk (${subjLabel} • ${clsLabel})?\n\nTenang, ${examCount} Soal Ujian Asli lainnya tetap aman dan tidak akan terhapus.`;
 
       if (!confirm(confirmMsg)) return;
 
@@ -5827,7 +5827,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAdminSchedulesList();
 
       if (res && res.success) {
-        alert(`Berhasil menghapus ${res.deletedCount} Soal Uji Coba.\nSoal Ujian Asli (${res.remainingExamCount} soal) tetap aman tersimpan.`);
+        alert(`Berhasil menghapus ${res.deletedCount} Soal Simulasi.\nSoal Ujian Asli (${res.remainingExamCount} soal) tetap aman tersimpan.`);
       }
     });
   }
@@ -5835,7 +5835,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnResetDefaultQuestions = document.getElementById('btnResetDefaultQuestions');
   if (btnResetDefaultQuestions) {
     btnResetDefaultQuestions.addEventListener('click', () => {
-      if (confirm("Reset seluruh bank soal ke 39 soal uji coba aplikasi (3 soal di setiap dari 13 mata pelajaran guru)?\n\nCatatan: Soal yang sudah ada akan diganti dengan paket soal uji coba bawaan.")) {
+      if (confirm("Reset seluruh bank soal ke 39 soal simulasi bawaan (3 soal di setiap dari 13 mata pelajaran guru)?\n\nCatatan: Soal yang sudah ada akan diganti dengan paket soal simulasi bawaan.")) {
         window.cbtAdmin.resetToDefaultQuestions();
         setupQuestionBankFilters();
         renderAdminQuestionList();
