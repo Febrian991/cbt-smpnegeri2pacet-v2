@@ -3821,6 +3821,11 @@ document.addEventListener('DOMContentLoaded', () => {
       classFilterEl.onchange = () => renderAdminQuestionList();
     }
 
+    const catFilterEl = document.getElementById('filterQuestionsCategory');
+    if (catFilterEl) {
+      catFilterEl.onchange = () => renderAdminQuestionList();
+    }
+
     const isQuestionModalOpen = Boolean(modalQuestionForm && !modalQuestionForm.classList.contains('hidden'));
 
     if (modalSubjEl && !isQuestionModalOpen) {
@@ -3974,9 +3979,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
     const statusFilter = document.getElementById('filterPreExamStatus')?.value || 'ALL';
 
-    const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter) : [];
+    const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter) : [];
     const audit = precomputed || (window.cbtAdmin && typeof window.cbtAdmin.auditQuestionsPreExam === 'function'
       ? window.cbtAdmin.auditQuestionsPreExam(questions)
       : null);
@@ -4447,11 +4453,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
     const qualityFilter = document.getElementById('filterItemAnalysisQuality')?.value || 'ALL';
 
     let analysis = precomputed;
     if (!analysis && window.cbtAdmin) {
-      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
       analysis = window.cbtAdmin.computeItemAnalysis(questions);
     }
     if (!analysis) return;
@@ -4703,8 +4710,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalCountEl = document.getElementById('adminTotalQuestionsCount');
     const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
 
-    const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+    const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
+    const trialScopedCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'trial').length;
     const totalAll = window.cbtAdmin.getAllQuestions().length;
     const analysisResult = (window.cbtAdmin && typeof window.cbtAdmin.computeItemAnalysis === 'function')
       ? window.cbtAdmin.computeItemAnalysis(questions)
@@ -4717,9 +4726,18 @@ document.addEventListener('DOMContentLoaded', () => {
       ? 'Semua Mapel'
       : (subjFilter === 'UMUM' ? 'Umum / Demo' : subjFilter);
     const clsLabel = classFilter === 'ALL' ? '' : ` • ${classFilter}`;
+    const catLabel = catFilter === 'trial' ? ' • Uji Coba' : (catFilter === 'exam' ? ' • Soal Asli' : '');
 
     if (totalCountEl) {
-      totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}) — Total Bank: ${totalAll}`;
+      totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}${catLabel}) — Total Bank: ${totalAll}`;
+    }
+
+    const btnClearTrials = document.getElementById('btnClearTrialQuestions');
+    if (btnClearTrials) {
+      btnClearTrials.innerText = trialScopedCount > 0
+        ? `🗑️ Hapus Soal Uji Coba (${trialScopedCount})`
+        : '🗑️ Hapus Soal Uji Coba (0)';
+      btnClearTrials.classList.toggle('opacity-60', trialScopedCount === 0);
     }
 
     const panel = document.getElementById('itemAnalysisPanel');
@@ -4742,18 +4760,21 @@ document.addEventListener('DOMContentLoaded', () => {
       const isAdminUser = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
       const activeSubName = subjFilter === 'ALL' ? 'mata pelajaran yang dipilih' : `"${subjLabel}"`;
       const activeClsName = classFilter === 'ALL' ? '' : ` untuk ${classFilter}`;
+      const catEmptyLabel = catFilter === 'trial' ? 'Soal Uji Coba' : (catFilter === 'exam' ? 'Soal Ujian Asli' : 'soal');
       const emptyHint = isAdminUser
-        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>, <strong class="text-violet-700">🧪 Isi Soal Uji Coba Guru</strong>, atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
-        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> atau muat soal uji coba aplikasi di bawah ini.`;
+        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>, <strong class="text-violet-700">🧪 Soal Uji Coba</strong>, atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
+        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>${catFilter === 'exam' ? ' untuk mulai menginput soal ujian asli' : ' atau muat soal uji coba aplikasi di bawah ini'}.`;
       listContainer.innerHTML = `
         <div class="text-center py-12 px-4 text-slate-500 bg-white rounded-3xl border border-slate-200 flex flex-col items-center gap-3">
           <div>
-            <p class="font-bold text-base text-slate-700">Belum ada soal untuk ${activeSubName}${activeClsName}.</p>
+            <p class="font-bold text-base text-slate-700">Belum ada ${catEmptyLabel} untuk ${activeSubName}${activeClsName}.</p>
             <p class="text-xs sm:text-sm text-slate-400 mt-1">${emptyHint}</p>
           </div>
-          <button id="btnEmptyStateSeedTrial" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer">
-            🧪 Muat 3 Soal Uji Coba Aplikasi${subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? ` (${escapeHtmlSafe(subjFilter)})` : ''}
-          </button>
+          ${catFilter !== 'exam' ? `
+            <button id="btnEmptyStateSeedTrial" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer">
+              🧪 Muat 3 Soal Uji Coba Aplikasi${subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? ` (${escapeHtmlSafe(subjFilter)})` : ''}
+            </button>
+          ` : ''}
         </div>
       `;
       const btnEmptySeed = document.getElementById('btnEmptyStateSeedTrial');
@@ -4780,12 +4801,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     questions.forEach((q, index) => {
       const type = q.type || 'single';
+      const isTrialQ = window.cbtAdmin && typeof window.cbtAdmin.isTrialQuestion === 'function'
+        ? window.cbtAdmin.isTrialQuestion(q)
+        : false;
       const qSubj = q.subject && String(q.subject).trim() !== '' ? q.subject : 'Umum / Demo';
       const qClass = q.classLevel && String(q.classLevel).trim() !== '' ? q.classLevel : 'Semua Kelas';
       const itemStat = analysisResult.items[index] || null;
       const preExamStat = preExamResult.items[index] || null;
       const card = document.createElement('div');
-      card.className = "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition";
+      card.className = isTrialQ
+        ? "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-violet-200 dark:border-violet-800/70 shadow-xs hover:border-violet-300 transition"
+        : "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition";
 
       let typeBadge = '';
       let answerDetailsHtml = '';
@@ -4890,6 +4916,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="text-[11px] font-bold px-2 py-0.5 bg-teal-100 text-teal-800 rounded-md">
               🏫 ${qClass}
             </span>
+            ${isTrialQ ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-violet-100 text-violet-800 border border-violet-200 rounded-md">🧪 Uji Coba</span>` : ''}
             ${q.createdBy ? `<span class="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">✍️ ${q.createdBy}</span>` : ''}
             ${typeBadge}
             <span class="text-[11px] font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
@@ -4957,6 +4984,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseQuestionForm = document.getElementById('btnCloseQuestionForm');
   const btnCancelQuestionForm = document.getElementById('btnCancelQuestionForm');
 
+  const qInputCategory = document.getElementById('qInputCategory');
+  const qCategoryHelper = document.getElementById('qCategoryHelper');
+
+  function syncQuestionCategoryHelper() {
+    if (!qCategoryHelper || !qInputCategory) return;
+    if (qInputCategory.value === 'trial') {
+      qCategoryHelper.classList.remove('hidden');
+    } else {
+      qCategoryHelper.classList.add('hidden');
+    }
+  }
+
+  if (qInputCategory) {
+    qInputCategory.addEventListener('change', syncQuestionCategoryHelper);
+  }
+
   function closeQuestionModal() {
     if (modalQuestionForm) modalQuestionForm.classList.add('hidden');
     const editIdEl = document.getElementById('editQuestionId');
@@ -4980,6 +5023,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (titleEl) titleEl.innerText = displayNumber ? `Edit Soal No. ${displayNumber}` : "Edit Butir Soal Ujian";
       if (submitBtnEl) submitBtnEl.innerText = "Simpan Perubahan Soal";
       if (editIdEl) editIdEl.value = question.id;
+
+      if (qInputCategory) {
+        const isTrialQ = window.cbtAdmin && typeof window.cbtAdmin.isTrialQuestion === 'function'
+          ? window.cbtAdmin.isTrialQuestion(question)
+          : Boolean(question.isTrial);
+        qInputCategory.value = isTrialQ ? 'trial' : 'exam';
+        syncQuestionCategoryHelper();
+      }
 
       const rawSubj = (question.subject && String(question.subject).trim()) ? String(question.subject).trim() : 'Umum';
       if (modalSubjEl) {
@@ -5076,6 +5127,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      if (qInputCategory) {
+        const activeCatFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+        qInputCategory.value = activeCatFilter === 'trial' ? 'trial' : 'exam';
+        syncQuestionCategoryHelper();
+      }
+
       if (qInputType) qInputType.dispatchEvent(new Event('change'));
     }
 
@@ -5101,12 +5158,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const editId = document.getElementById('editQuestionId')?.value.trim() || '';
       const subject = document.getElementById('qInputSubject')?.value || 'Umum';
       const classLevel = document.getElementById('qInputClassLevel')?.value || 'Semua Kelas';
+      const isTrial = (document.getElementById('qInputCategory')?.value || 'exam') === 'trial';
       const type = qInputType.value;
       const questionText = document.getElementById('qInputText').value.trim();
       const weight = parseInt(document.getElementById('qInputWeight').value) || 10;
       const image = currentUploadedImageBase64 || "";
 
-      let qData = { subject, classLevel, type, question: questionText, image, weight };
+      let qData = { subject, classLevel, isTrial, type, question: questionText, image, weight };
 
       if (type === 'single') {
         const correctSingle = document.getElementById('qInputCorrectSingle').value;
@@ -5252,7 +5310,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!window.cbtAdmin) return;
       const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
       const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
       const { items } = window.cbtAdmin.auditQuestionsPreExam(questions);
       window.cbtAdmin.exportPreExamAuditExcel(items, {
         subject: subjFilter === 'ALL' ? 'Semua_Mapel' : subjFilter,
@@ -5302,7 +5361,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!window.cbtAdmin) return;
       const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
       const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter);
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
       const { items } = window.cbtAdmin.computeItemAnalysis(questions);
       window.cbtAdmin.exportItemAnalysisExcel(items, {
         subject: subjFilter === 'ALL' ? 'Semua_Mapel' : subjFilter,
@@ -5323,7 +5383,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function getSelectedQuestionsAndPaperOptions() {
     const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-    const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter) : [];
+    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+    const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter) : [];
 
     const cur = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const examCfg = window.examEngine ? window.examEngine.config : {};
@@ -5363,7 +5424,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenPrintQuestions.addEventListener('click', () => {
       const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
       const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter) : [];
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter) : [];
       if (questions.length === 0) {
         alert("Belum ada butir soal pada filter mata pelajaran/kelas ini. Tambahkan soal terlebih dahulu!");
         return;
@@ -5645,6 +5707,39 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAdminSchedulesList();
       if (res && res.addedCount > 0) {
         alert(`Berhasil menambahkan ${res.addedCount} soal uji coba aplikasi (${res.affectedSubjects.length} mapel):\n• ${res.affectedSubjects.join('\n• ')}`);
+      }
+    });
+  }
+
+  const btnClearTrialQuestions = document.getElementById('btnClearTrialQuestions');
+  if (btnClearTrialQuestions) {
+    btnClearTrialQuestions.addEventListener('click', () => {
+      if (!window.cbtAdmin || typeof window.cbtAdmin.clearTrialQuestions !== 'function') return;
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+
+      const trialCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'trial').length;
+      const examCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'exam').length;
+
+      if (trialCount === 0) {
+        alert("Tidak ada Soal Uji Coba yang ditemukan pada filter Mata Pelajaran / Kelas yang aktif.");
+        return;
+      }
+
+      const subjLabel = subjFilter === 'ALL' ? 'Semua Mapel pada cakupan Anda' : subjFilter;
+      const clsLabel = classFilter === 'ALL' ? 'Semua Kelas' : classFilter;
+      const confirmMsg = `Hapus sekaligus ${trialCount} Soal Uji Coba untuk (${subjLabel} • ${clsLabel})?\n\nTenang, ${examCount} Soal Ujian Asli lainnya tetap aman dan tidak akan terhapus.`;
+
+      if (!confirm(confirmMsg)) return;
+
+      const res = window.cbtAdmin.clearTrialQuestions(subjFilter, classFilter);
+      setupQuestionBankFilters();
+      renderAdminQuestionList();
+      renderAdminTeacherQuestionProgress();
+      renderAdminSchedulesList();
+
+      if (res && res.success) {
+        alert(`Berhasil menghapus ${res.deletedCount} Soal Uji Coba.\nSoal Ujian Asli (${res.remainingExamCount} soal) tetap aman tersimpan.`);
       }
     });
   }

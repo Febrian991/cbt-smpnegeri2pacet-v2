@@ -701,11 +701,19 @@ class CBTAdmin {
     return window.examEngine.questions;
   }
 
-  getQuestionsFiltered(subjectFilter = 'ALL', classFilter = 'ALL') {
+  isTrialQuestion(q) {
+    if (!q || typeof q !== 'object') return false;
+    if (q.isTrial === false || q.isTrial === 'false') return false;
+    if (q.isTrial === true || q.isTrial === 'true') return true;
+    return /^\[Soal Uji Coba/i.test(String(q.question || '').trim());
+  }
+
+  getQuestionsFiltered(subjectFilter = 'ALL', classFilter = 'ALL', categoryFilter = 'ALL') {
     const all = window.examEngine ? window.examEngine.questions : [];
     const cur = this.getCurrentTeacher();
     const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
     const teacherSubjects = this.getTeacherSubjectsList(cur);
+    const normalizedCat = String(categoryFilter || 'ALL').trim().toLowerCase();
 
     const matchesSub = (qSub, target) => (window.examEngine && window.examEngine.matchesSubject)
       ? window.examEngine.matchesSubject(qSub, target)
@@ -744,6 +752,12 @@ class CBTAdmin {
         if (!matchesCls(qCls, classFilter)) return false;
       }
 
+      if (normalizedCat === 'trial') {
+        if (!this.isTrialQuestion(q)) return false;
+      } else if (normalizedCat === 'exam') {
+        if (this.isTrialQuestion(q)) return false;
+      }
+
       return true;
     });
   }
@@ -762,6 +776,7 @@ class CBTAdmin {
       classLevel: String(questionData.classLevel || "Semua Kelas").trim(),
       createdBy: questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
       type: questionData.type || 'single',
+      isTrial: Boolean(questionData.isTrial),
       question: questionData.question,
       image: questionData.image || "",
       weight: parseInt(questionData.weight) || 10,
@@ -798,6 +813,9 @@ class CBTAdmin {
     const cur = this.getCurrentTeacher();
     const nextType = questionData.type || existing.type || 'single';
     const nowIso = new Date().toISOString();
+    const nextIsTrial = questionData.isTrial !== undefined
+      ? Boolean(questionData.isTrial)
+      : this.isTrialQuestion(existing);
 
     const updatedQ = {
       id: existing.id,
@@ -805,6 +823,7 @@ class CBTAdmin {
       classLevel: String(questionData.classLevel || existing.classLevel || "Semua Kelas").trim(),
       createdBy: existing.createdBy || questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
       type: nextType,
+      isTrial: nextIsTrial,
       question: questionData.question,
       image: questionData.image !== undefined ? questionData.image : (existing.image || ""),
       weight: parseInt(questionData.weight, 10) || existing.weight || 10,
@@ -977,6 +996,7 @@ class CBTAdmin {
             classLevel,
             createdBy: creatorName,
             type: tpl.type || 'single',
+            isTrial: true,
             question: tpl.question,
             image: tpl.image || '',
             weight: parseInt(tpl.weight, 10) || 10,
@@ -1017,6 +1037,38 @@ class CBTAdmin {
       success: true,
       addedCount: newQuestions.length,
       affectedSubjects: Array.from(affectedSubjectsSet)
+    };
+  }
+
+  clearTrialQuestions(subjectFilter = 'ALL', classFilter = 'ALL') {
+    if (!window.examEngine) {
+      return { success: false, deletedCount: 0, message: 'Mesin ujian belum siap.' };
+    }
+    const prevQuestions = [...(window.examEngine.questions || [])];
+    const targetTrials = this.getQuestionsFiltered(subjectFilter, classFilter, 'trial');
+    if (targetTrials.length === 0) {
+      return { success: true, deletedCount: 0, remainingExamCount: this.getQuestionsFiltered(subjectFilter, classFilter, 'exam').length };
+    }
+
+    const deleteIdSet = new Set(targetTrials.map(q => String(q.id)));
+    const deletedIds = targetTrials.map(q => q.id).filter(id => id !== undefined && id !== null);
+    const remaining = prevQuestions.filter(q => !deleteIdSet.has(String(q.id)));
+
+    window.examEngine.saveQuestions(remaining, true);
+
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.deleteQuestionRows === 'function') {
+        window.supabaseSync.deleteQuestionRows(deletedIds, prevQuestions);
+      } else if (typeof window.supabaseSync.deleteQuestionRow === 'function') {
+        deletedIds.forEach(id => window.supabaseSync.deleteQuestionRow(id, prevQuestions));
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount: targetTrials.length,
+      remainingTotalCount: remaining.length,
+      remainingExamCount: this.getQuestionsFiltered(subjectFilter, classFilter, 'exam').length
     };
   }
 

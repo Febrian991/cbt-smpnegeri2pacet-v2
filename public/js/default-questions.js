@@ -683,4 +683,4 @@ const DEFAULT_QUESTIONS = [
     ],
     weight: 35
   }
-];
+].map(q => ({ ...q, isTrial: true }));

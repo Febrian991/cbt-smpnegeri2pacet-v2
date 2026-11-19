@@ -775,6 +775,95 @@ class SupabaseSyncManager {
     }
   }
 
+  async deleteQuestionRows(questionIds = [], seedFallback = []) {
+    const keys = [...new Set(
+      (Array.isArray(questionIds) ? questionIds : [])
+        .filter(id => id !== undefined && id !== null && String(id).trim() !== '')
+        .map(id => String(id))
+    )];
+    if (keys.length === 0) return { success: true, count: 0 };
+
+    keys.forEach(k => {
+      this.markQuestionPendingDelete(k);
+      this.inflightUpserts.delete(k);
+      this.inflightDeletes.add(k);
+    });
+
+    if (!this.client || !this.isConnected) {
+      keys.forEach(k => this.inflightDeletes.delete(k));
+      return { success: false, queued: true, count: 0 };
+    }
+
+    try {
+      await this.ensureQuestionsMigratedToRows(seedFallback);
+
+      const creds = this.getPrivilegedCredentials();
+      const deletedKeys = [];
+      const failedKeys = [];
+
+      if (creds && !this.securityRpcMissing) {
+        const RPC_BATCH = 6;
+        for (let i = 0; i < keys.length; i += RPC_BATCH) {
+          const slice = keys.slice(i, i + RPC_BATCH);
+          const results = await Promise.all(slice.map(async (k) => {
+            try {
+              const rpcRes = await this.deleteTeacherQuestionRpc(creds.identifier, creds.pin, k);
+              return { k, ok: Boolean(rpcRes && rpcRes.success) };
+            } catch (e) {
+              return { k, ok: false };
+            }
+          }));
+          results.forEach(r => (r.ok ? deletedKeys.push(r.k) : failedKeys.push(r.k)));
+        }
+      } else {
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
+          const chunk = keys.slice(i, i + CHUNK_SIZE);
+          let chunkOk = false;
+
+          if (!this.questionTableMissing) {
+            const { error } = await this.client
+              .from('cbt_questions')
+              .delete()
+              .in('question_key', chunk);
+            if (!error) {
+              chunkOk = true;
+            } else if (this.isMissingQuestionsTableError(error)) {
+              this.questionTableMissing = true;
+            }
+          }
+
+          const { error: fbErr } = await this.client
+            .from('cbt_exam_results')
+            .delete()
+            .eq('student_nisn', '__CBT_QUESTION_ROW__')
+            .in('exam_title', chunk);
+
+          if (chunkOk || !fbErr) {
+            deletedKeys.push(...chunk);
+          } else {
+            failedKeys.push(...chunk);
+          }
+        }
+      }
+
+      if (deletedKeys.length > 0) {
+        this.clearQuestionsPendingKeys(deletedKeys, 'both');
+        this.markQuestionsMigrationDoneLocal();
+      }
+
+      return {
+        success: failedKeys.length === 0,
+        count: deletedKeys.length,
+        queued: failedKeys.length > 0
+      };
+    } catch (err) {
+      return { success: false, queued: true, message: err.message };
+    } finally {
+      keys.forEach(k => this.inflightDeletes.delete(k));
+    }
+  }
+
   async replaceAllQuestionRows(questionsArray) {
     const validList = (Array.isArray(questionsArray) ? questionsArray : [])
       .filter(q => q && q.id !== undefined && q.id !== null);

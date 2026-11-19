@@ -1,5 +1,5 @@
 // Service Worker untuk PWA & Caching Responsif CBT
-const CACHE_NAME = 'cbt-pwa-v3.48';
+const CACHE_NAME = 'cbt-pwa-v3.49';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
