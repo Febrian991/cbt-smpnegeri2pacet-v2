@@ -1660,11 +1660,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resCheatCount').innerText = `${result.cheatCount || 0} Kali Pelanggaran`;
     const resRemEl = document.getElementById('resRemedialStatus');
     if (resRemEl) {
-      const isRem = Number(result.finalScore || 0) < 75;
-      resRemEl.innerText = isRem ? '⚠️ Remedial' : '✅ Tidak Remedial';
-      resRemEl.className = isRem
-        ? 'font-bold bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[11px]'
-        : 'font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px]';
+      let isRem = null;
+      if (typeof result.isRemedial === 'boolean') {
+        isRem = result.isRemedial;
+      } else if (typeof result.remedialStatus === 'string' && result.remedialStatus.trim()) {
+        isRem = result.remedialStatus.trim().toLowerCase() === 'remedial';
+      } else if (result.finalScore !== undefined && result.finalScore !== null && !Number.isNaN(Number(result.finalScore))) {
+        isRem = Number(result.finalScore) < 75;
+      }
+
+      if (isRem === null) {
+        resRemEl.innerText = '⏳ Cek di Rekap Guru';
+        resRemEl.className = 'font-bold bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full text-[11px]';
+      } else if (isRem) {
+        resRemEl.innerText = '⚠️ Remedial';
+        resRemEl.className = 'font-bold bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[11px]';
+      } else {
+        resRemEl.innerText = '✅ Tidak Remedial';
+        resRemEl.className = 'font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px]';
+      }
     }
     const resAutoNoteEl = document.getElementById('resAutoPrintNote');
     if (resAutoNoteEl && window.cbtAdmin && typeof window.cbtAdmin.getPrintStampText === 'function') {
@@ -2073,6 +2087,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSchoolConfigForm();
       } else if (targetTab === 'tabDatabase' && isAdmin) {
         renderSupabaseConfigForm();
+        refreshSupabaseTablesHealthUI();
       }
     } catch (err) {
       console.warn("Gagal render tab content:", err);
@@ -7042,6 +7057,114 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function refreshSupabaseTablesHealthUI(urlOverride = null, keyOverride = null) {
+    const badge = document.getElementById('supabaseOverallHealthBadge');
+    const banner = document.getElementById('supabaseHealthSummaryBanner');
+    const grid = document.getElementById('supabaseTablesHealthGrid');
+    if (!badge || !banner || !grid || !window.supabaseSync || typeof window.supabaseSync.checkTablesHealth !== 'function') {
+      return null;
+    }
+
+    const inputUrl = document.getElementById('cfgSupabaseUrl')?.value?.trim() || '';
+    const inputKey = document.getElementById('cfgSupabaseKey')?.value?.trim() || '';
+    const targetUrl = String(urlOverride || inputUrl || window.supabaseSync.config?.supabaseUrl || '').trim();
+    const targetKey = String(keyOverride || inputKey || window.supabaseSync.config?.supabaseKey || '').trim();
+
+    if (!targetUrl || !targetKey) {
+      badge.className = 'px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold';
+      badge.innerText = 'Belum Terhubung';
+      banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
+      banner.innerHTML = 'Masukkan <strong>Supabase Project URL</strong> dan <strong>Anon Public API Key</strong> terlebih dahulu, lalu simpan konfigurasi untuk mengecek status 5 tabel khusus.';
+      grid.innerHTML = '';
+      return null;
+    }
+
+    badge.className = 'px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold animate-pulse';
+    badge.innerText = 'Mengecek Tabel...';
+
+    const health = await window.supabaseSync.checkTablesHealth(targetUrl, targetKey);
+    if (!health || !health.success) {
+      badge.className = 'px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[10px] font-bold';
+      badge.innerText = 'Gagal Mengecek';
+      banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800';
+      banner.innerHTML = `<strong>Gagal memeriksa database Supabase:</strong> ${escapeHtmlSafe(health?.message || 'Periksa koneksi internet serta URL/Key Supabase Anda.')}`;
+      return health;
+    }
+
+    const totalTables = Array.isArray(health.tables) ? health.tables.length : 5;
+    const readyCount = Array.isArray(health.tables) ? health.tables.filter(t => t.ready).length : 0;
+
+    if (health.allOptimal) {
+      badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold';
+      badge.innerText = `✅ ${readyCount}/${totalTables} Tabel + RPC Optimal`;
+      banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800';
+      banner.innerHTML = '<strong>🚀 Database Sudah Optimal untuk 250 Siswa Serentak!</strong> Semua tabel khusus (<code>cbt_exam_results</code>, <code>cbt_school_state</code>, <code>cbt_questions</code>, <code>cbt_student_sessions</code>, <code>cbt_question_keys</code>) dan fungsi keamanan server sudah aktif & terindeks cepat.';
+    } else if (health.allDedicatedTablesReady && !health.rpcReady) {
+      badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
+      badge.innerText = `⚡ ${readyCount}/${totalTables} Tabel Aktif (Perbarui RPC)`;
+      banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
+      banner.innerHTML = '<strong>Semua 5 tabel sudah ada</strong>, namun fungsi keamanan & koreksi server (RPC + index performa terbaru) belum lengkap. Klik <strong>📋 Salin Script SQL Optimal</strong> lalu jalankan (<strong>Run</strong>) di <em>SQL Editor</em> Supabase untuk pembaruan lengkap.';
+    } else {
+      badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
+      badge.innerText = `⚠️ Mode Fallback (${health.missingTables.length} Tabel Belum Ada)`;
+      banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
+      banner.innerHTML = `<strong>⚠️ Saat ini masih berjalan di Mode Fallback</strong> (tabel berikut belum dibuat: <code>${escapeHtmlSafe(health.missingTables.join(', '))}</code>).<br>Agar ujian serentak <strong>250 siswa</strong> sangat ringan & cepat: klik <strong>📋 Salin Script SQL Optimal</strong> → Paste & klik <strong>Run</strong> di menu <em>SQL Editor</em> Supabase → lalu klik <strong>🚀 Pindahkan &amp; Sinkronkan Data ke Tabel Khusus</strong>.`;
+    }
+
+    const cards = (health.tables || []).map(tbl => {
+      const ok = Boolean(tbl.ready);
+      const wrapCls = ok
+        ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/25'
+        : 'border-amber-300 dark:border-amber-700/70 bg-amber-50/60 dark:bg-amber-950/30';
+      const statusBadge = ok
+        ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">✅ ${escapeHtmlSafe(tbl.note || 'Aktif')}</span>`
+        : `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-300 text-[10px] font-bold">⚠️ ${escapeHtmlSafe(tbl.note || 'Belum Aktif')}</span>`;
+      return `
+        <div class="p-3 rounded-2xl border ${wrapCls} flex flex-col justify-between gap-1.5">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="font-extrabold text-slate-800 dark:text-slate-100 text-xs">${escapeHtmlSafe(tbl.label)}</p>
+              <p class="font-mono text-[10px] text-slate-500 dark:text-slate-400">${escapeHtmlSafe(tbl.name)}</p>
+            </div>
+            ${statusBadge}
+          </div>
+          <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">${escapeHtmlSafe(tbl.purpose)}</p>
+        </div>
+      `;
+    });
+
+    const rpcWrapCls = health.rpcReady
+      ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/25'
+      : 'border-amber-300 dark:border-amber-700/70 bg-amber-50/60 dark:bg-amber-950/30';
+    const rpcStatusBadge = health.rpcReady
+      ? '<span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">✅ Aktif &amp; Terkunci</span>'
+      : '<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-300 text-[10px] font-bold">⚠️ Belum Terpasang</span>';
+
+    cards.push(`
+      <div class="p-3 rounded-2xl border ${rpcWrapCls} flex flex-col justify-between gap-1.5">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="font-extrabold text-slate-800 dark:text-slate-100 text-xs">RPC Keamanan &amp; Index</p>
+            <p class="font-mono text-[10px] text-slate-500 dark:text-slate-400">cbt_grade_and_submit_exam</p>
+          </div>
+          ${rpcStatusBadge}
+        </div>
+        <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">Koreksi nilai otomatis di server &amp; index cepat untuk 250 siswa serentak.</p>
+      </div>
+    `);
+
+    grid.innerHTML = cards.join('');
+    return health;
+  }
+
+  async function loadSupabaseSchemaSqlText() {
+    const resp = await fetch('/supabase-schema.sql?v=3.52', { cache: 'no-store' });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    return await resp.text();
+  }
+
   const formSupabaseConfig = document.getElementById('formSupabaseConfig');
   if (formSupabaseConfig) {
     formSupabaseConfig.addEventListener('submit', async (e) => {
@@ -7055,6 +7178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startAdminRealtimeNotifications();
       }
       const res = await window.supabaseSync.pushAllSchoolState();
+      await refreshSupabaseTablesHealthUI(url, key);
       if (res.success) {
         alert("Konfigurasi Cloud disimpan & seluruh data sekolah (Token, Jadwal, Kop/Logo, Soal, Siswa, Guru) berhasil disinkronkan ke Cloud!");
       } else {
@@ -7095,6 +7219,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await window.supabaseSync.pushAllSchoolState();
       btnPushAllToCloud.disabled = false;
       btnPushAllToCloud.innerText = "☁️ Kirim Semua Data ke Cloud";
+      refreshSupabaseTablesHealthUI();
       if (res.success) {
         alert(`Sukses! ${res.count} kelompok data (Pengaturan/Token, Identitas/Logo, Jadwal, Bank Soal, Siswa, Guru) telah dikirim ke Cloud dan langsung terbaca di semua HP & Laptop.`);
       } else {
@@ -7113,8 +7238,123 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await window.supabaseSync.testConnection(url, key);
       btnTestSupabase.disabled = false;
       btnTestSupabase.innerText = "⚡ Uji Koneksi Cloud";
+      await refreshSupabaseTablesHealthUI(url, key);
       alert(res.message);
       updateCloudBadge();
+    });
+  }
+
+  const btnCheckSupabaseTables = document.getElementById('btnCheckSupabaseTables');
+  if (btnCheckSupabaseTables) {
+    btnCheckSupabaseTables.addEventListener('click', async () => {
+      btnCheckSupabaseTables.disabled = true;
+      btnCheckSupabaseTables.innerText = "⏳ Mengecek...";
+      await refreshSupabaseTablesHealthUI();
+      btnCheckSupabaseTables.disabled = false;
+      btnCheckSupabaseTables.innerText = "🔍 Cek Status Tabel";
+    });
+  }
+
+  const btnCopySupabaseSchemaSql = document.getElementById('btnCopySupabaseSchemaSql');
+  const supabaseSqlPreviewWrap = document.getElementById('supabaseSqlPreviewWrap');
+  const supabaseSqlPreviewTextarea = document.getElementById('supabaseSqlPreviewTextarea');
+  const btnCloseSqlPreview = document.getElementById('btnCloseSqlPreview');
+
+  if (btnCloseSqlPreview && supabaseSqlPreviewWrap) {
+    btnCloseSqlPreview.addEventListener('click', () => {
+      supabaseSqlPreviewWrap.classList.add('hidden');
+    });
+  }
+
+  if (btnCopySupabaseSchemaSql) {
+    btnCopySupabaseSchemaSql.addEventListener('click', async () => {
+      const origHtml = btnCopySupabaseSchemaSql.innerHTML;
+      btnCopySupabaseSchemaSql.disabled = true;
+      btnCopySupabaseSchemaSql.innerHTML = '<span>⏳ Memuat SQL...</span>';
+      try {
+        const sqlText = await loadSupabaseSchemaSqlText();
+        if (supabaseSqlPreviewTextarea) supabaseSqlPreviewTextarea.value = sqlText;
+        if (supabaseSqlPreviewWrap) supabaseSqlPreviewWrap.classList.remove('hidden');
+
+        let copied = false;
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            await navigator.clipboard.writeText(sqlText);
+            copied = true;
+          } catch (e) {}
+        }
+        if (!copied && supabaseSqlPreviewTextarea) {
+          supabaseSqlPreviewTextarea.focus();
+          supabaseSqlPreviewTextarea.select();
+          try {
+            copied = document.execCommand('copy');
+          } catch (e) {}
+        }
+
+        if (copied) {
+          alert("✅ Script SQL Optimal berhasil disalin ke Clipboard!\n\nLangkah selanjutnya:\n1. Buka Dashboard Supabase Anda → menu 'SQL Editor' → '+ New query'\n2. Paste (Ctrl+V) script SQL yang barusan disalin\n3. Klik tombol 'Run'\n4. Kembali ke aplikasi ini, lalu klik '🚀 Pindahkan & Sinkronkan Data ke Tabel Khusus'.");
+        } else {
+          alert("Script SQL sudah ditampilkan di kotak di bawah tombol.\nSilakan tekan Ctrl+A lalu Ctrl+C pada kotak teks tersebut, kemudian Paste & Run di SQL Editor Supabase.");
+        }
+      } catch (err) {
+        alert("Gagal memuat file supabase-schema.sql: " + (err.message || err));
+      } finally {
+        btnCopySupabaseSchemaSql.disabled = false;
+        btnCopySupabaseSchemaSql.innerHTML = origHtml;
+      }
+    });
+  }
+
+  const btnDownloadSupabaseSchemaSql = document.getElementById('btnDownloadSupabaseSchemaSql');
+  if (btnDownloadSupabaseSchemaSql) {
+    btnDownloadSupabaseSchemaSql.addEventListener('click', async () => {
+      const origHtml = btnDownloadSupabaseSchemaSql.innerHTML;
+      btnDownloadSupabaseSchemaSql.disabled = true;
+      btnDownloadSupabaseSchemaSql.innerHTML = '<span>⏳ Mengunduh...</span>';
+      try {
+        const sqlText = await loadSupabaseSchemaSqlText();
+        const blob = new Blob([sqlText], { type: 'text/sql;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'supabase-schema.sql';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Gagal mengunduh supabase-schema.sql: " + (err.message || err));
+      } finally {
+        btnDownloadSupabaseSchemaSql.disabled = false;
+        btnDownloadSupabaseSchemaSql.innerHTML = origHtml;
+      }
+    });
+  }
+
+  const btnMigrateToDedicatedTables = document.getElementById('btnMigrateToDedicatedTables');
+  if (btnMigrateToDedicatedTables) {
+    btnMigrateToDedicatedTables.addEventListener('click', async () => {
+      if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+        alert("Supabase Cloud belum aktif. Simpan Project URL dan Anon Key terlebih dahulu.");
+        return;
+      }
+      const origHtml = btnMigrateToDedicatedTables.innerHTML;
+      btnMigrateToDedicatedTables.disabled = true;
+      btnMigrateToDedicatedTables.innerHTML = '<span>⏳ Memindahkan ke Tabel Khusus...</span>';
+      try {
+        const res = await window.supabaseSync.migrateFallbackToDedicatedTables();
+        await refreshSupabaseTablesHealthUI();
+        if (res && res.success) {
+          alert(res.message);
+        } else {
+          alert("⚠️ " + (res?.message || "Gagal memindahkan data ke tabel khusus."));
+        }
+      } catch (err) {
+        alert("Terjadi kesalahan saat migrasi: " + (err.message || err));
+      } finally {
+        btnMigrateToDedicatedTables.disabled = false;
+        btnMigrateToDedicatedTables.innerHTML = origHtml;
+      }
     });
   }
 

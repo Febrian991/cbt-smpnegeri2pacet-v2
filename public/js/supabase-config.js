@@ -206,6 +206,135 @@ class SupabaseSyncManager {
     }
   }
 
+  isTableMissingErr(error, tableName = '') {
+    if (!error) return false;
+    const msg = String(error.message || '').toLowerCase();
+    const t = String(tableName || '').toLowerCase();
+    if (error.code === '42P01' || error.code === 'PGRST205') return true;
+    if (msg.includes('does not exist') || msg.includes('not find the table') || msg.includes('schema cache')) {
+      return !t || msg.includes(t);
+    }
+    return false;
+  }
+
+  async checkTablesHealth(customUrl = null, customKey = null) {
+    if (typeof window.supabase === 'undefined') {
+      return { success: false, message: "Pustaka Supabase JS belum siap dimuat.", tables: [] };
+    }
+    const targetUrl = String(customUrl || this.config?.supabaseUrl || '').trim();
+    const targetKey = String(customKey || this.config?.supabaseKey || '').trim();
+    if (!targetUrl || !targetKey) {
+      return { success: false, message: "URL atau Key Supabase belum diisi.", tables: [] };
+    }
+
+    try {
+      const client = (customUrl || customKey || !this.client)
+        ? window.supabase.createClient(targetUrl, targetKey)
+        : this.client;
+
+      const specs = [
+        { name: 'cbt_exam_results', label: 'Hasil Ujian (Utama)', purpose: 'Menyimpan rekap nilai akhir seluruh siswa', countReadable: true },
+        { name: 'cbt_school_state', label: 'Pengaturan & Jadwal', purpose: 'Sinkronisasi pengaturan, jadwal, siswa & guru', countReadable: true },
+        { name: 'cbt_questions', label: 'Bank Soal Per-Baris', purpose: 'Akses cepat soal tanpa kunci jawaban di browser siswa', countReadable: true },
+        { name: 'cbt_student_sessions', label: 'Sesi Live Siswa', purpose: 'Pantau 250 siswa login, mengerjakan & selesai real-time', countReadable: true },
+        { name: 'cbt_question_keys', label: 'Brankas Kunci Server', purpose: 'Menjaga kunci jawaban tersembunyi & koreksi di Postgres', countReadable: false }
+      ];
+
+      const results = [];
+      for (const sp of specs) {
+        const { count, error } = await client.from(sp.name).select('*', { count: 'exact', head: true });
+        let ready = false;
+        let note = '';
+        if (!error) {
+          ready = true;
+          note = typeof count === 'number' ? `${count} baris` : 'Aktif';
+        } else if (sp.name === 'cbt_question_keys' && (error.code === '42501' || String(error.message || '').toLowerCase().includes('permission denied'))) {
+          // Tabel cbt_question_keys sengaja memblokir SELECT dari anon agar kunci jawaban aman 100%
+          ready = true;
+          note = 'Aktif & Terkunci Aman';
+        } else if (this.isTableMissingErr(error, sp.name)) {
+          ready = false;
+          note = 'Belum dibuat (Mode Fallback)';
+        } else if (error.code === 'PGRST116') {
+          ready = true;
+          note = 'Aktif';
+        } else {
+          ready = false;
+          note = error.message || 'Gagal akses';
+        }
+        results.push({ ...sp, ready, count: typeof count === 'number' ? count : null, note });
+      }
+
+      // Cek apakah RPC server-side (keamanan & koreksi Postgres) sudah terpasang
+      let rpcReady = false;
+      try {
+        const rpcTest = await client.rpc('cbt_lookup_student_hint', { p_nisn: '__HEALTH_CHECK__' });
+        if (!rpcTest.error) {
+          rpcReady = true;
+        } else {
+          const rMsg = String(rpcTest.error.message || '').toLowerCase();
+          rpcReady = !(rpcTest.error.code === 'PGRST202' || rMsg.includes('could not find the function'));
+        }
+      } catch (e) {
+        rpcReady = false;
+      }
+
+      const missingTables = results.filter(r => !r.ready).map(r => r.name);
+      if (!customUrl && !customKey) {
+        this.stateTableMissing = missingTables.includes('cbt_school_state');
+        this.questionTableMissing = missingTables.includes('cbt_questions');
+        this.sessionTableMissing = missingTables.includes('cbt_student_sessions');
+        this.securityRpcMissing = !rpcReady;
+      }
+
+      return {
+        success: true,
+        allOptimal: missingTables.length === 0 && rpcReady,
+        allDedicatedTablesReady: missingTables.length === 0,
+        missingTables,
+        rpcReady,
+        tables: results
+      };
+    } catch (err) {
+      return { success: false, message: err.message, tables: [] };
+    }
+  }
+
+  async migrateFallbackToDedicatedTables() {
+    if (!this.client || !this.isConnected) {
+      return { success: false, message: "Supabase Cloud belum terhubung." };
+    }
+    const health = await this.checkTablesHealth();
+    if (!health.success) {
+      return { success: false, message: health.message || "Gagal memeriksa tabel Supabase." };
+    }
+    if (!health.allDedicatedTablesReady) {
+      return {
+        success: false,
+        message: `Masih ada tabel yang belum dibuat di Supabase: ${health.missingTables.join(', ')}.\n\nSilakan salin Script SQL lalu jalankan (Run) di menu SQL Editor Supabase terlebih dahulu.`
+      };
+    }
+
+    this.stateTableMissing = false;
+    this.questionTableMissing = false;
+    this.sessionTableMissing = false;
+    this.securityRpcMissing = !health.rpcReady;
+
+    const pushRes = await this.pushAllSchoolState();
+    const qRes = await this.fetchAllQuestionRows();
+    const finalHealth = await this.checkTablesHealth();
+
+    return {
+      success: Boolean(pushRes && pushRes.success),
+      pushedCount: pushRes?.count || 0,
+      questionsCount: Array.isArray(qRes?.rows) ? qRes.rows.length : 0,
+      health: finalHealth,
+      message: pushRes?.success
+        ? `Migrasi & sinkronisasi berhasil!\n• ${pushRes.count} kelompok data sekolah tersimpan di cbt_school_state\n• ${Array.isArray(qRes?.rows) ? qRes.rows.length : 0} butir soal aktif di tabel khusus cbt_questions\n• Database kini siap optimal untuk 250 siswa serentak!`
+        : (pushRes?.message || "Gagal memindahkan data ke tabel khusus.")
+    };
+  }
+
   async testConnection(url, key) {
     if (typeof window.supabase === 'undefined') {
       return { success: false, message: "Pustaka Supabase JS belum siap dimuat. Cek koneksi internet Anda." };
@@ -216,7 +345,7 @@ class SupabaseSyncManager {
       const { error } = await testClient.from('cbt_exam_results').select('count', { count: 'exact', head: true });
 
       if (error && error.code !== 'PGRST116') {
-        if (error.message && error.message.includes('relation "cbt_exam_results" does not exist')) {
+        if (this.isTableMissingErr(error, 'cbt_exam_results')) {
           return {
             success: true,
             warning: true,
@@ -226,16 +355,30 @@ class SupabaseSyncManager {
         return { success: false, message: "Gagal: " + error.message };
       }
 
-      const stateCheck = await testClient.from('cbt_school_state').select('count', { count: 'exact', head: true });
-      const qCheck = await testClient.from('cbt_questions').select('count', { count: 'exact', head: true });
-      if (stateCheck.error || qCheck.error) {
+      const health = await this.checkTablesHealth(url, key);
+      if (health.success && health.missingTables.length > 0) {
         return {
           success: true,
-          message: "Koneksi ke Supabase Cloud Berhasil! Sinkronisasi otomatis lintas perangkat & penyimpanan soal per-baris aktif (mode kompatibilitas)."
+          warning: true,
+          health,
+          message: `Koneksi ke Supabase berhasil, namun masih berjalan di MODE FALLBACK karena tabel khusus berikut belum dibuat:\n• ${health.missingTables.join('\n• ')}\n\nKlik tombol "Salin Script SQL Optimal" di bawah lalu jalankan (Run) di SQL Editor Supabase agar siap untuk 250 siswa serentak.`
         };
       }
 
-      return { success: true, message: "Koneksi ke Supabase Cloud Berhasil! Database online, tabel soal per-baris & sinkronisasi lintas perangkat siap digunakan." };
+      if (health.success && !health.rpcReady) {
+        return {
+          success: true,
+          warning: true,
+          health,
+          message: "Semua 5 tabel utama sudah aktif! Namun fungsi keamanan server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru."
+        };
+      }
+
+      return {
+        success: true,
+        health,
+        message: "Koneksi ke Supabase Cloud Berhasil! Semua 5 tabel khusus (cbt_exam_results, cbt_school_state, cbt_questions, cbt_student_sessions, cbt_question_keys) & fungsi keamanan server sudah AKTIF dan OPTIMAL untuk 250 siswa serentak."
+      };
     } catch (err) {
       return { success: false, message: "Error: " + err.message };
     }

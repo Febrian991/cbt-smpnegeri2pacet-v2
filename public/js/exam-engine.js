@@ -1324,6 +1324,11 @@ class ExamEngine {
   }
 
   _buildRedactedReceipt(record) {
+    const hasScore = record && record.finalScore !== undefined && record.finalScore !== null;
+    const isRem = typeof record?.isRemedial === 'boolean'
+      ? record.isRemedial
+      : (hasScore ? Number(record.finalScore) < 75 : null);
+    const remStatus = record?.remedialStatus || (isRem === null ? null : (isRem ? 'Remedial' : 'Tidak Remedial'));
     return {
       id: record.id,
       student: record.student,
@@ -1333,7 +1338,9 @@ class ExamEngine {
       completedAt: record.completedAt,
       totalQuestions: record.totalQuestions,
       cheatCount: record.cheatCount || 0,
-      finishReason: record.finishReason
+      finishReason: record.finishReason,
+      isRemedial: isRem,
+      remedialStatus: remStatus
     };
   }
 
@@ -1415,6 +1422,7 @@ class ExamEngine {
 
         const rpcRes = await window.supabaseSync.gradeAndSubmitExamRpc(rpcPayload);
         if (rpcRes && rpcRes.success && rpcRes.receipt) {
+          const isRem = typeof rpcRes.receipt.isRemedial === 'boolean' ? rpcRes.receipt.isRemedial : null;
           const receipt = {
             id: rpcRes.receipt.id || rpcPayload.id,
             student: rpcRes.receipt.student || rpcPayload.student,
@@ -1424,7 +1432,9 @@ class ExamEngine {
             completedAt: rpcRes.receipt.completedAt || completedAtStr,
             totalQuestions: rpcRes.receipt.totalQuestions || activeQs.length,
             cheatCount: rpcRes.receipt.cheatCount !== undefined ? rpcRes.receipt.cheatCount : cheatCountSnap,
-            finishReason: rpcRes.receipt.finishReason || finishReasonText
+            finishReason: rpcRes.receipt.finishReason || finishReasonText,
+            isRemedial: isRem,
+            remedialStatus: rpcRes.receipt.remedialStatus || (isRem === null ? null : (isRem ? 'Remedial' : 'Tidak Remedial'))
           };
 
           this._saveStudentReceiptLocal(receipt, isStaff);

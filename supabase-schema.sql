@@ -38,6 +38,9 @@ BEGIN
   END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS idx_cbt_exam_results_nisn_subject ON cbt_exam_results(student_nisn, subject);
+CREATE INDEX IF NOT EXISTS idx_cbt_exam_results_exam_title ON cbt_exam_results(exam_title);
+
 -- Tabel sinkronisasi pengaturan ujian, jadwal, bank soal, data siswa & guru lintas perangkat
 CREATE TABLE IF NOT EXISTS cbt_school_state (
   key TEXT PRIMARY KEY,
@@ -77,6 +80,9 @@ CREATE TABLE IF NOT EXISTS cbt_student_sessions (
 
 ALTER TABLE cbt_student_sessions ENABLE ROW LEVEL SECURITY;
 
+CREATE INDEX IF NOT EXISTS idx_cbt_student_sessions_updated ON cbt_student_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cbt_student_sessions_nisn ON cbt_student_sessions(student_nisn);
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'cbt_student_sessions' AND policyname = 'Allow public all on student sessions') THEN
@@ -96,6 +102,7 @@ CREATE TABLE IF NOT EXISTS cbt_questions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cbt_questions_subject ON cbt_questions(subject);
+CREATE INDEX IF NOT EXISTS idx_cbt_questions_class ON cbt_questions(class_level);
 
 ALTER TABLE cbt_questions ENABLE ROW LEVEL SECURITY;
 
@@ -904,7 +911,7 @@ BEGIN
     updated_at = NOW(),
     raw_data = EXCLUDED.raw_data;
 
-  -- Hanya kembalikan bukti selesai ke siswa (TANPA nilai maupun kunci jawaban!)
+  -- Hanya kembalikan bukti selesai ke siswa (TANPA nilai maupun kunci jawaban, hanya status Remedial/Tidak Remedial!)
   RETURN jsonb_build_object(
     'success', true,
     'receipt', jsonb_build_object(
@@ -916,7 +923,9 @@ BEGIN
       'completedAt', v_completed_at,
       'totalQuestions', v_idx,
       'cheatCount', v_cheat_count,
-      'finishReason', v_finish_reason
+      'finishReason', v_finish_reason,
+      'isRemedial', (v_final_score < 75),
+      'remedialStatus', CASE WHEN v_final_score < 75 THEN 'Remedial' ELSE 'Tidak Remedial' END
     )
   );
 END;
