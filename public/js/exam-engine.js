@@ -595,39 +595,71 @@ class ExamEngine {
     }));
   }
 
-  getQuestionsForExam(subjectOverride = null, classOverride = null) {
+  normalizeQuestionCategory(category) {
+    const val = String(category || 'ALL').trim().toLowerCase();
+    if (val === 'trial' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
+    if (val === 'exam' || val === 'real' || val === 'asli') return 'exam';
+    return 'ALL';
+  }
+
+  isTrialQuestion(q) {
+    if (!q || typeof q !== 'object') return false;
+    if (q.isTrial === false || q.isTrial === 'false') return false;
+    if (q.isTrial === true || q.isTrial === 'true') return true;
+    return /^\[Soal Uji Coba/i.test(String(q.question || '').trim());
+  }
+
+  getQuestionsForExam(subjectOverride = null, classOverride = null, categoryOverride = null) {
     const targetSubject = subjectOverride || (this.config && this.config.subject) || '';
     const targetClass = classOverride || (this.student && this.student.class) || (this.config && this.config.targetClass) || 'Semua Kelas';
+    const effectiveCategory = this.normalizeQuestionCategory(
+      categoryOverride !== null && categoryOverride !== undefined
+        ? categoryOverride
+        : ((this.activeExamConfig && this.activeExamConfig.questionCategory) || (this.config && this.config.questionCategory) || 'ALL')
+    );
+
+    const matchesCategory = (q) => {
+      if (effectiveCategory === 'trial') return this.isTrialQuestion(q);
+      if (effectiveCategory === 'exam') return !this.isTrialQuestion(q);
+      return true;
+    };
 
     const matched = this.questions.filter(q => {
       const qSub = String(q.subject || '').trim();
       if (!qSub || qSub.toLowerCase() === 'umum') return false;
       if (!this.matchesSubject(qSub, targetSubject)) return false;
+      if (!matchesCategory(q)) return false;
       return this.matchesClassLevel(q.classLevel || 'Semua Kelas', targetClass);
     });
 
     if (matched.length > 0) {
-      return { questions: matched, isFallback: false };
+      return { questions: matched, isFallback: false, category: effectiveCategory };
     }
 
     const subjectOnly = this.questions.filter(q => {
       const qSub = String(q.subject || '').trim();
       if (!qSub || qSub.toLowerCase() === 'umum') return false;
+      if (!matchesCategory(q)) return false;
       return this.matchesSubject(qSub, targetSubject);
     });
 
     if (subjectOnly.length > 0) {
-      return { questions: subjectOnly, isFallback: false };
+      return { questions: subjectOnly, isFallback: false, category: effectiveCategory };
     }
 
-    return { questions: [...this.questions], isFallback: true };
+    if (effectiveCategory !== 'ALL') {
+      return { questions: [], isFallback: true, emptyForCategory: true, category: effectiveCategory };
+    }
+
+    return { questions: [...this.questions], isFallback: true, category: 'ALL' };
   }
 
   getExamQuestions() {
     if (Array.isArray(this.activeQuestions) && this.activeQuestions.length > 0) {
       return this.activeQuestions;
     }
-    return this.getQuestionsForExam().questions;
+    const activeCfg = this.getActiveExamConfig();
+    return this.getQuestionsForExam(activeCfg.subject, activeCfg.targetClass, activeCfg.questionCategory || 'ALL').questions;
   }
 
   checkActiveSession() {
@@ -754,7 +786,7 @@ class ExamEngine {
     this.remainingSeconds = this.durationSeconds;
 
     const targetClass = (studentData && studentData.class) || activeCfg.targetClass || 'Semua Kelas';
-    const examQResult = this.getQuestionsForExam(activeCfg.subject, targetClass);
+    const examQResult = this.getQuestionsForExam(activeCfg.subject, targetClass, activeCfg.questionCategory || 'ALL');
     const selectedRaw = Array.isArray(examQResult.questions) ? examQResult.questions : [];
     selectedRaw.forEach(q => _stashQuestionKey(q));
     if (!(typeof window !== 'undefined' && window.supabaseSync && window.supabaseSync.isCloudConfigured())) {
@@ -815,9 +847,9 @@ class ExamEngine {
         .filter(Boolean);
       restoredList = restored.length > 0
         ? restored
-        : this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class).questions;
+        : this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class, activeCfg.questionCategory || 'ALL').questions;
     } else {
-      restoredList = this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class).questions;
+      restoredList = this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class, activeCfg.questionCategory || 'ALL').questions;
     }
 
     if (!this.isPrivilegedStaffMode()) {

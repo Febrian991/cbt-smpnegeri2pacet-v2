@@ -1781,6 +1781,7 @@ class CBTAdmin {
           return parsed.map(s => ({
             ...s,
             maxAttempts: Math.max(1, parseInt(s.maxAttempts, 10) || 1),
+            questionCategory: this.normalizeQuestionCategory(s.questionCategory),
             isActive: hasExplicitFlag ? Boolean(s.isActive) : Boolean(activeId && s.id === activeId)
           }));
         }
@@ -1789,7 +1790,14 @@ class CBTAdmin {
       }
     }
     localStorage.setItem('cbt_exam_schedules', JSON.stringify(DEFAULT_SCHEDULES));
-    return [...DEFAULT_SCHEDULES];
+    return DEFAULT_SCHEDULES.map(s => ({ ...s, questionCategory: this.normalizeQuestionCategory(s.questionCategory) }));
+  }
+
+  normalizeQuestionCategory(cat) {
+    const val = String(cat || 'ALL').trim().toLowerCase();
+    if (val === 'trial' || val === 'ujicoba' || val === 'uji_coba') return 'trial';
+    if (val === 'exam' || val === 'real' || val === 'asli') return 'exam';
+    return 'ALL';
   }
 
   saveSchedules(list, skipCloudPush = false) {
@@ -1808,7 +1816,7 @@ class CBTAdmin {
     return this.getAllSchedules().filter(s => Boolean(s.isActive));
   }
 
-  addSchedule({ day, dateIso, subject, classLevel, timeRange, durationMinutes, token, maxAttempts }) {
+  addSchedule({ day, dateIso, subject, classLevel, timeRange, durationMinutes, token, maxAttempts, questionCategory }) {
     if (!this.isSuperAdminUser()) {
       return { success: false, message: "Hanya Admin / Proktor yang dapat menambah jadwal ujian!" };
     }
@@ -1820,6 +1828,7 @@ class CBTAdmin {
     const cleanDuration = parseInt(durationMinutes, 10) || 80;
     const cleanToken = String(token || "").trim().toUpperCase() || this.generateRandomToken();
     const cleanAttempts = Math.max(1, Math.min(20, parseInt(maxAttempts, 10) || 1));
+    const cleanCategory = this.normalizeQuestionCategory(questionCategory);
 
     if (!cleanSubject || !cleanDateIso) {
       return { success: false, message: "Tanggal Ujian dan Mata Pelajaran wajib diisi!" };
@@ -1836,6 +1845,7 @@ class CBTAdmin {
       durationMinutes: cleanDuration,
       token: cleanToken,
       maxAttempts: cleanAttempts,
+      questionCategory: cleanCategory,
       isActive: false
     };
 
@@ -1866,6 +1876,9 @@ class CBTAdmin {
           maxAttempts: payload.maxAttempts !== undefined
             ? Math.max(1, Math.min(20, parseInt(payload.maxAttempts, 10) || 1))
             : (s.maxAttempts || 1),
+          questionCategory: payload.questionCategory !== undefined
+            ? this.normalizeQuestionCategory(payload.questionCategory)
+            : this.normalizeQuestionCategory(s.questionCategory),
           isActive: Boolean(s.isActive)
         };
         return updatedItem;
@@ -1929,6 +1942,7 @@ class CBTAdmin {
         examToken: sched.token || window.examEngine.config.examToken,
         activeScheduleId: sched.id,
         maxAttempts: sched.maxAttempts || window.examEngine.config.maxAttempts || 1,
+        questionCategory: this.normalizeQuestionCategory(sched.questionCategory),
         showScoreToStudent: false
       });
     }
@@ -1960,6 +1974,7 @@ class CBTAdmin {
           durationMinutes: next.durationMinutes || 80,
           examToken: next.token || window.examEngine.config.examToken,
           activeScheduleId: next.id,
+          questionCategory: this.normalizeQuestionCategory(next.questionCategory),
           showScoreToStudent: false
         });
       } else {
@@ -1969,6 +1984,7 @@ class CBTAdmin {
           scheduleDate: "",
           scheduleTime: "",
           targetClass: "Semua Kelas",
+          questionCategory: "ALL",
           showScoreToStudent: false
         });
       }

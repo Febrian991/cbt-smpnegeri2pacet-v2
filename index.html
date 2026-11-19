@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.49">
+  <link rel="stylesheet" href="css/styles.css?v=3.50">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -1225,6 +1225,18 @@
                 </div>
               </div>
 
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="schInputQuestionCategory">Sumber / Kategori Soal Ujian</label>
+                <select id="schInputQuestionCategory" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="ALL">📚 Semua Soal (Asli &amp; Uji Coba)</option>
+                  <option value="trial">🧪 Khusus Soal Uji Coba (Simulasi / Gladi)</option>
+                  <option value="exam">📝 Hanya Soal Ujian Asli (Hari-H)</option>
+                </select>
+                <p id="schCategoryHelper" class="text-[10px] text-slate-500 mt-1 leading-snug">
+                  Menarik semua butir soal mapel ini. Pilih <strong>Khusus Uji Coba</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.
+                </p>
+              </div>
+
               <button type="submit" id="btnSubmitSchedule" class="w-full py-2.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
                 💾 Simpan ke Daftar Jadwal
               </button>
@@ -1743,13 +1755,23 @@
                 </div>
               </div>
 
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="cfgExamToken">Token Masuk Ujian</label>
-                <div class="flex gap-2">
-                  <input type="text" id="cfgExamToken" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold tracking-widest text-blue-700 outline-none uppercase">
-                  <button id="btnGenerateToken" type="button" class="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 text-xs transition cursor-pointer">
-                    🎲 Acak
-                  </button>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgExamToken">Token Masuk Ujian</label>
+                  <div class="flex gap-2">
+                    <input type="text" id="cfgExamToken" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold tracking-widest text-blue-700 outline-none uppercase">
+                    <button id="btnGenerateToken" type="button" class="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 text-xs transition cursor-pointer">
+                      🎲 Acak
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="cfgQuestionCategory">Kategori Soal (Mode Manual)</label>
+                  <select id="cfgQuestionCategory" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="ALL">📚 Semua Soal (Asli &amp; Uji Coba)</option>
+                    <option value="trial">🧪 Khusus Soal Uji Coba</option>
+                    <option value="exam">📝 Hanya Soal Ujian Asli</option>
+                  </select>
                 </div>
               </div>
 
@@ -2666,13 +2688,13 @@
   <div id="cbtRealtimeToastStack" class="fixed bottom-4 right-4 z-[75] flex flex-col-reverse gap-2.5 max-w-sm w-[calc(100vw-2rem)] pointer-events-none no-print"></div>
 
   <!-- ======================== SCRIPTS ======================== -->
-  <script src="js/default-questions.js?v=3.49"></script>
+  <script src="js/default-questions.js?v=3.50"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.39"></script>
-  <script src="js/supabase-config.js?v=3.49"></script>
-  <script src="js/exam-engine.js?v=3.39"></script>
-  <script src="js/admin.js?v=3.49"></script>
-  <script src="js/app.js?v=3.49"></script>
+  <script src="js/supabase-config.js?v=3.50"></script>
+  <script src="js/exam-engine.js?v=3.50"></script>
+  <script src="js/admin.js?v=3.50"></script>
+  <script src="js/app.js?v=3.50"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

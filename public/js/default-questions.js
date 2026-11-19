@@ -17,6 +17,7 @@ const DEFAULT_EXAM_CONFIG = {
   showScoreToStudent: false,
   maxCheatViolations: 3,
   maxAttempts: 1,
+  questionCategory: "ALL",
   subjectMaxAttempts: {}
 };
 

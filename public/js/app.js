@@ -834,18 +834,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetDay = sched ? sched.day : cfg.scheduleDay;
     const targetDate = sched ? (sched.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(sched.dateIso) : '')) : cfg.scheduleDate;
     const targetTime = sched ? (sched.timeRange || '') : cfg.scheduleTime;
+    const targetCategory = sched ? (sched.questionCategory || 'ALL') : (cfg.questionCategory || 'ALL');
+    const trialSuffix = targetCategory === 'trial' ? ' • Mode Uji Coba' : '';
 
     if (scheduleBadgeEl && scheduleTextEl) {
       const activeList = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
       if (activeList.length > 1 && sched) {
         const datePart = [targetDay, targetDate].filter(Boolean).join(', ');
         const timePart = targetTime ? ` • ${targetTime}` : '';
-        scheduleTextEl.innerText = `${activeList.length} Jadwal Aktif Serentak${datePart ? ` (${datePart}${timePart})` : ''}`;
+        scheduleTextEl.innerText = `${activeList.length} Jadwal Aktif Serentak${datePart ? ` (${datePart}${timePart})` : ''}${trialSuffix}`;
         scheduleBadgeEl.classList.remove('hidden');
       } else if (targetDay || targetDate) {
         const datePart = [targetDay, targetDate].filter(Boolean).join(', ');
         const timePart = targetTime ? ` • Pukul ${targetTime}` : '';
-        scheduleTextEl.innerText = `Jadwal Aktif: ${datePart}${timePart}`;
+        scheduleTextEl.innerText = `Jadwal Aktif: ${datePart}${timePart}${trialSuffix}`;
+        scheduleBadgeEl.classList.remove('hidden');
+      } else if (targetCategory === 'trial') {
+        scheduleTextEl.innerText = 'Mode Uji Coba Aplikasi Aktif';
         scheduleBadgeEl.classList.remove('hidden');
       } else {
         scheduleBadgeEl.classList.add('hidden');
@@ -892,7 +897,8 @@ document.addEventListener('DOMContentLoaded', () => {
         activeList.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.id;
-          opt.innerText = `${s.subject} (${s.classLevel || 'Semua Kelas'})`;
+          const catSuffix = s.questionCategory === 'trial' ? ' — Uji Coba' : '';
+          opt.innerText = `${s.subject} (${s.classLevel || 'Semua Kelas'})${catSuffix}`;
           selectEl.appendChild(opt);
         });
         if (prevSelectedId && activeList.some(s => s.id === prevSelectedId)) {
@@ -1016,9 +1022,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('confirmName').innerText = student.name;
     document.getElementById('confirmNisn').innerText = student.nisn;
     document.getElementById('confirmClass').innerText = `Kelas ${student.class}`;
-    document.getElementById('confirmSubject').innerText = `${cfg.subject}${classPart}`;
+    const confirmSubEl = document.getElementById('confirmSubject');
+    if (confirmSubEl) {
+      const catTag = cfg.questionCategory === 'trial'
+        ? ' [Uji Coba]'
+        : (cfg.questionCategory === 'exam' ? ' [Ujian Asli]' : '');
+      confirmSubEl.innerText = `${cfg.subject}${classPart}${catTag}`;
+    }
     document.getElementById('confirmDuration').innerText = `${cfg.durationMinutes} Menit`;
-    const confirmQs = window.examEngine.getQuestionsForExam(cfg.subject, student.class || cfg.targetClass);
+    const confirmQs = window.examEngine.getQuestionsForExam(cfg.subject, student.class || cfg.targetClass, cfg.questionCategory || 'ALL');
     document.getElementById('confirmQuestionsCount').innerText = `${confirmQs.questions.length} Butir Soal`;
 
     const confirmScheduleRow = document.getElementById('confirmScheduleRow');
@@ -1158,7 +1170,8 @@ document.addEventListener('DOMContentLoaded', () => {
         durationMinutes: matchedSchedule.durationMinutes || 80,
         examToken: matchedSchedule.token || window.examEngine.config.examToken,
         activeScheduleId: matchedSchedule.id,
-        maxAttempts: matchedSchedule.maxAttempts || 1
+        maxAttempts: matchedSchedule.maxAttempts || 1,
+        questionCategory: matchedSchedule.questionCategory || 'ALL'
       } : {
         ...window.examEngine.config
       };
@@ -1216,8 +1229,22 @@ document.addEventListener('DOMContentLoaded', () => {
         ]);
       }
 
+      const targetCat = targetExamConfig.questionCategory || 'ALL';
+      const examQsCheck = window.examEngine.getQuestionsForExam(
+        targetExamConfig.subject,
+        authenticatedStudent.class || targetExamConfig.targetClass,
+        targetCat
+      );
+      if (!examQsCheck.questions || examQsCheck.questions.length === 0) {
+        const catLabel = targetCat === 'trial' ? 'Soal Uji Coba' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
+        showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Proktor / Guru Mapel.`);
+        tempStudent = null;
+        try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
+        return;
+      }
+
       if (window.supabaseSync) {
-        const qCount = window.examEngine.getQuestionsForExam(targetExamConfig.subject, authenticatedStudent.class || targetExamConfig.targetClass).questions.length;
+        const qCount = examQsCheck.questions.length;
         window.supabaseSync.upsertStudentSession({
           nisn: authenticatedStudent.nisn,
           name: authenticatedStudent.name,
@@ -2640,6 +2667,51 @@ document.addEventListener('DOMContentLoaded', () => {
     dl.innerHTML = subjects.map(s => `<option value="${s}">`).join('');
   }
 
+  const schInputQuestionCategory = document.getElementById('schInputQuestionCategory');
+  const schCategoryHelper = document.getElementById('schCategoryHelper');
+
+  function getScheduleCategoryMeta(category) {
+    const val = String(category || 'ALL').trim().toLowerCase();
+    if (val === 'trial') {
+      return {
+        value: 'trial',
+        badgeText: '🧪 Khusus Uji Coba',
+        badgeClass: 'bg-violet-100 text-violet-800 border border-violet-200',
+        shortText: 'Khusus Soal Uji Coba'
+      };
+    }
+    if (val === 'exam') {
+      return {
+        value: 'exam',
+        badgeText: '📝 Soal Ujian Asli',
+        badgeClass: 'bg-sky-50 text-sky-800 border border-sky-200',
+        shortText: 'Hanya Soal Ujian Asli'
+      };
+    }
+    return {
+      value: 'ALL',
+      badgeText: '📚 Semua Soal',
+      badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+      shortText: 'Semua Soal (Asli & Uji Coba)'
+    };
+  }
+
+  function updateScheduleCategoryHelper() {
+    if (!schCategoryHelper || !schInputQuestionCategory) return;
+    const val = schInputQuestionCategory.value || 'ALL';
+    if (val === 'trial') {
+      schCategoryHelper.innerHTML = 'Mode simulasi: siswa hanya menerima soal bertanda <strong class="text-violet-700">🧪 Uji Coba</strong> pada mapel &amp; kelas ini.';
+    } else if (val === 'exam') {
+      schCategoryHelper.innerHTML = 'Mode ujian resmi: semua soal <strong class="text-violet-700">🧪 Uji Coba</strong> otomatis disaring agar tidak ikut tampil ke siswa.';
+    } else {
+      schCategoryHelper.innerHTML = 'Menarik semua butir soal mapel ini. Pilih <strong>Khusus Uji Coba</strong> saat simulasi atau <strong>Hanya Soal Asli</strong> saat hari ujian.';
+    }
+  }
+
+  if (schInputQuestionCategory) {
+    schInputQuestionCategory.addEventListener('change', updateScheduleCategoryHelper);
+  }
+
   function resetScheduleForm() {
     if (!formScheduleItem) return;
     formScheduleItem.reset();
@@ -2657,6 +2729,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (timeEl) timeEl.value = '07:30 - 08:50';
     if (durEl) durEl.value = '80';
     if (attEl) attEl.value = '1';
+    if (schInputQuestionCategory) schInputQuestionCategory.value = 'ALL';
+    updateScheduleCategoryHelper();
     if (titleEl) titleEl.innerText = '+ Tambah Jadwal Ujian';
     if (submitBtn) submitBtn.innerText = '💾 Simpan ke Daftar Jadwal';
     if (btnCancelEditSchedule) btnCancelEditSchedule.classList.add('hidden');
@@ -2674,6 +2748,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const attEl = document.getElementById('schInputMaxAttempts');
     if (attEl) attEl.value = sched.maxAttempts || 1;
     document.getElementById('schInputToken').value = sched.token || '';
+    if (schInputQuestionCategory) schInputQuestionCategory.value = sched.questionCategory || 'ALL';
+    updateScheduleCategoryHelper();
 
     const titleEl = document.getElementById('scheduleFormTitle');
     const submitBtn = document.getElementById('btnSubmitSchedule');
@@ -2716,7 +2792,8 @@ document.addEventListener('DOMContentLoaded', () => {
         timeRange: document.getElementById('schInputTime').value.trim(),
         durationMinutes: parseInt(document.getElementById('schInputDuration').value, 10) || 80,
         maxAttempts: parseInt(document.getElementById('schInputMaxAttempts')?.value, 10) || 1,
-        token: document.getElementById('schInputToken').value.trim().toUpperCase()
+        token: document.getElementById('schInputToken').value.trim().toUpperCase(),
+        questionCategory: schInputQuestionCategory ? schInputQuestionCategory.value : 'ALL'
       };
 
       const res = editId
@@ -2749,14 +2826,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (bannerTextEl) {
       if (activeSchedules.length > 1) {
-        const names = activeSchedules.map(s => `${s.subject} (${s.classLevel})`).join(', ');
+        const names = activeSchedules.map(s => `${s.subject} (${s.classLevel}${s.questionCategory === 'trial' ? ' • Uji Coba' : ''})`).join(', ');
         bannerTextEl.innerText = `${activeSchedules.length} Mapel Aktif Serentak: ${names}`;
       } else if (activeSchedules.length === 1) {
         const s = activeSchedules[0];
         const classLabel = s.classLevel && s.classLevel !== 'Semua Kelas' ? ` (${s.classLevel})` : '';
-        bannerTextEl.innerText = `Mapel Aktif: ${s.subject}${classLabel} • ${s.day}, ${s.dateFormatted || window.cbtAdmin.formatIndonesianDate(s.dateIso)} • Token: ${s.token}`;
+        const catTag = s.questionCategory === 'trial' ? ' • Mode Uji Coba' : (s.questionCategory === 'exam' ? ' • Soal Asli' : '');
+        bannerTextEl.innerText = `Mapel Aktif: ${s.subject}${classLabel} • ${s.day}, ${s.dateFormatted || window.cbtAdmin.formatIndonesianDate(s.dateIso)} • Token: ${s.token}${catTag}`;
       } else {
-        bannerTextEl.innerText = `Belum Ada Jadwal Aktif (Mode Manual: ${cfg.subject} • Token: ${cfg.examToken})`;
+        const manCatTag = cfg.questionCategory === 'trial' ? ' • Mode Uji Coba' : (cfg.questionCategory === 'exam' ? ' • Soal Asli' : '');
+        bannerTextEl.innerText = `Belum Ada Jadwal Aktif (Mode Manual: ${cfg.subject} • Token: ${cfg.examToken}${manCatTag})`;
       }
     }
 
@@ -2777,35 +2856,40 @@ document.addEventListener('DOMContentLoaded', () => {
     schedules.forEach((s, idx) => {
       const isActive = Boolean(s.isActive);
       const maxAtt = window.examEngine ? window.examEngine.getMaxAttemptsForSubject(s.subject, s) : (s.maxAttempts || 1);
+      const catMeta = getScheduleCategoryMeta(s.questionCategory);
+      const qInfo = window.examEngine && window.examEngine.getQuestionsForExam
+        ? window.examEngine.getQuestionsForExam(s.subject, s.classLevel, catMeta.value)
+        : { questions: [], isFallback: true };
+      const emptyBadgeLabel = catMeta.value === 'trial'
+        ? '0 Soal Uji Coba'
+        : (catMeta.value === 'exam' ? '0 Soal Asli' : '0 Soal Khusus');
+      const readinessBadge = (qInfo.isFallback || qInfo.questions.length === 0)
+        ? `<span class="inline-block px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold text-[10px]">⚠️ ${emptyBadgeLabel}</span>`
+        : `<span class="inline-block px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px]">${qInfo.questions.length} Soal Siap</span>`;
+
       const tr = document.createElement('tr');
       tr.className = `border-b border-slate-100 transition ${isActive ? 'bg-emerald-50/60' : 'hover:bg-slate-50'}`;
       tr.innerHTML = `
         <td class="p-3 text-center font-bold text-slate-400">${idx + 1}</td>
         <td class="p-3 whitespace-nowrap">
-          <div class="font-bold text-slate-900">${s.day}, ${s.dateFormatted || window.cbtAdmin.formatIndonesianDate(s.dateIso)}</div>
-          <div class="text-[10px] font-mono text-slate-400">${s.dateIso}</div>
+          <div class="font-bold text-slate-900">${escapeHtmlSafe(s.day)}, ${escapeHtmlSafe(s.dateFormatted || window.cbtAdmin.formatIndonesianDate(s.dateIso))}</div>
+          <div class="text-[10px] font-mono text-slate-400">${escapeHtmlSafe(s.dateIso)}</div>
         </td>
         <td class="p-3">
-          <div class="font-bold text-slate-900">${s.subject}</div>
+          <div class="font-bold text-slate-900">${escapeHtmlSafe(s.subject)}</div>
           <div class="flex flex-wrap items-center gap-1 mt-0.5">
-            <span class="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[10px]">${s.classLevel}</span>
+            <span class="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[10px]">${escapeHtmlSafe(s.classLevel)}</span>
             <span class="inline-block px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-[10px]">Maks ${maxAtt}x Uji</span>
-            ${(() => {
-              const qInfo = window.examEngine && window.examEngine.getQuestionsForExam
-                ? window.examEngine.getQuestionsForExam(s.subject, s.classLevel)
-                : { questions: [], isFallback: true };
-              return qInfo.isFallback
-                ? `<span class="inline-block px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold text-[10px]">0 Soal Khusus</span>`
-                : `<span class="inline-block px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px]">${qInfo.questions.length} Soal Siap</span>`;
-            })()}
+            <span class="inline-block px-1.5 py-0.5 rounded-md font-bold text-[10px] ${catMeta.badgeClass}">${catMeta.badgeText}</span>
+            ${readinessBadge}
           </div>
         </td>
         <td class="p-3 whitespace-nowrap text-slate-600">
-          <div class="font-semibold">${s.timeRange || '-'}</div>
+          <div class="font-semibold">${escapeHtmlSafe(s.timeRange || '-')}</div>
           <div class="text-[10px] text-slate-400">${s.durationMinutes} Menit</div>
         </td>
         <td class="p-3 text-center">
-          <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-blue-700 font-mono font-black text-xs">${s.token}</span>
+          <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-blue-700 font-mono font-black text-xs">${escapeHtmlSafe(s.token)}</span>
         </td>
         <td class="p-3 text-center whitespace-nowrap">
           ${isActive
@@ -2825,6 +2909,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const activateBtn = tr.querySelector('.btn-activate-schedule');
       if (activateBtn) {
         activateBtn.addEventListener('click', () => {
+          if ((qInfo.isFallback || qInfo.questions.length === 0) && catMeta.value !== 'ALL') {
+            alert(`Belum ada butir ${catMeta.shortText} untuk "${s.subject}" (${s.classLevel}).\n\nTambahkan soal terlebih dahulu di menu Bank Soal Ujian atau ubah Sumber / Kategori Soal pada jadwal ini.`);
+            return;
+          }
           const res = window.cbtAdmin.activateSchedule(s.id);
           if (res.success) {
             renderAdminSchedulesList();
@@ -2832,7 +2920,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderAdminConfigForm();
             setupSubjectAndClassFilters();
             const countNow = window.cbtAdmin.getActiveSchedules().length;
-            alert(`Mapel "${s.subject}" (${s.classLevel}) berhasil DIAKTIFKAN!\nToken Ujian: ${s.token}\nTotal mapel ujian aktif saat ini: ${countNow} mapel.`);
+            alert(`Mapel "${s.subject}" (${s.classLevel}) berhasil DIAKTIFKAN!\nKategori Soal: ${catMeta.shortText} (${qInfo.questions.length} soal)\nToken Ujian: ${s.token}\nTotal mapel ujian aktif saat ini: ${countNow} mapel.`);
           } else {
             alert(res.message);
           }
@@ -6502,6 +6590,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cfgSubject').value = config.subject || '';
     document.getElementById('cfgDurationMinutes').value = config.durationMinutes || 80;
     document.getElementById('cfgExamToken').value = config.examToken || 'CBT80M';
+    const catEl = document.getElementById('cfgQuestionCategory');
+    if (catEl) catEl.value = config.questionCategory || 'ALL';
     document.getElementById('cfgMaxCheats').value = config.maxCheatViolations || 3;
     const maxAttEl = document.getElementById('cfgMaxAttempts');
     if (maxAttEl) maxAttEl.value = config.maxAttempts || 1;
@@ -6519,6 +6609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         subject: document.getElementById('cfgSubject').value.trim(),
         durationMinutes: parseInt(document.getElementById('cfgDurationMinutes').value) || 80,
         examToken: document.getElementById('cfgExamToken').value.trim().toUpperCase(),
+        questionCategory: document.getElementById('cfgQuestionCategory')?.value || 'ALL',
         showScoreToStudent: false,
         maxCheatViolations: parseInt(document.getElementById('cfgMaxCheats').value) || 3,
         maxAttempts: Math.max(1, Math.min(10, parseInt(document.getElementById('cfgMaxAttempts')?.value, 10) || 1))
@@ -6533,6 +6624,7 @@ document.addEventListener('DOMContentLoaded', () => {
       window.cbtAdmin.updateConfig(updated);
       alert("Pengaturan ujian berhasil disimpan!");
       renderConfigInfoOnLogin();
+      renderAdminSchedulesList();
     });
   }
 
