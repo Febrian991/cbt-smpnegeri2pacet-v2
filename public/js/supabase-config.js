@@ -242,13 +242,26 @@ class SupabaseSyncManager {
 
       const results = [];
       for (const sp of specs) {
-        const { count, error } = await client.from(sp.name).select('*', { count: 'exact', head: true });
+        const resp = sp.countReadable
+          ? await client.from(sp.name).select('*', { count: 'exact', head: true })
+          : await client.from(sp.name).select('question_key').limit(1);
+        const { count, error, status } = resp;
         let ready = false;
         let note = '';
+        const errMsgLower = String(error?.message || '').toLowerCase();
+        const isPermDenied = Boolean(error) && (
+          error.code === '42501' ||
+          status === 401 ||
+          status === 403 ||
+          errMsgLower.includes('permission denied') ||
+          errMsgLower.includes('insufficient_privilege') ||
+          errMsgLower.includes('row-level security')
+        );
+
         if (!error) {
           ready = true;
           note = typeof count === 'number' ? `${count} baris` : 'Aktif';
-        } else if (sp.name === 'cbt_question_keys' && (error.code === '42501' || String(error.message || '').toLowerCase().includes('permission denied'))) {
+        } else if (sp.name === 'cbt_question_keys' && isPermDenied) {
           // Tabel cbt_question_keys sengaja memblokir SELECT dari anon agar kunci jawaban aman 100%
           ready = true;
           note = 'Aktif & Terkunci Aman';
@@ -260,7 +273,7 @@ class SupabaseSyncManager {
           note = 'Aktif';
         } else {
           ready = false;
-          note = error.message || 'Gagal akses';
+          note = error.message || `Gagal akses (HTTP ${status || '?'})`;
         }
         results.push({ ...sp, ready, count: typeof count === 'number' ? count : null, note });
       }
