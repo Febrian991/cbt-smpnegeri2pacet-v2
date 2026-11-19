@@ -843,12 +843,181 @@ class CBTAdmin {
   }
 
   resetToDefaultQuestions() {
-    const defaults = [...DEFAULT_QUESTIONS];
+    const nowIso = new Date().toISOString();
+    const defaults = (typeof DEFAULT_QUESTIONS !== 'undefined' && Array.isArray(DEFAULT_QUESTIONS) ? DEFAULT_QUESTIONS : []).map(q => ({
+      ...q,
+      options: Array.isArray(q.options) ? q.options.map(o => ({ ...o })) : undefined,
+      correctAnswer: Array.isArray(q.correctAnswer) ? [...q.correctAnswer] : q.correctAnswer,
+      statements: Array.isArray(q.statements) ? q.statements.map(s => ({ ...s })) : undefined,
+      updatedAt: nowIso
+    }));
     window.examEngine.saveQuestions(defaults, true);
 
     if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.replaceAllQuestionRows === 'function') {
       window.supabaseSync.replaceAllQuestionRows(defaults);
     }
+    return { success: true, count: defaults.length };
+  }
+
+  seedTrialQuestionsForTeachers(options = {}) {
+    if (!window.examEngine) {
+      return { success: false, addedCount: 0, affectedSubjects: [], message: 'Mesin ujian belum siap.' };
+    }
+
+    const onlyForCurrentTeacher = Boolean(options.onlyForCurrentTeacher);
+    const onlyMissingSubjects = options.onlyMissingSubjects !== false;
+    const targetSubjectFilter = options.targetSubject && options.targetSubject !== 'ALL' ? String(options.targetSubject).trim() : null;
+
+    const existing = Array.isArray(window.examEngine.questions) ? [...window.examEngine.questions] : [];
+    const workingList = [...existing];
+    const usedIds = new Set(workingList.map(q => (q && q.id !== undefined && q.id !== null ? String(q.id) : '')));
+    let nextId = Date.now() * 1000 + Math.floor(Math.random() * 500);
+    const allocId = () => {
+      while (usedIds.has(String(nextId))) nextId += 1;
+      const id = nextId;
+      usedIds.add(String(id));
+      nextId += 1;
+      return id;
+    };
+
+    const matchesSub = (qSub, target) => (window.examEngine && window.examEngine.matchesSubject)
+      ? window.examEngine.matchesSubject(qSub, target)
+      : String(qSub || '').toLowerCase() === String(target || '').toLowerCase();
+    const matchesCls = (qCls, target) => (window.examEngine && window.examEngine.matchesClassLevel)
+      ? window.examEngine.matchesClassLevel(qCls, target)
+      : true;
+
+    const cur = this.getCurrentTeacher();
+    let teacherPool = [];
+    if (onlyForCurrentTeacher && cur && cur.role !== 'admin' && cur.id !== 'admin') {
+      teacherPool = [cur];
+    } else {
+      teacherPool = (Array.isArray(this.teachers) ? this.teachers : []).filter(t => t && t.role !== 'admin' && t.id !== 'admin');
+      if (teacherPool.length === 0 && typeof DEFAULT_TEACHERS !== 'undefined' && Array.isArray(DEFAULT_TEACHERS)) {
+        teacherPool = DEFAULT_TEACHERS.filter(t => t && t.role !== 'admin' && t.id !== 'admin');
+      }
+    }
+
+    const defaultTemplates = (typeof DEFAULT_QUESTIONS !== 'undefined' && Array.isArray(DEFAULT_QUESTIONS)) ? DEFAULT_QUESTIONS : [];
+    const nowIso = new Date().toISOString();
+    const newQuestions = [];
+    const affectedSubjectsSet = new Set();
+
+    const buildFallbackTrialTemplates = (subjName) => [
+      {
+        type: 'single',
+        question: `[Soal Uji Coba - ${subjName}] Soal ini disediakan untuk menguji tampilan Pilihan Ganda Tunggal, navigasi nomor soal, serta perhitungan skor otomatis pada aplikasi CBT. Pilihlah pernyataan yang paling tepat mengenai fungsi uji coba bank soal:`,
+        image: '',
+        options: [
+          { key: 'A', text: 'Memastikan soal tampil rapi, waktu berjalan akurat, dan nilai terekam di Rekap Nilai' },
+          { key: 'B', text: 'Menghapus seluruh data siswa peserta ujian secara otomatis' },
+          { key: 'C', text: 'Menonaktifkan fitur pengawasan dan penyimpanan hasil ujian' },
+          { key: 'D', text: 'Mengubah token jadwal ujian tanpa persetujuan proktor' }
+        ],
+        correctAnswer: 'A',
+        weight: 30
+      },
+      {
+        type: 'multiple',
+        question: `[Soal Uji Coba - ${subjName}] Pilihlah SEMUA hal yang dapat diperiksa melalui soal uji coba Pilihan Ganda Kompleks pada sistem CBT sebelum hari pelaksanaan ujian:`,
+        image: '',
+        options: [
+          { key: 'A', text: 'Kemampuan mencentang lebih dari satu pilihan jawaban pada perangkat siswa' },
+          { key: 'B', text: 'Kesesuaian tampilan butir soal dan opsi jawaban di layar laptop maupun HP' },
+          { key: 'C', text: 'Mengabaikan kunci jawaban agar nilai siswa selalu nol' },
+          { key: 'D', text: 'Ketepatan sinkronisasi hasil jawaban siswa ke panel guru dan proktor' }
+        ],
+        correctAnswer: ['A', 'B', 'D'],
+        weight: 35
+      },
+      {
+        type: 'true_false',
+        question: `[Soal Uji Coba - ${subjName}] Tentukan kebenaran pernyataan mengenai alur pengerjaan ujian CBT oleh siswa berikut ini:`,
+        image: '',
+        statements: [
+          { id: 's1', text: 'Siswa dapat meninjau kembali jawaban pada setiap nomor sebelum menekan tombol Selesai Ujian.', correct: 'B' },
+          { id: 's2', text: 'Jawaban yang telah dikumpulkan oleh siswa otomatis masuk ke Rekap Nilai Guru Mata Pelajaran.', correct: 'B' },
+          { id: 's3', text: 'Guru dapat mengedit atau mengganti soal uji coba ini dengan soal asli sebelum ujian dimulai.', correct: 'B' }
+        ],
+        weight: 35
+      }
+    ];
+
+    teacherPool.forEach(t => {
+      let subjects = this.getTeacherSubjectsList(t);
+      if (targetSubjectFilter) {
+        subjects = subjects.filter(s => matchesSub(s, targetSubjectFilter));
+      }
+      const teacherClasses = t.classes ? this.parseTeacherClasses(t.classes) : [];
+      const classLevel = teacherClasses.length > 0 ? teacherClasses.join(', ') : 'Semua Kelas';
+      const creatorName = t.name || 'Proktor Utama / Admin';
+
+      subjects.forEach(subj => {
+        const hasMatch = workingList.some(q => {
+          const qSub = String(q.subject || '').trim();
+          if (!qSub || qSub.toLowerCase() === 'umum') return false;
+          if (!matchesSub(qSub, subj)) return false;
+          if (teacherClasses.length > 0) {
+            return matchesCls(q.classLevel || 'Semua Kelas', teacherClasses.join(', '));
+          }
+          return true;
+        });
+
+        if (onlyMissingSubjects && hasMatch) return;
+
+        let matchedTemplates = defaultTemplates.filter(dq => dq.subject && matchesSub(dq.subject, subj));
+        if (matchedTemplates.length === 0) {
+          matchedTemplates = buildFallbackTrialTemplates(subj);
+        }
+
+        matchedTemplates.forEach(tpl => {
+          const clone = {
+            id: allocId(),
+            subject: subj,
+            classLevel,
+            createdBy: creatorName,
+            type: tpl.type || 'single',
+            question: tpl.question,
+            image: tpl.image || '',
+            weight: parseInt(tpl.weight, 10) || 10,
+            updatedAt: nowIso
+          };
+          if (clone.type === 'single') {
+            clone.options = Array.isArray(tpl.options) ? tpl.options.map(o => ({ ...o })) : [];
+            clone.correctAnswer = tpl.correctAnswer;
+          } else if (clone.type === 'multiple') {
+            clone.options = Array.isArray(tpl.options) ? tpl.options.map(o => ({ ...o })) : [];
+            clone.correctAnswer = Array.isArray(tpl.correctAnswer) ? [...tpl.correctAnswer] : [tpl.correctAnswer];
+          } else if (clone.type === 'true_false') {
+            clone.statements = Array.isArray(tpl.statements) ? tpl.statements.map(s => ({ ...s })) : [];
+          }
+          newQuestions.push(clone);
+          workingList.push(clone);
+        });
+
+        affectedSubjectsSet.add(subj);
+      });
+    });
+
+    if (newQuestions.length === 0) {
+      return {
+        success: true,
+        addedCount: 0,
+        affectedSubjects: [],
+        message: 'Semua bank soal guru sudah memiliki minimal 1 soal.'
+      };
+    }
+
+    window.examEngine.saveQuestions(workingList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.upsertQuestionRows === 'function') {
+      window.supabaseSync.upsertQuestionRows(newQuestions, { seedFallback: workingList });
+    }
+
+    return {
+      success: true,
+      addedCount: newQuestions.length,
+      affectedSubjects: Array.from(affectedSubjectsSet)
+    };
   }
 
   exportQuestionsJSON(subjectFilter = 'ALL', classFilter = 'ALL') {

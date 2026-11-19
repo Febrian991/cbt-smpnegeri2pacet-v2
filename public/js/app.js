@@ -241,6 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (e) {
         console.warn('Gagal sinkron soal per-baris:', e);
+      } finally {
+        maybeAutoSeedTeacherTrialBank();
       }
       return false;
     })();
@@ -250,6 +252,35 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       questionsCloudSyncPromise = null;
     }
+  }
+
+  function maybeAutoSeedTeacherTrialBank() {
+    try {
+      if (!window.cbtAdmin || !window.cbtAdmin.isAuthenticated || !window.examEngine) return;
+      if (typeof window.cbtAdmin.seedTrialQuestionsForTeachers !== 'function') return;
+      if (localStorage.getItem('cbt_trial_seeded_v347') === '1') return;
+
+      const curList = Array.isArray(window.examEngine.questions) ? window.examEngine.questions : [];
+      const hasAnySubjectSpecific = curList.some(q => {
+        const s = String(q?.subject || '').trim().toLowerCase();
+        return s && s !== 'umum' && s !== '-';
+      });
+
+      if (hasAnySubjectSpecific) {
+        localStorage.setItem('cbt_trial_seeded_v347', '1');
+        return;
+      }
+
+      const res = window.cbtAdmin.seedTrialQuestionsForTeachers({ onlyMissingSubjects: true });
+      localStorage.setItem('cbt_trial_seeded_v347', '1');
+
+      if (res && res.addedCount > 0 && viewAdmin && !viewAdmin.classList.contains('hidden')) {
+        setupQuestionBankFilters();
+        renderAdminQuestionList();
+        renderAdminTeacherQuestionProgress();
+        renderAdminSchedulesList();
+      }
+    } catch (e) {}
   }
 
   function scheduleRealtimeQuestionRefresh() {
@@ -2086,6 +2117,12 @@ document.addEventListener('DOMContentLoaded', () => {
       else btnResetQs.classList.add('hidden');
     }
 
+    const btnSeedTrialQs = document.getElementById('btnSeedTrialQuestions');
+    if (btnSeedTrialQs) {
+      if (isAdmin) btnSeedTrialQs.classList.remove('hidden');
+      else btnSeedTrialQs.classList.add('hidden');
+    }
+
     const btnImportQs = document.getElementById('btnImportQuestions');
     if (btnImportQs) {
       if (isAdmin) btnImportQs.classList.remove('hidden');
@@ -2122,6 +2159,10 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAdminConfigForm();
       renderSchoolConfigForm();
       renderSupabaseConfigForm();
+    }
+
+    if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+      maybeAutoSeedTeacherTrialBank();
     }
   }
 
@@ -4703,14 +4744,38 @@ document.addEventListener('DOMContentLoaded', () => {
       const activeSubName = subjFilter === 'ALL' ? 'mata pelajaran yang dipilih' : `"${subjLabel}"`;
       const activeClsName = classFilter === 'ALL' ? '' : ` untuk ${classFilter}`;
       const emptyHint = isAdminUser
-        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
-        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> untuk menambahkan butir soal ${activeSubName}.`;
+        ? `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong>, <strong class="text-violet-700">🧪 Isi Soal Uji Coba Guru</strong>, atau <strong class="text-slate-600">📥 Impor JSON</strong> untuk menambahkan butir soal ${activeSubName}.`
+        : `Klik tombol <strong class="text-blue-600">+ Tambah Soal</strong> atau muat soal uji coba aplikasi di bawah ini.`;
       listContainer.innerHTML = `
-        <div class="text-center py-12 px-4 text-slate-500 bg-white rounded-3xl border border-slate-200">
-          <p class="font-bold text-base text-slate-700">Belum ada soal untuk ${activeSubName}${activeClsName}.</p>
-          <p class="text-xs sm:text-sm text-slate-400 mt-1">${emptyHint}</p>
+        <div class="text-center py-12 px-4 text-slate-500 bg-white rounded-3xl border border-slate-200 flex flex-col items-center gap-3">
+          <div>
+            <p class="font-bold text-base text-slate-700">Belum ada soal untuk ${activeSubName}${activeClsName}.</p>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1">${emptyHint}</p>
+          </div>
+          <button id="btnEmptyStateSeedTrial" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer">
+            🧪 Muat 3 Soal Uji Coba Aplikasi${subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? ` (${escapeHtmlSafe(subjFilter)})` : ''}
+          </button>
         </div>
       `;
+      const btnEmptySeed = document.getElementById('btnEmptyStateSeedTrial');
+      if (btnEmptySeed && typeof window.cbtAdmin.seedTrialQuestionsForTeachers === 'function') {
+        btnEmptySeed.addEventListener('click', () => {
+          const res = window.cbtAdmin.seedTrialQuestionsForTeachers({
+            onlyForCurrentTeacher: !isAdminUser,
+            onlyMissingSubjects: true,
+            targetSubject: subjFilter
+          });
+          setupQuestionBankFilters();
+          renderAdminQuestionList();
+          renderAdminTeacherQuestionProgress();
+          renderAdminSchedulesList();
+          if (res && res.addedCount > 0) {
+            alert(`Berhasil menambahkan ${res.addedCount} soal uji coba aplikasi ke bank soal (${res.affectedSubjects.join(', ')}).`);
+          } else {
+            alert(res?.message || 'Bank soal sudah memiliki soal atau belum ada mata pelajaran guru yang cocok.');
+          }
+        });
+      }
       return;
     }
 
@@ -5545,13 +5610,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const btnSeedTrialQuestions = document.getElementById('btnSeedTrialQuestions');
+  if (btnSeedTrialQuestions) {
+    btnSeedTrialQuestions.addEventListener('click', () => {
+      if (!window.cbtAdmin || typeof window.cbtAdmin.seedTrialQuestionsForTeachers !== 'function') return;
+      const res = window.cbtAdmin.seedTrialQuestionsForTeachers({ onlyMissingSubjects: true });
+      setupQuestionBankFilters();
+      renderAdminQuestionList();
+      renderAdminTeacherQuestionProgress();
+      renderAdminSchedulesList();
+      if (res && res.addedCount > 0) {
+        alert(`Berhasil mengisi ${res.addedCount} soal uji coba aplikasi ke ${res.affectedSubjects.length} bank soal guru yang masih kosong:\n• ${res.affectedSubjects.join('\n• ')}`);
+      } else {
+        alert("Semua bank soal guru sudah terisi minimal 1 soal! Jika ingin mengatur ulang seluruh bank soal ke set uji coba standar, gunakan tombol '↺ Reset Soal'.");
+      }
+    });
+  }
+
   const btnResetDefaultQuestions = document.getElementById('btnResetDefaultQuestions');
   if (btnResetDefaultQuestions) {
     btnResetDefaultQuestions.addEventListener('click', () => {
-      if (confirm("Reset seluruh bank soal ke soal bawaan ujian demo? (Soal semua mata pelajaran akan diganti ke 8 soal demo)")) {
+      if (confirm("Reset seluruh bank soal ke 39 soal uji coba aplikasi (3 soal di setiap dari 13 mata pelajaran guru)?\n\nCatatan: Soal yang sudah ada akan diganti dengan paket soal uji coba bawaan.")) {
         window.cbtAdmin.resetToDefaultQuestions();
         setupQuestionBankFilters();
         renderAdminQuestionList();
+        renderAdminTeacherQuestionProgress();
         renderAdminSchedulesList();
       }
     });
