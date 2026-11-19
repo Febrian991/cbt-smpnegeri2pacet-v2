@@ -194,7 +194,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getQuestionsListSignature(list) {
     if (!Array.isArray(list)) return '[]';
-    return JSON.stringify(list.map(q => [q && q.id, q && q.updatedAt || '', q && q.subject || '', q && q.question || '']));
+    return JSON.stringify(list.map(q => [
+      q && q.id,
+      q && q.updatedAt || '',
+      q && q.subject || '',
+      q && q.classLevel || '',
+      q && q.type || '',
+      q && q.isTrial ? 1 : 0,
+      q && q.createdBy || '',
+      q && q.question || ''
+    ]));
   }
 
   async function syncQuestionsFromCloud(reRenderIfOpen = true, forceRender = false) {
@@ -4857,6 +4866,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }).join(' ')
         : `<span class="text-[11px] text-slate-400 italic">Belum ada mapel</span>`;
 
+      const trialNote = item.trialQuestionsCount > 0
+        ? ` <span class="text-slate-400 font-normal">• +${item.trialQuestionsCount} simulasi (tidak dihitung)</span>`
+        : '';
       const firstSub = item.subjects[0] || 'ALL';
       const tr = document.createElement('tr');
       tr.className = 'border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/70';
@@ -4865,7 +4877,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="p-2.5">
           <div class="font-bold text-slate-900 dark:text-slate-100">${escapeHtmlSafe(item.teacher.name || '-')}</div>
           <div class="text-[10px] text-slate-400 font-mono">NIP: ${escapeHtmlSafe(item.teacher.nip || '-')}${item.teacherClasses.length > 0 ? ` • Kls: ${escapeHtmlSafe(item.teacherClasses.join(', '))}` : ''}</div>
-          <div class="text-[10px] text-indigo-700 font-semibold mt-0.5">✍️ Diinput sendiri: <strong>${item.createdByCount}</strong> soal</div>
+          <div class="text-[10px] text-indigo-700 font-semibold mt-0.5">✍️ Diinput sendiri (asli): <strong>${item.createdByCount}</strong> soal${trialNote}</div>
         </td>
         <td class="p-2.5"><div class="flex flex-wrap gap-1">${subjPills}</div></td>
         <td class="p-2.5 text-center whitespace-nowrap">
@@ -4898,6 +4910,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (subjFilterEl && firstSub !== 'ALL') {
             const hasOpt = Array.from(subjFilterEl.options).some(o => o.value === firstSub);
             if (hasOpt) subjFilterEl.value = firstSub;
+          }
+          const catFilterEl = document.getElementById('filterQuestionsCategory');
+          if (catFilterEl) {
+            catFilterEl.value = 'exam';
           }
           renderAdminQuestionList();
           document.getElementById('adminQuestionList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

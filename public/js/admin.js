@@ -3472,6 +3472,9 @@ class CBTAdmin {
     const allQuestions = window.examEngine && Array.isArray(window.examEngine.questions)
       ? window.examEngine.questions
       : [];
+    const realQuestions = allQuestions.filter(q => q && !this.isTrialQuestion(q));
+    const trialQuestions = allQuestions.filter(q => q && this.isTrialQuestion(q));
+
     const matchesSub = (qSub, target) => (window.examEngine && window.examEngine.matchesSubject)
       ? window.examEngine.matchesSubject(qSub, target)
       : String(qSub || '').toLowerCase() === String(target || '').toLowerCase();
@@ -3498,7 +3501,7 @@ class CBTAdmin {
         };
 
         const subjectBreakdown = subjects.map(subj => {
-          const qs = allQuestions.filter(q => {
+          const qs = realQuestions.filter(q => {
             const qSub = String(q.subject || '').trim();
             if (!qSub || qSub.toLowerCase() === 'umum') return false;
             return matchesSub(qSub, subj) && isTeacherClassMatch(q);
@@ -3515,7 +3518,7 @@ class CBTAdmin {
 
         const uniqueMatchingIds = new Set();
         const matchingQuestions = [];
-        allQuestions.forEach((q, idx) => {
+        realQuestions.forEach((q, idx) => {
           const qSub = String(q.subject || '').trim();
           if (!qSub || qSub.toLowerCase() === 'umum') return;
           if (!isTeacherClassMatch(q)) return;
@@ -3528,6 +3531,17 @@ class CBTAdmin {
           }
         });
 
+        const uniqueTrialIds = new Set();
+        trialQuestions.forEach((q, idx) => {
+          const qSub = String(q.subject || '').trim();
+          if (!qSub || qSub.toLowerCase() === 'umum') return;
+          if (!isTeacherClassMatch(q)) return;
+          if (subjects.some(subj => matchesSub(qSub, subj))) {
+            const key = q.id !== undefined ? String(q.id) : `trial_${idx}`;
+            uniqueTrialIds.add(key);
+          }
+        });
+
         const createdByCount = matchingQuestions.filter(isCreatedByTeacher).length;
 
         return {
@@ -3535,6 +3549,7 @@ class CBTAdmin {
           subjects,
           teacherClasses,
           totalQuestions: matchingQuestions.length,
+          trialQuestionsCount: uniqueTrialIds.size,
           createdByCount,
           singleCount: matchingQuestions.filter(q => (q.type || 'single') === 'single').length,
           multipleCount: matchingQuestions.filter(q => q.type === 'multiple').length,
