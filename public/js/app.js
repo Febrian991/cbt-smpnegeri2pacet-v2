@@ -1658,6 +1658,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resCompletedAt').innerText = result.completedAt;
     document.getElementById('resTotalQuestions').innerText = `${result.totalQuestions} Butir Soal`;
     document.getElementById('resCheatCount').innerText = `${result.cheatCount || 0} Kali Pelanggaran`;
+    const resRemEl = document.getElementById('resRemedialStatus');
+    if (resRemEl) {
+      const isRem = Number(result.finalScore || 0) < 75;
+      resRemEl.innerText = isRem ? '⚠️ Remedial' : '✅ Tidak Remedial';
+      resRemEl.className = isRem
+        ? 'font-bold bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[11px]'
+        : 'font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px]';
+    }
     const resAutoNoteEl = document.getElementById('resAutoPrintNote');
     if (resAutoNoteEl && window.cbtAdmin && typeof window.cbtAdmin.getPrintStampText === 'function') {
       resAutoNoteEl.innerText = window.cbtAdmin.getPrintStampText();
@@ -1977,9 +1985,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function switchAdminTab(targetTab, options = {}) {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
-    const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const isAdmin = Boolean(currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin'));
 
     if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
+      targetTab = 'tabDashboard';
+    }
+
+    if (window.cbtAdmin && typeof window.cbtAdmin.isTabDisabledForRole === 'function' && window.cbtAdmin.isTabDisabledForRole(targetTab, isAdmin)) {
+      if (!options.skipSkeleton) {
+        alert("Menu ini sedang dinonaktifkan melalui Pengaturan Hak Akses Tombol Admin.");
+      }
       targetTab = 'tabDashboard';
     }
 
@@ -1994,10 +2009,12 @@ document.addEventListener('DOMContentLoaded', () => {
     allTabBtns.forEach(b => {
       const tabKey = b.getAttribute('data-tab');
       const isHidden = b.classList.contains('hidden');
+      const isPermHidden = b.classList.contains('cbt-perm-hidden');
+      const isPermDisabled = b.classList.contains('cbt-perm-disabled');
       const isActive = tabKey === targetTab;
-      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap ${
+      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug ${
         isActive ? activeTabClass : idleTabClass
-      }${isHidden ? ' hidden' : ''}`;
+      }${isHidden ? ' hidden' : ''}${isPermHidden ? ' cbt-perm-hidden' : ''}${isPermDisabled ? ' cbt-perm-disabled' : ''}`;
     });
 
     let activePane = null;
@@ -2060,6 +2077,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.warn("Gagal render tab content:", err);
     }
+
+    applyRoleButtonPermissions();
   }
 
   adminTabButtons.forEach(btn => {
@@ -2186,6 +2205,8 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSchoolConfigForm();
       renderSupabaseConfigForm();
     }
+
+    applyRoleButtonPermissions();
 
     if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
       maybeAutoSeedTeacherTrialBank();
@@ -2596,7 +2617,9 @@ document.addEventListener('DOMContentLoaded', () => {
               </tr>
             </thead>
             <tbody>
-              ${topSlice.map((r, i) => `
+              ${topSlice.map((r, i) => {
+                const isRem = Number(r.finalScore || 0) < 75;
+                return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50 transition">
                   <td class="py-2 px-2.5 text-center font-bold text-slate-500">${i + 1}</td>
                   <td class="py-2 px-2.5 font-bold text-slate-800 dark:text-slate-100">${escapeHtmlSafe(r.student?.name || '-')}</td>
@@ -2607,12 +2630,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="text-red-500 ml-1">✗${r.incorrectCount || 0}</span>
                     <span class="text-slate-400 ml-1">?${r.unattemptedCount || 0}</span>
                   </td>
-                  <td class="py-2 px-2.5 text-center">
-                    <span class="inline-flex px-2 py-0.5 rounded-md font-black text-[11px] ${Number(r.finalScore || 0) >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${r.finalScore ?? 0}</span>
+                  <td class="py-2 px-2.5 text-center whitespace-nowrap">
+                    <div class="inline-flex flex-col items-center gap-0.5">
+                      <span class="inline-flex px-2 py-0.5 rounded-md font-black text-[11px] ${!isRem ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${r.finalScore ?? 0}</span>
+                      <span class="text-[9.5px] font-extrabold ${isRem ? 'text-rose-600' : 'text-emerald-600'}">${isRem ? 'Remedial' : 'Tidak Remedial'}</span>
+                    </div>
                   </td>
                   <td class="py-2 px-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">${escapeHtmlSafe(r.completedAt || '-')}</td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
             </tbody>
           </table>
         `;
@@ -2958,6 +2985,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       tbody.appendChild(tr);
     });
+    applyRoleButtonPermissions();
   }
 
   // ===================== FILTER MAPEL & KELAS =====================
@@ -3282,7 +3310,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (emptyRow) emptyRow.classList.add('hidden');
       tbody.innerHTML = `
         <tr>
-          <td colspan="9" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
+          <td colspan="10" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
             Tidak ada peserta yang cocok dengan filter pencarian aktif.
           </td>
         </tr>
@@ -3316,6 +3344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : `<span class="text-[11px] text-slate-400">Belum ada rincian jawaban</span>`;
 
       const stuKey = getStudentConsultKey(r);
+      const isRemedial = Number(r.finalScore || 0) < 75;
       const tr = document.createElement('tr');
       tr.className = `border-b border-slate-100 hover:bg-slate-50 transition text-xs${animateRows ? ' cbt-result-row-in' : ''}`;
       if (animateRows) {
@@ -3336,11 +3365,20 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
         <td class="px-2.5 py-2.5 text-center">
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-black ${
-            r.finalScore >= 75
+            !isRemedial
               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
               : 'bg-amber-100 text-amber-800 border border-amber-200'
           }">
             ${r.finalScore}
+          </span>
+        </td>
+        <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+            isRemedial
+              ? 'bg-rose-100 text-rose-700 border border-rose-200'
+              : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+          }">
+            ${isRemedial ? '⚠️ Remedial' : '✅ Tidak Remedial'}
           </span>
         </td>
         <td class="px-2.5 py-2.5">${answerChipsHtml}</td>
@@ -3785,6 +3823,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       tbody.appendChild(tr);
     });
+    applyRoleButtonPermissions();
   }
 
   // ===================== TAB 2: BANK SOAL UJIAN (PER MATA PELAJARAN & KELAS) =====================
@@ -5040,6 +5079,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       listContainer.appendChild(card);
     });
+    applyRoleButtonPermissions();
   }
 
   const qInputType = document.getElementById('qInputType');
@@ -5907,6 +5947,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       tbody.appendChild(tr);
     });
+    applyRoleButtonPermissions();
   }
 
   // Modal Tambah / Edit Siswa
@@ -6358,6 +6399,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       tbody.appendChild(tr);
     });
+    applyRoleButtonPermissions();
   }
 
   const searchTeacherInput = document.getElementById('searchTeacherInput');
@@ -6675,6 +6717,266 @@ document.addEventListener('DOMContentLoaded', () => {
     renderLogoPreview('left', currentLogoLeftBase64);
     renderLogoPreview('right', currentLogoRightBase64);
     renderLogoPreview('cbt', currentLogoCbtBase64);
+    renderButtonPermissionsControl();
+  }
+
+  // ===================== KONTROL HAK NONAKTIFKAN TOMBOL (ADMIN & GURU) =====================
+  let permControlsBound = false;
+
+  function applyRoleButtonPermissions() {
+    if (!window.cbtAdmin || typeof window.cbtAdmin.getButtonPermissionCatalog !== 'function') return;
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    if (!currentTeacher) return;
+
+    const isAdmin = Boolean(currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const catalog = window.cbtAdmin.getButtonPermissionCatalog();
+    const perms = window.cbtAdmin.getButtonPermissions();
+    const mode = perms.mode === 'hide' ? 'hide' : 'disable';
+    const disabledMap = perms.disabled || {};
+
+    // Gabungkan semua selector agar elemen yang sebelumnya dikunci bisa dipulihkan bersih terlebih dahulu
+    const allItems = [...(catalog.guru || []), ...(catalog.admin || [])];
+    const selectorLockStatus = new Map();
+
+    allItems.forEach(item => {
+      if (!item || !item.selector) return;
+      if (!selectorLockStatus.has(item.selector)) {
+        selectorLockStatus.set(item.selector, false);
+      }
+    });
+
+    const activeRoleItems = isAdmin ? (catalog.admin || []) : (catalog.guru || []);
+    activeRoleItems.forEach(item => {
+      if (item && item.selector && disabledMap[item.key] === true) {
+        selectorLockStatus.set(item.selector, true);
+      }
+    });
+
+    const viewAdminRoot = document.getElementById('viewAdmin') || document;
+    selectorLockStatus.forEach((shouldLock, selector) => {
+      let nodes = [];
+      try {
+        nodes = Array.from(viewAdminRoot.querySelectorAll(selector));
+      } catch (e) {
+        nodes = [];
+      }
+      nodes.forEach(el => {
+        if (!el || el.closest('#adminButtonPermissionsCard')) return;
+
+        if (shouldLock) {
+          if (el.dataset.permOrigTitle === undefined) {
+            el.dataset.permOrigTitle = el.getAttribute('title') || '';
+          }
+          el.dataset.permLocked = '1';
+          if (mode === 'hide') {
+            el.classList.add('cbt-perm-hidden');
+            el.classList.remove('cbt-perm-disabled');
+            if ('disabled' in el) el.disabled = false;
+          } else {
+            el.classList.remove('cbt-perm-hidden');
+            el.classList.add('cbt-perm-disabled');
+            if ('disabled' in el) el.disabled = true;
+            el.setAttribute('title', '🔒 Tombol ini dinonaktifkan dari Pengaturan Admin');
+          }
+        } else {
+          el.classList.remove('cbt-perm-hidden', 'cbt-perm-disabled');
+          if (el.dataset.permLocked === '1') {
+            if ('disabled' in el) el.disabled = false;
+            delete el.dataset.permLocked;
+          }
+          if (el.dataset.permOrigTitle !== undefined) {
+            if (el.dataset.permOrigTitle) {
+              el.setAttribute('title', el.dataset.permOrigTitle);
+            } else {
+              el.removeAttribute('title');
+            }
+            delete el.dataset.permOrigTitle;
+          }
+        }
+      });
+    });
+
+    // Jika tab aktif sekarang tiba-tiba dinonaktifkan lewat sync Cloud/Pengaturan, pindahkan ke Dashboard
+    if (typeof window.cbtAdmin.isTabDisabledForRole === 'function') {
+      const currentActiveBtn = document.querySelector('#adminTabsBar .admin-tab-btn.from-\\[\\#124196\\]');
+      const currentTabId = currentActiveBtn ? currentActiveBtn.getAttribute('data-tab') : '';
+      if (currentTabId && window.cbtAdmin.isTabDisabledForRole(currentTabId, isAdmin)) {
+        switchAdminTab('tabDashboard', { skipSkeleton: true });
+      }
+    }
+  }
+
+  function flashPermSyncStatus(text = '✓ Tersimpan & Tersinkron Cloud') {
+    const badge = document.getElementById('permSyncBadge');
+    if (!badge) return;
+    badge.innerText = text;
+    badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold transition';
+  }
+
+  function renderPermissionRoleColumn(containerEl, counterEl, items, perms, searchQuery, roleTag) {
+    if (!containerEl) return;
+    const disabledMap = perms.disabled || {};
+    const q = String(searchQuery || '').trim().toLowerCase();
+
+    const totalCount = items.length;
+    const disabledCount = items.filter(it => disabledMap[it.key] === true).length;
+    if (counterEl) {
+      counterEl.innerText = `${disabledCount} / ${totalCount} Dinonaktifkan`;
+      counterEl.className = disabledCount > 0
+        ? 'text-[11px] text-rose-600 dark:text-rose-300 font-bold mt-0.5'
+        : 'text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold mt-0.5';
+    }
+
+    const filteredItems = q
+      ? items.filter(it => it.label.toLowerCase().includes(q) || it.group.toLowerCase().includes(q))
+      : items;
+
+    if (filteredItems.length === 0) {
+      containerEl.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada tombol/menu yang cocok dengan pencarian.</div>`;
+      return;
+    }
+
+    const grouped = new Map();
+    filteredItems.forEach(it => {
+      if (!grouped.has(it.group)) grouped.set(it.group, []);
+      grouped.get(it.group).push(it);
+    });
+
+    const htmlParts = [];
+    grouped.forEach((groupItems, groupName) => {
+      htmlParts.push(`
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-700 p-2.5 space-y-1.5">
+          <p class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1 pb-1 border-b border-slate-100 dark:border-slate-800">${escapeHtmlSafe(groupName)}</p>
+          ${groupItems.map(it => {
+            const isDisabled = disabledMap[it.key] === true;
+            return `
+              <label class="flex items-center justify-between gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 cursor-pointer transition">
+                <div class="min-w-0">
+                  <span class="block text-xs font-bold ${isDisabled ? 'text-rose-700 dark:text-rose-300 line-through decoration-rose-400/70' : 'text-slate-800 dark:text-slate-100'}">${escapeHtmlSafe(it.label)}</span>
+                  <span class="block text-[10px] font-semibold ${isDisabled ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">
+                    ${isDisabled ? '🔒 Dinonaktifkan' : '✅ Aktif (Bisa Dipakai)'}
+                  </span>
+                </div>
+                <div class="shrink-0 flex items-center gap-2">
+                  <input type="checkbox" class="perm-toggle-checkbox sr-only" data-perm-key="${escapeHtmlSafe(it.key)}" data-perm-role="${escapeHtmlSafe(roleTag)}" ${isDisabled ? '' : 'checked'}>
+                  <span class="w-10 h-5 rounded-full transition-colors relative inline-flex items-center px-0.5 ${isDisabled ? 'bg-rose-500/85' : 'bg-emerald-500'}">
+                    <span class="w-4 h-4 rounded-full bg-white shadow-xs transform transition-transform ${isDisabled ? 'translate-x-0' : 'translate-x-5'}"></span>
+                  </span>
+                </div>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      `);
+    });
+
+    containerEl.innerHTML = htmlParts.join('');
+
+    containerEl.querySelectorAll('.perm-toggle-checkbox').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const key = chk.getAttribute('data-perm-key');
+        if (!key || !window.cbtAdmin) return;
+        const latestPerms = window.cbtAdmin.getButtonPermissions();
+        const nextDisabled = { ...(latestPerms.disabled || {}) };
+        if (chk.checked) {
+          delete nextDisabled[key];
+        } else {
+          nextDisabled[key] = true;
+        }
+        window.cbtAdmin.saveButtonPermissions({
+          ...latestPerms,
+          disabled: nextDisabled
+        });
+        flashPermSyncStatus('✓ Tersimpan & Tersinkron Cloud');
+        renderButtonPermissionsControl();
+        applyRoleButtonPermissions();
+      });
+    });
+  }
+
+  function renderButtonPermissionsControl() {
+    if (!window.cbtAdmin || typeof window.cbtAdmin.getButtonPermissionCatalog !== 'function') return;
+    const card = document.getElementById('adminButtonPermissionsCard');
+    if (!card) return;
+
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = Boolean(currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin'));
+    if (!isAdmin) return;
+
+    const catalog = window.cbtAdmin.getButtonPermissionCatalog();
+    const perms = window.cbtAdmin.getButtonPermissions();
+    const searchEl = document.getElementById('permSearchInput');
+    const behaviorEl = document.getElementById('permBehaviorSelect');
+
+    if (behaviorEl) {
+      behaviorEl.value = perms.mode === 'hide' ? 'hide' : 'disable';
+    }
+
+    const query = searchEl ? searchEl.value : '';
+    renderPermissionRoleColumn(
+      document.getElementById('permGuruListContainer'),
+      document.getElementById('permGuruCounter'),
+      catalog.guru || [],
+      perms,
+      query,
+      'guru'
+    );
+    renderPermissionRoleColumn(
+      document.getElementById('permAdminListContainer'),
+      document.getElementById('permAdminCounter'),
+      catalog.admin || [],
+      perms,
+      query,
+      'admin'
+    );
+
+    if (!permControlsBound) {
+      permControlsBound = true;
+
+      if (searchEl) {
+        searchEl.addEventListener('input', () => renderButtonPermissionsControl());
+      }
+
+      if (behaviorEl) {
+        behaviorEl.addEventListener('change', () => {
+          const latestPerms = window.cbtAdmin.getButtonPermissions();
+          window.cbtAdmin.saveButtonPermissions({
+            ...latestPerms,
+            mode: behaviorEl.value === 'hide' ? 'hide' : 'disable'
+          });
+          flashPermSyncStatus('✓ Mode Tampilan Tersimpan');
+          applyRoleButtonPermissions();
+        });
+      }
+
+      const batchToggleRole = (roleKey, disableAll) => {
+        const latestCatalog = window.cbtAdmin.getButtonPermissionCatalog();
+        const roleItems = roleKey === 'admin' ? (latestCatalog.admin || []) : (latestCatalog.guru || []);
+        if (roleKey === 'admin' && disableAll) {
+          if (!confirm("Yakin ingin menonaktifkan semua tombol & menu di Panel Admin (kecuali menu Pengaturan ini)?\n\nAnda tetap bisa mengaktifkannya kembali kapan saja di halaman ini.")) {
+            return;
+          }
+        }
+        const latestPerms = window.cbtAdmin.getButtonPermissions();
+        const nextDisabled = { ...(latestPerms.disabled || {}) };
+        roleItems.forEach(it => {
+          if (disableAll) nextDisabled[it.key] = true;
+          else delete nextDisabled[it.key];
+        });
+        window.cbtAdmin.saveButtonPermissions({
+          ...latestPerms,
+          disabled: nextDisabled
+        });
+        flashPermSyncStatus(disableAll ? '✓ Semua Tombol Dinonaktifkan' : '✓ Semua Tombol Diaktifkan');
+        renderButtonPermissionsControl();
+        applyRoleButtonPermissions();
+      };
+
+      document.getElementById('btnPermGuruEnableAll')?.addEventListener('click', () => batchToggleRole('guru', false));
+      document.getElementById('btnPermGuruDisableAll')?.addEventListener('click', () => batchToggleRole('guru', true));
+      document.getElementById('btnPermAdminEnableAll')?.addEventListener('click', () => batchToggleRole('admin', false));
+      document.getElementById('btnPermAdminDisableAll')?.addEventListener('click', () => batchToggleRole('admin', true));
+    }
   }
 
   const formSchoolConfig = document.getElementById('formSchoolConfig');

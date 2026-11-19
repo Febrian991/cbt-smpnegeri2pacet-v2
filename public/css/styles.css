@@ -1013,3 +1013,22 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
     }
   }
 }
+
+/* ==========================================================================
+   KONTROL HAK AKSES & NONAKTIFKAN TOMBOL (ADMIN & GURU)
+   ========================================================================== */
+.cbt-perm-hidden {
+  display: none !important;
+}
+
+.cbt-perm-disabled {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(0.45);
+  box-shadow: none !important;
+}
+
+.cbt-perm-disabled:hover {
+  transform: none !important;
+}
+

@@ -1341,13 +1341,14 @@ class CBTAdmin {
         [analytics.totalStudents, analytics.averageScore, analytics.highestScore, analytics.highestStudent, analytics.lowestScore, analytics.lowestStudent, `${analytics.passRatePercentage}%`],
         [""],
         ["DAFTAR PERINGKAT & EVALUASI JAWABAN SISWA:"],
-        ["Rank", "Nama Siswa", "NISN", "Kelas", "Nilai Akhir", "Jawaban Siswa (Benar & Salah per Nomor)", "Waktu Selesai", "B / S / K", "Keterangan Curang"]
+        ["Rank", "Nama Siswa", "NISN", "Kelas", "Nilai Akhir", "Status Remedial", "Jawaban Siswa (Benar & Salah per Nomor)", "Waktu Selesai", "B / S / K", "Keterangan Curang"]
       ];
 
       results.forEach((r, idx) => {
         const cheatLabel = (r.cheatCount || 0) > 0
           ? `${r.cheatCount}x Pindah Tab (${r.finishReason || 'Pelanggaran'})`
           : `Tertib (0) - ${r.finishReason || 'Selesai'}`;
+        const remedialLabel = this.getRemedialStatusLabel(r.finalScore);
 
         aoaData.push([
           idx + 1,
@@ -1355,6 +1356,7 @@ class CBTAdmin {
           r.student?.nisn || '-',
           r.student?.class || 'Umum',
           r.finalScore,
+          remedialLabel,
           this.formatAnswersPlainText(r),
           r.completedAt,
           `${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}`,
@@ -1367,7 +1369,7 @@ class CBTAdmin {
       aoaData.push([this.getPrintStampText()]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoaData);
-      ws['!merges'] = [{ s: { r: footerRowIdx, c: 0 }, e: { r: footerRowIdx, c: 8 } }];
+      ws['!merges'] = [{ s: { r: footerRowIdx, c: 0 }, e: { r: footerRowIdx, c: 9 } }];
 
       ws['!cols'] = [
         { wch: 7 },   // Rank
@@ -1375,6 +1377,7 @@ class CBTAdmin {
         { wch: 16 },  // NISN
         { wch: 10 },  // Kelas
         { wch: 12 },  // Nilai
+        { wch: 16 },  // Status Remedial
         { wch: 55 },  // Jawaban Siswa per nomor
         { wch: 20 },  // Waktu Selesai
         { wch: 14 },  // B/S/K
@@ -1397,7 +1400,7 @@ class CBTAdmin {
         <h2>LAPORAN REKAPITULASI HASIL UJIAN SEKOLAH (CBT)</h2>
         <table border="1">
           <tr style="background:#f1f5f9;font-weight:bold;">
-            <th>Rank</th><th>Nama Siswa</th><th>NISN</th><th>Kelas</th><th>Nilai Akhir</th><th>Jawaban Siswa</th><th>Waktu Selesai</th><th>B/S/K</th><th>Keterangan Curang</th>
+            <th>Rank</th><th>Nama Siswa</th><th>NISN</th><th>Kelas</th><th>Nilai Akhir</th><th>Status Remedial</th><th>Jawaban Siswa</th><th>Waktu Selesai</th><th>B/S/K</th><th>Keterangan Curang</th>
           </tr>
           ${results.map((r, i) => `
             <tr>
@@ -1406,6 +1409,7 @@ class CBTAdmin {
               <td>'${r.student?.nisn || '-'}</td>
               <td>${r.student?.class || '-'}</td>
               <td><b>${r.finalScore}</b></td>
+              <td><b>${this.getRemedialStatusLabel(r.finalScore)}</b></td>
               <td>${this.formatAnswersPlainText(r)}</td>
               <td>${r.completedAt}</td>
               <td>${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}</td>
@@ -1562,13 +1566,15 @@ class CBTAdmin {
             }).join('')
           : '<span style="color:#64748b; font-size:9px;">-</span>';
 
+        const isRemedial = Number(r.finalScore || 0) < 75;
         return `
           <tr style="border-bottom:1px solid #cbd5e1; font-size:10px; break-inside:avoid; page-break-inside:avoid;">
             <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:700;">${idx + 1}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; font-weight:700;">${r.student?.name || '-'}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; font-family:monospace;">${r.student?.nisn || '-'}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.student?.class || '-'}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:12px; color:${r.finalScore >= 75 ? '#15803d' : '#dc2626'};">${r.finalScore}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:12px; color:${isRemedial ? '#dc2626' : '#15803d'};">${r.finalScore}</td>
+            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:800; font-size:10px; color:${isRemedial ? '#dc2626' : '#15803d'}; white-space:nowrap;">${isRemedial ? 'Remedial' : 'Tidak Remedial'}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; line-height:1.35;">${ansHtml}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.completedAt}</td>
             <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}</td>
@@ -1582,6 +1588,129 @@ class CBTAdmin {
     if (repAutoNoteEl) {
       repAutoNoteEl.innerText = this.getPrintStampText();
     }
+  }
+
+  // ===================== STATUS REMEDIAL & HAK AKSES TOMBOL =====================
+  getRemedialStatusLabel(score) {
+    return Number(score || 0) < 75 ? 'Remedial' : 'Tidak Remedial';
+  }
+
+  getDefaultButtonPermissions() {
+    return {
+      mode: 'disable', // 'disable' = kunci abu-abu tidak bisa diklik, 'hide' = sembunyikan total
+      disabled: {}
+    };
+  }
+
+  normalizeButtonPermissions(raw) {
+    const def = this.getDefaultButtonPermissions();
+    if (!raw || typeof raw !== 'object') return def;
+    const mode = raw.mode === 'hide' ? 'hide' : 'disable';
+    const disabledMap = {};
+    if (raw.disabled && typeof raw.disabled === 'object') {
+      Object.keys(raw.disabled).forEach(k => {
+        if (raw.disabled[k] === true) disabledMap[k] = true;
+      });
+    }
+    return { mode, disabled: disabledMap };
+  }
+
+  getButtonPermissionCatalog() {
+    return {
+      guru: [
+        { key: 'guru_tab_results', group: 'Menu Sidebar Guru', label: 'Menu: Rekap Nilai & Peringkat', selector: '#adminTabBtnResults', tabId: 'tabResults' },
+        { key: 'guru_tab_monitoring', group: 'Menu Sidebar Guru', label: 'Menu: Monitoring Login Siswa', selector: '#adminTabBtnMonitoring', tabId: 'tabMonitoring' },
+        { key: 'guru_tab_questions', group: 'Menu Sidebar Guru', label: 'Menu: Bank Soal', selector: '#adminTabBtnQuestions', tabId: 'tabQuestions' },
+        { key: 'guru_btn_refresh_dashboard', group: 'Dashboard Guru', label: 'Tombol: 🔄 Segarkan Data Dashboard', selector: '#btnRefreshDashboardOverview' },
+        { key: 'guru_btn_dash_jumps', group: 'Dashboard Guru', label: 'Tombol Pintas Dashboard (Pantau / Rekap / Cek / Bank Soal)', selector: '.dash-jump-btn, #btnDashOpenPreExam' },
+        { key: 'guru_btn_clear_results', group: 'Rekap Nilai Guru', label: 'Tombol: 🗑️ Hapus Rekap Nilai', selector: '#btnClearAllResults' },
+        { key: 'guru_btn_export_excel', group: 'Rekap Nilai Guru', label: 'Tombol: Download Excel (.xlsx)', selector: '#btnExportExcel' },
+        { key: 'guru_btn_export_pdf', group: 'Rekap Nilai Guru', label: 'Tombol: Download PDF (.pdf)', selector: '#btnExportPDF' },
+        { key: 'guru_btn_save_attempt_rule', group: 'Monitoring Guru', label: 'Tombol: 💾 Simpan Batas Percobaan', selector: '#btnSaveAttemptRule' },
+        { key: 'guru_btn_refresh_monitoring', group: 'Monitoring Guru', label: 'Tombol: 🔄 Refresh Pantauan', selector: '#btnRefreshMonitoring' },
+        { key: 'guru_btn_reset_student_attempt', group: 'Monitoring Guru', label: 'Tombol Tabel: 🔄 Izinkan Ulang Siswa', selector: '.btn-reset-student-attempt' },
+        { key: 'guru_btn_add_question', group: 'Bank Soal Guru', label: 'Tombol: + Tambah Soal', selector: '#btnOpenAddQuestion' },
+        { key: 'guru_btn_edit_question', group: 'Bank Soal Guru', label: 'Tombol Kartu: ✏️ Edit Soal', selector: '.btn-edit-q' },
+        { key: 'guru_btn_delete_question', group: 'Bank Soal Guru', label: 'Tombol Kartu: 🗑️ Hapus Soal', selector: '.btn-delete-q' },
+        { key: 'guru_btn_seed_simulasi', group: 'Bank Soal Guru', label: 'Tombol: 🧪 Soal Simulasi', selector: '#btnSeedTrialQuestions' },
+        { key: 'guru_btn_clear_simulasi', group: 'Bank Soal Guru', label: 'Tombol: 🗑️ Hapus Soal Simulasi', selector: '#btnClearTrialQuestions' },
+        { key: 'guru_btn_print_questions', group: 'Bank Soal Guru', label: 'Tombol: 📄 Download Naskah Soal', selector: '#btnOpenPrintQuestions' },
+        { key: 'guru_btn_item_analysis', group: 'Bank Soal Guru', label: 'Tombol: 📈 Analisis Butir Soal', selector: '#btnToggleItemAnalysis' },
+        { key: 'guru_btn_pre_exam_audit', group: 'Bank Soal Guru', label: 'Tombol: 🛡️ Cek Pra-Ujian', selector: '#btnTogglePreExamAudit' },
+        { key: 'guru_btn_refresh_questions', group: 'Bank Soal Guru', label: 'Tombol: 🔄 Segarkan Soal', selector: '#btnRefreshQuestionsCloud' }
+      ],
+      admin: [
+        { key: 'admin_tab_results', group: 'Menu Sidebar Admin', label: 'Menu: Rekap Nilai & Peringkat', selector: '#adminTabBtnResults', tabId: 'tabResults' },
+        { key: 'admin_tab_monitoring', group: 'Menu Sidebar Admin', label: 'Menu: Monitoring Login Siswa', selector: '#adminTabBtnMonitoring', tabId: 'tabMonitoring' },
+        { key: 'admin_tab_schedules', group: 'Menu Sidebar Admin', label: 'Menu: Jadwal & Mata Pelajaran', selector: '#adminTabBtnSchedules', tabId: 'tabSchedules' },
+        { key: 'admin_tab_questions', group: 'Menu Sidebar Admin', label: 'Menu: Bank Soal', selector: '#adminTabBtnQuestions', tabId: 'tabQuestions' },
+        { key: 'admin_tab_students', group: 'Menu Sidebar Admin', label: 'Menu: Data Siswa', selector: '#adminTabBtnStudents', tabId: 'tabStudents' },
+        { key: 'admin_tab_teachers', group: 'Menu Sidebar Admin', label: 'Menu: Data Guru', selector: '#adminTabBtnTeachers', tabId: 'tabTeachers' },
+        { key: 'admin_tab_database', group: 'Menu Sidebar Admin', label: 'Menu: Manajemen Database', selector: '#adminTabBtnDatabase', tabId: 'tabDatabase' },
+        { key: 'admin_tab_backup', group: 'Menu Sidebar Admin', label: 'Menu: Backup & Restore', selector: '#adminTabBtnBackup', tabId: 'tabBackup' },
+        { key: 'admin_btn_refresh_dashboard', group: 'Dashboard & Rekap Admin', label: 'Tombol: 🔄 Segarkan Data Dashboard', selector: '#btnRefreshDashboardOverview' },
+        { key: 'admin_btn_clear_results', group: 'Dashboard & Rekap Admin', label: 'Tombol: 🗑️ Hapus Rekap Nilai', selector: '#btnClearAllResults' },
+        { key: 'admin_btn_export_excel', group: 'Dashboard & Rekap Admin', label: 'Tombol: Download Excel (.xlsx)', selector: '#btnExportExcel' },
+        { key: 'admin_btn_export_pdf', group: 'Dashboard & Rekap Admin', label: 'Tombol: Download PDF (.pdf)', selector: '#btnExportPDF' },
+        { key: 'admin_btn_save_attempt_rule', group: 'Monitoring Admin', label: 'Tombol: 💾 Simpan Batas Percobaan', selector: '#btnSaveAttemptRule' },
+        { key: 'admin_btn_refresh_monitoring', group: 'Monitoring Admin', label: 'Tombol: 🔄 Refresh Pantauan', selector: '#btnRefreshMonitoring' },
+        { key: 'admin_btn_reset_student_attempt', group: 'Monitoring Admin', label: 'Tombol Tabel: 🔄 Izinkan Ulang Siswa', selector: '.btn-reset-student-attempt' },
+        { key: 'admin_btn_submit_schedule', group: 'Jadwal & Mapel Admin', label: 'Tombol: 💾 Simpan ke Daftar Jadwal', selector: '#btnSubmitSchedule' },
+        { key: 'admin_btn_toggle_schedule', group: 'Jadwal & Mapel Admin', label: 'Tombol: ▶ Aktifkan / Nonaktifkan Mapel & Semua', selector: '#btnDeactivateAllSchedules, .btn-activate-schedule, .btn-deactivate-schedule' },
+        { key: 'admin_btn_edit_schedule', group: 'Jadwal & Mapel Admin', label: 'Tombol Tabel: ✏️ Edit Jadwal', selector: '.btn-edit-schedule' },
+        { key: 'admin_btn_delete_schedule', group: 'Jadwal & Mapel Admin', label: 'Tombol Tabel: 🗑️ Hapus Jadwal', selector: '.btn-delete-schedule' },
+        { key: 'admin_btn_add_question', group: 'Bank Soal Admin', label: 'Tombol: + Tambah Soal', selector: '#btnOpenAddQuestion' },
+        { key: 'admin_btn_edit_question', group: 'Bank Soal Admin', label: 'Tombol Kartu: ✏️ Edit Soal', selector: '.btn-edit-q' },
+        { key: 'admin_btn_delete_question', group: 'Bank Soal Admin', label: 'Tombol Kartu: 🗑️ Hapus Soal', selector: '.btn-delete-q' },
+        { key: 'admin_btn_seed_simulasi', group: 'Bank Soal Admin', label: 'Tombol: 🧪 Soal Simulasi', selector: '#btnSeedTrialQuestions' },
+        { key: 'admin_btn_clear_simulasi', group: 'Bank Soal Admin', label: 'Tombol: 🗑️ Hapus Soal Simulasi', selector: '#btnClearTrialQuestions' },
+        { key: 'admin_btn_reset_questions', group: 'Bank Soal Admin', label: 'Tombol: ↺ Reset Soal Bawaan', selector: '#btnResetDefaultQuestions' },
+        { key: 'admin_btn_import_questions', group: 'Bank Soal Admin', label: 'Tombol: 📥 Impor JSON Soal', selector: '#btnImportQuestions' },
+        { key: 'admin_btn_export_questions', group: 'Bank Soal Admin', label: 'Tombol: 📤 Ekspor JSON Soal', selector: '#btnExportQuestions' },
+        { key: 'admin_btn_print_questions', group: 'Bank Soal Admin', label: 'Tombol: 📄 Download Naskah Soal', selector: '#btnOpenPrintQuestions' },
+        { key: 'admin_btn_item_analysis', group: 'Bank Soal Admin', label: 'Tombol: 📈 Analisis Butir Soal', selector: '#btnToggleItemAnalysis' },
+        { key: 'admin_btn_pre_exam_audit', group: 'Bank Soal Admin', label: 'Tombol: 🛡️ Cek Pra-Ujian', selector: '#btnTogglePreExamAudit' },
+        { key: 'admin_btn_refresh_questions', group: 'Bank Soal Admin', label: 'Tombol: 🔄 Segarkan Soal', selector: '#btnRefreshQuestionsCloud' },
+        { key: 'admin_btn_add_student', group: 'Data Siswa Admin', label: 'Tombol: + Tambah Siswa', selector: '#btnOpenAddStudent' },
+        { key: 'admin_btn_edit_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: ✏️ Edit Siswa', selector: '.btn-edit-student' },
+        { key: 'admin_btn_delete_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: 🗑️ Hapus Siswa', selector: '.btn-delete-student' },
+        { key: 'admin_btn_import_export_students', group: 'Data Siswa Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Siswa', selector: '#btnDownloadStudentTemplate, #btnTriggerImportStudents' },
+        { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
+        { key: 'admin_btn_reset_student_passwords', group: 'Data Siswa Admin', label: 'Tombol: 🔄 Reset Password Siswa (123)', selector: '#btnResetAllStudentPasswords' },
+        { key: 'admin_btn_demo_students', group: 'Data Siswa Admin', label: 'Tombol: 🎲 Isi 250 Siswa Demo', selector: '#btnGenerate250Demo' },
+        { key: 'admin_btn_clear_students', group: 'Data Siswa Admin', label: 'Tombol: 🗑️ Hapus Semua Siswa', selector: '#btnClearStudents' },
+        { key: 'admin_btn_add_teacher', group: 'Data Guru Admin', label: 'Tombol: + Tambah Guru Baru', selector: '#btnOpenAddTeacher' },
+        { key: 'admin_btn_edit_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: ✏️ Edit Guru', selector: '.btn-edit-teacher' },
+        { key: 'admin_btn_delete_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: 🗑️ Hapus Guru', selector: '.btn-delete-teacher' },
+        { key: 'admin_btn_import_export_teachers', group: 'Data Guru Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Guru', selector: '#btnDownloadTeacherTemplate, #btnTriggerImportTeachers' },
+        { key: 'admin_btn_print_teacher_cards', group: 'Data Guru Admin', label: 'Tombol: 🪪 Kartu Login Guru', selector: '#btnPrintTeacherCards' },
+        { key: 'admin_btn_reset_teacher_passwords', group: 'Data Guru Admin', label: 'Tombol: 🔄 Reset Password Guru (guru123)', selector: '#btnResetAllTeacherPasswords' },
+        { key: 'admin_btn_pull_cloud', group: 'Database & Backup Admin', label: 'Tombol: ⬇️ Ambil Data dari Cloud', selector: '#btnPullFromCloud' },
+        { key: 'admin_btn_push_cloud', group: 'Database & Backup Admin', label: 'Tombol: ☁️ Kirim Semua Data ke Cloud', selector: '#btnPushAllToCloud' },
+        { key: 'admin_btn_save_supabase', group: 'Database & Backup Admin', label: 'Tombol: 💾 Simpan & Sinkron Cloud', selector: '#formSupabaseConfig button[type="submit"]' },
+        { key: 'admin_btn_export_backup', group: 'Database & Backup Admin', label: 'Tombol: 📥 Download Backup (.json)', selector: '#btnExportFullBackup' },
+        { key: 'admin_btn_import_backup', group: 'Database & Backup Admin', label: 'Tombol: 📤 Pulihkan Data Backup (.json)', selector: '#btnTriggerImportFullBackup' }
+      ]
+    };
+  }
+
+  getButtonPermissions() {
+    const cfg = this.getSchoolConfig();
+    return this.normalizeButtonPermissions(cfg.buttonPermissions);
+  }
+
+  saveButtonPermissions(nextPerms, skipCloudPush = false) {
+    const cfg = this.getSchoolConfig();
+    cfg.buttonPermissions = this.normalizeButtonPermissions(nextPerms);
+    return this.saveSchoolConfig(cfg, skipCloudPush);
+  }
+
+  isTabDisabledForRole(tabId, isAdmin) {
+    if (!tabId || tabId === 'tabDashboard' || (isAdmin && tabId === 'tabSettings')) return false;
+    const perms = this.getButtonPermissions();
+    const list = isAdmin ? this.getButtonPermissionCatalog().admin : this.getButtonPermissionCatalog().guru;
+    const matched = list.find(item => item.tabId === tabId);
+    return Boolean(matched && perms.disabled && perms.disabled[matched.key] === true);
   }
 
   // ===================== KONFIGURASI SEKOLAH & TITI MANGSA =====================
@@ -1601,7 +1730,8 @@ class CBTAdmin {
           logoLeft: parsed.logoLeft || "",
           logoRight: parsed.logoRight || "",
           logoCbt: parsed.logoCbt || "",
-          kopSuratImage: parsed.kopSuratImage || ""
+          kopSuratImage: parsed.kopSuratImage || "",
+          buttonPermissions: this.normalizeButtonPermissions(parsed.buttonPermissions)
         };
       }
     } catch (e) {}
@@ -1616,15 +1746,20 @@ class CBTAdmin {
       logoLeft: "",
       logoRight: "",
       logoCbt: "",
-      kopSuratImage: ""
+      kopSuratImage: "",
+      buttonPermissions: this.getDefaultButtonPermissions()
     };
   }
 
   saveSchoolConfig(cfg, skipCloudPush = false) {
     try {
-      localStorage.setItem('cbt_school_config', JSON.stringify(cfg));
+      const normalizedCfg = {
+        ...(cfg && typeof cfg === 'object' ? cfg : {}),
+        buttonPermissions: this.normalizeButtonPermissions(cfg?.buttonPermissions || this.getSchoolConfig().buttonPermissions)
+      };
+      localStorage.setItem('cbt_school_config', JSON.stringify(normalizedCfg));
       if (!skipCloudPush && typeof window !== 'undefined' && window.supabaseSync) {
-        window.supabaseSync.pushStateKey('cbt_school_config', cfg);
+        window.supabaseSync.pushStateKey('cbt_school_config', normalizedCfg);
       }
       return { success: true };
     } catch (e) {
