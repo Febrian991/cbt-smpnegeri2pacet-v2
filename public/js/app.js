@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isStaff = Boolean(window.cbtAdmin && window.cbtAdmin.isAuthenticated && window.cbtAdmin.getCurrentTeacher());
     const isSuperAdmin = Boolean(isStaff && window.cbtAdmin.isSuperAdminUser());
+    const isPengawas = Boolean(isStaff && !isSuperAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
 
     if (stateMap.cbt_school_config && typeof stateMap.cbt_school_config === 'object' && window.cbtAdmin) {
       window.cbtAdmin.saveSchoolConfig(stateMap.cbt_school_config, true);
@@ -134,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
       window.cbtAdmin.saveSchedules(stateMap.cbt_exam_schedules, true);
       changed = true;
     }
-    if (Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || stateMap.cbt_questions_migrated === true) && window.examEngine) {
+    if (!isPengawas && Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || stateMap.cbt_questions_migrated === true) && window.examEngine) {
       if (typeof window.examEngine.applyRemoteQuestions === 'function') {
         window.examEngine.applyRemoteQuestions(stateMap.cbt_questions);
       } else {
@@ -198,6 +199,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function syncQuestionsFromCloud(reRenderIfOpen = true, forceRender = false) {
     if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured() || !window.examEngine) return false;
+    if (window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser()) {
+      return false;
+    }
     if (questionsCloudSyncPromise) return questionsCloudSyncPromise;
 
     questionsCloudSyncPromise = (async () => {
@@ -2000,8 +2004,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function switchAdminTab(targetTab, options = {}) {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const isAdmin = Boolean(currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin'));
+    const isPengawas = Boolean(currentTeacher && !isAdmin && window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
 
-    if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
+    if (isPengawas) {
+      targetTab = 'tabMonitoring';
+    } else if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
       targetTab = 'tabDashboard';
     }
 
@@ -2009,7 +2016,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!options.skipSkeleton) {
         alert("Menu ini sedang dinonaktifkan melalui Pengaturan Hak Akses Tombol Admin.");
       }
-      targetTab = 'tabDashboard';
+      targetTab = isPengawas ? 'tabMonitoring' : 'tabDashboard';
     }
 
     try { localStorage.setItem('cbt_active_admin_tab', targetTab); } catch (e) {}
@@ -2051,9 +2058,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      if (targetTab === 'tabDashboard') {
+      if (targetTab === 'tabDashboard' && !isPengawas) {
         renderAdminOverviewDashboard();
-      } else if (targetTab === 'tabResults') {
+      } else if (targetTab === 'tabResults' && !isPengawas) {
         if (options.skipSkeleton) {
           renderAdminAnalyticsAndResults({ animateRows: true });
         } else {
@@ -2065,7 +2072,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startMonitoringAutoRefresh();
       } else if (targetTab === 'tabSchedules' && isAdmin) {
         renderAdminSchedulesList();
-      } else if (targetTab === 'tabQuestions') {
+      } else if (targetTab === 'tabQuestions' && !isPengawas) {
         setupQuestionBankFilters();
         renderAdminQuestionList();
         const tpPanel = document.getElementById('adminTeacherQuestionProgressPanel');
@@ -2105,15 +2112,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderAdminDashboard() {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
+    const tabDashboardBtn = document.getElementById('adminTabBtnDashboard');
+    const tabResultsBtn = document.getElementById('adminTabBtnResults');
     const tabMonitoringBtn = document.getElementById('adminTabBtnMonitoring');
     const tabSchedulesBtn = document.getElementById('adminTabBtnSchedules');
+    const tabQuestionsBtn = document.getElementById('adminTabBtnQuestions');
     const tabStudentsBtn = document.getElementById('adminTabBtnStudents');
     const tabTeachersBtn = document.getElementById('adminTabBtnTeachers');
     const tabSettingsBtn = document.getElementById('adminTabBtnSettings');
     const tabDatabaseBtn = document.getElementById('adminTabBtnDatabase');
     const tabBackupBtn = document.getElementById('adminTabBtnBackup');
 
+    const tabDashboardPane = document.getElementById('tabDashboard');
+    const tabResultsPane = document.getElementById('tabResults');
     const tabSchedulesPane = document.getElementById('tabSchedules');
+    const tabQuestionsPane = document.getElementById('tabQuestions');
     const tabStudentsPane = document.getElementById('tabStudents');
     const tabTeachersPane = document.getElementById('tabTeachers');
     const tabSettingsPane = document.getElementById('tabSettings');
@@ -2121,6 +2134,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabBackupPane = document.getElementById('tabBackup');
 
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const isPengawas = Boolean(currentTeacher && !isAdmin && window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
+
+    const attemptRuleCard = document.getElementById('monitoringAttemptRuleCard');
+    const pengawasBanner = document.getElementById('monitoringPengawasBanner');
+    const pengawasBannerDesc = document.getElementById('monitoringPengawasBannerDesc');
+    if (attemptRuleCard) {
+      if (isPengawas) attemptRuleCard.classList.add('hidden');
+      else attemptRuleCard.classList.remove('hidden');
+    }
+    if (pengawasBanner) {
+      if (isPengawas) {
+        pengawasBanner.classList.remove('hidden');
+        if (pengawasBannerDesc && window.cbtAdmin) {
+          const pCls = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
+          const scopeLabel = pCls.length > 0 ? `<strong>Kelas/Ruang: ${escapeHtmlSafe(pCls.join(', '))}</strong>` : '<strong>Semua Kelas</strong>';
+          pengawasBannerDesc.innerHTML = `Ruang lingkup pantauan Anda: ${scopeLabel} (untuk <strong>semua mata pelajaran aktif</strong>). Anda dapat memantau status login, progres soal, pelanggaran tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban &amp; Rekap Nilai terkunci aman.`;
+        }
+      } else {
+        pengawasBanner.classList.add('hidden');
+      }
+    }
 
     if (currentTeacher) {
       const nameDisp = document.getElementById('adminTeacherNameDisplay');
@@ -2136,15 +2170,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (subjDisp) {
         const parsedClasses = currentTeacher.classes && window.cbtAdmin ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
-        const classInfo = parsedClasses.length > 0 ? ` • Kelas: ${parsedClasses.join(', ')}` : '';
+        const classInfo = parsedClasses.length > 0 ? ` • Ruang/Kelas: ${parsedClasses.join(', ')}` : (isPengawas ? ' • Semua Kelas' : '');
         subjDisp.innerText = isAdmin
           ? 'Administrator Sistem'
-          : `Guru Mata Pelajaran • ${currentTeacher.subject}${classInfo}`;
+          : (isPengawas
+            ? `Pengawas Ruang Ujian • Semua Mapel Aktif${classInfo}`
+            : `Guru Mata Pelajaran • ${currentTeacher.subject}${parsedClasses.length > 0 ? ` • Kelas: ${parsedClasses.join(', ')}` : ''}`);
       }
 
       if (tabMonitoringBtn) tabMonitoringBtn.classList.remove('hidden');
 
-      if (!isAdmin) {
+      if (isPengawas) {
+        if (tabDashboardBtn) tabDashboardBtn.classList.add('hidden');
+        if (tabResultsBtn) tabResultsBtn.classList.add('hidden');
+        if (tabQuestionsBtn) tabQuestionsBtn.classList.add('hidden');
+        if (tabSchedulesBtn) tabSchedulesBtn.classList.add('hidden');
+        if (tabStudentsBtn) tabStudentsBtn.classList.add('hidden');
+        if (tabTeachersBtn) tabTeachersBtn.classList.add('hidden');
+        if (tabSettingsBtn) tabSettingsBtn.classList.add('hidden');
+        if (tabDatabaseBtn) tabDatabaseBtn.classList.add('hidden');
+        if (tabBackupBtn) tabBackupBtn.classList.add('hidden');
+        if (tabDashboardPane) tabDashboardPane.classList.add('hidden');
+        if (tabResultsPane) tabResultsPane.classList.add('hidden');
+        if (tabQuestionsPane) tabQuestionsPane.classList.add('hidden');
+        if (tabSchedulesPane) tabSchedulesPane.classList.add('hidden');
+        if (tabStudentsPane) tabStudentsPane.classList.add('hidden');
+        if (tabTeachersPane) tabTeachersPane.classList.add('hidden');
+        if (tabSettingsPane) tabSettingsPane.classList.add('hidden');
+        if (tabDatabasePane) tabDatabasePane.classList.add('hidden');
+        if (tabBackupPane) tabBackupPane.classList.add('hidden');
+        switchAdminTab('tabMonitoring', { skipSkeleton: true });
+      } else if (!isAdmin) {
+        if (tabDashboardBtn) tabDashboardBtn.classList.remove('hidden');
+        if (tabResultsBtn) tabResultsBtn.classList.remove('hidden');
+        if (tabQuestionsBtn) tabQuestionsBtn.classList.remove('hidden');
         if (tabSchedulesBtn) tabSchedulesBtn.classList.add('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.add('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.add('hidden');
@@ -2161,6 +2220,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const allowedGuruTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabQuestions'];
         switchAdminTab(allowedGuruTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
       } else {
+        if (tabDashboardBtn) tabDashboardBtn.classList.remove('hidden');
+        if (tabResultsBtn) tabResultsBtn.classList.remove('hidden');
+        if (tabQuestionsBtn) tabQuestionsBtn.classList.remove('hidden');
         if (tabSchedulesBtn) tabSchedulesBtn.classList.remove('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.remove('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.remove('hidden');
@@ -2180,7 +2242,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnSeedTrialQs = document.getElementById('btnSeedTrialQuestions');
     if (btnSeedTrialQs) {
-      btnSeedTrialQs.classList.remove('hidden');
+      if (isPengawas) btnSeedTrialQs.classList.add('hidden');
+      else btnSeedTrialQs.classList.remove('hidden');
     }
 
     const btnImportQs = document.getElementById('btnImportQuestions');
@@ -2204,12 +2267,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const consultStuSel = document.getElementById('filterResultsStudent');
     if (consultStuSel) consultStuSel.value = 'ALL';
 
-    setupSubjectAndClassFilters();
-    setupQuestionBankFilters();
     setupMonitoringControls();
-    renderAdminOverviewDashboard();
-    renderAdminAnalyticsAndResults();
-    renderAdminQuestionList();
+
+    if (!isPengawas) {
+      setupSubjectAndClassFilters();
+      setupQuestionBankFilters();
+      renderAdminOverviewDashboard();
+      renderAdminAnalyticsAndResults();
+      renderAdminQuestionList();
+    }
 
     if (isAdmin) {
       renderAdminTeacherQuestionProgress();
@@ -2223,7 +2289,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     applyRoleButtonPermissions();
 
-    if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+    if (!isPengawas && (!window.supabaseSync || !window.supabaseSync.isCloudConfigured())) {
       maybeAutoSeedTeacherTrialBank();
     }
   }
@@ -3447,6 +3513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.cbtAdmin) return;
     const currentTeacher = window.cbtAdmin.getCurrentTeacher();
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const isPengawas = Boolean(currentTeacher && !isAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
     const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher);
     const assignedClasses = (!isAdmin && currentTeacher && currentTeacher.classes)
       ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes)
@@ -3462,9 +3529,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnRefreshMon = document.getElementById('btnRefreshMonitoring');
 
     const allSubjects = window.cbtAdmin.getAllSubjects();
-    const ownedSubjects = isAdmin ? allSubjects : teacherSubjects;
+    const ownedSubjects = (isAdmin || isPengawas) ? allSubjects : teacherSubjects;
 
-    if (ruleSubjEl) {
+    if (ruleSubjEl && !isPengawas) {
       const prevRuleSub = ruleSubjEl.value;
       ruleSubjEl.innerHTML = '';
       ownedSubjects.forEach(s => {
@@ -3513,8 +3580,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (monSubjEl) {
       const prevMonSub = monSubjEl.value;
-      monSubjEl.innerHTML = isAdmin
-        ? '<option value="ALL">Semua Mata Pelajaran</option>'
+      monSubjEl.innerHTML = (isAdmin || isPengawas)
+        ? '<option value="ALL">Semua Mata Pelajaran Aktif</option>'
         : (ownedSubjects.length > 1
             ? `<option value="ALL">Semua Mapel Diampu</option>`
             : (ownedSubjects.length === 0 ? '<option value="ALL">Belum Ada Mapel Diampu</option>' : ''));
@@ -3526,8 +3593,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (prevMonSub && Array.from(monSubjEl.options).some(o => o.value === prevMonSub)) {
         monSubjEl.value = prevMonSub;
-      } else if (!isAdmin && ownedSubjects.length === 1) {
+      } else if (!isAdmin && !isPengawas && ownedSubjects.length === 1) {
         monSubjEl.value = ownedSubjects[0];
+      } else {
+        monSubjEl.value = 'ALL';
       }
       monSubjEl.onchange = () => renderMonitoringDashboard(false);
     }
@@ -3580,6 +3649,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentTeacher = window.cbtAdmin.getCurrentTeacher();
     const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const isPengawas = Boolean(currentTeacher && !isAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
     const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher);
     const assignedClasses = (!isAdmin && currentTeacher && currentTeacher.classes)
       ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes)
@@ -3680,7 +3750,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? subjFilter
       : (activeSchedules.length === 1
         ? activeSchedules[0].subject
-        : (!isAdmin && teacherSubjects.length > 0 ? teacherSubjects[0] : (window.examEngine.config.subject || 'Umum')));
+        : (!isAdmin && !isPengawas && teacherSubjects.length > 0 ? teacherSubjects[0] : (window.examEngine.config.subject || 'Umum')));
 
     const allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
     const nisnWithActivityForScope = new Set();
@@ -3693,12 +3763,17 @@ document.addEventListener('DOMContentLoaded', () => {
     allStudents.forEach(stu => {
       const stuNisn = String(stu.nisn || '').trim().toUpperCase();
       if (!stuNisn || nisnWithActivityForScope.has(stuNisn)) return;
-      const syntheticKey = `${stuNisn}__${String(defaultSubject).toLowerCase()}__none`;
+      let stuDefaultSubject = defaultSubject;
+      if (subjFilter === 'ALL' && activeSchedules.length > 1) {
+        const matchedSchForStu = activeSchedules.find(sch => window.examEngine.matchesClassLevel(sch.targetClass || 'Semua Kelas', stu.class || ''));
+        if (matchedSchForStu && matchedSchForStu.subject) stuDefaultSubject = matchedSchForStu.subject;
+      }
+      const syntheticKey = `${stuNisn}__${String(stuDefaultSubject).toLowerCase()}__none`;
       rowMap.set(syntheticKey, {
         nisn: stuNisn,
         name: stu.name || '-',
         class: stu.class || '-',
-        subject: defaultSubject,
+        subject: stuDefaultSubject,
         status: 'not_logged_in',
         attemptNumber: 0,
         attemptsCompleted: 0,
@@ -3712,8 +3787,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const scopedRows = Array.from(rowMap.values()).filter(row => {
       if (!isAdmin) {
-        const subOk = teacherSubjects.length > 0 && teacherSubjects.some(ts => window.examEngine.matchesSubject(row.subject, ts));
-        if (!subOk) return false;
+        if (!isPengawas) {
+          const subOk = teacherSubjects.length > 0 && teacherSubjects.some(ts => window.examEngine.matchesSubject(row.subject, ts));
+          if (!subOk) return false;
+        }
         if (assignedClasses.length > 0) {
           const stuCls = String(row.class || '').trim();
           if (!stuCls || !window.examEngine.matchesClassLevel(assignedClasses.join(', '), stuCls)) return false;
@@ -6330,34 +6407,49 @@ document.addEventListener('DOMContentLoaded', () => {
       : window.cbtAdmin.getAllTeachers();
 
     if (badge) {
-      const guruCount = window.cbtAdmin.getAllTeachers().filter(t => t.role !== 'admin').length;
-      badge.innerText = `Total: ${guruCount} Guru (+ 1 Proktor)`;
+      const allNonAdmin = window.cbtAdmin.getAllTeachers().filter(t => t.role !== 'admin' && t.id !== 'admin');
+      const pengawasCount = allNonAdmin.filter(t => String(t.role || '').toLowerCase() === 'pengawas').length;
+      const guruCount = allNonAdmin.length - pengawasCount;
+      badge.innerText = pengawasCount > 0
+        ? `Total: ${guruCount} Guru • ${pengawasCount} Pengawas (+ 1 Proktor)`
+        : `Total: ${guruCount} Guru (+ 1 Proktor)`;
     }
 
     if (teachers.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Tidak ada data guru ditemukan.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Tidak ada data guru/pengawas ditemukan.</td></tr>`;
       return;
     }
 
     teachers.forEach((t, idx) => {
       const isSuperAdmin = t.role === 'admin' || t.id === 'admin';
+      const isPengawas = !isSuperAdmin && String(t.role || '').toLowerCase() === 'pengawas';
       const parsedClasses = window.cbtAdmin.parseTeacherClasses(t.classes);
       const classBadgeHtml = isSuperAdmin
         ? `<span class="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[11px]">Semua Kelas</span>`
         : (parsedClasses.length > 0
-          ? `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[11px]">${parsedClasses.join(', ')}</span>`
+          ? `<span class="px-2 py-0.5 rounded-md ${isPengawas ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-emerald-50 text-emerald-700'} font-bold text-[11px]">${escapeHtmlSafe(parsedClasses.join(', '))}</span>`
           : `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium text-[11px]">Semua Kelas</span>`);
+
+      const roleBadgeHtml = isSuperAdmin
+        ? '<span class="text-[10px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full inline-block mt-0.5">Proktor Utama / Admin</span>'
+        : (isPengawas
+          ? '<span class="text-[10px] font-black text-teal-800 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded-full inline-block mt-0.5">👀 Pengawas Ruang (Pantau Saja)</span>'
+          : '<span class="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full inline-block mt-0.5">👨‍🏫 Guru Mapel</span>');
+
+      const subjectCellHtml = isPengawas
+        ? `<span class="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 font-bold text-xs">👀 Semua Mapel Aktif</span>`
+        : `<span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs">${escapeHtmlSafe(t.subject || '-')}</span>`;
 
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition";
       tr.innerHTML = `
         <td class="p-3 text-center text-slate-400 font-bold">${idx + 1}</td>
-        <td class="p-3 font-mono font-bold text-slate-700">${t.nip}</td>
+        <td class="p-3 font-mono font-bold text-slate-700">${escapeHtmlSafe(t.nip)}</td>
         <td class="p-3">
-          <div class="font-bold text-slate-900">${t.name}</div>
-          ${isSuperAdmin ? '<span class="text-[10px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full inline-block mt-0.5">Proktor Utama / Admin</span>' : ''}
+          <div class="font-bold text-slate-900">${escapeHtmlSafe(t.name)}</div>
+          ${roleBadgeHtml}
         </td>
-        <td class="p-3"><span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs">${t.subject}</span></td>
+        <td class="p-3">${subjectCellHtml}</td>
         <td class="p-3 whitespace-nowrap">${classBadgeHtml}</td>
         <td class="p-3">
           <div class="flex items-center gap-1.5">
@@ -6366,11 +6458,16 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </td>
         <td class="p-3 text-center whitespace-nowrap">
+          ${!isSuperAdmin ? `
+            <button type="button" data-id="${t.id}" class="btn-toggle-teacher-role px-2 py-1 rounded-lg ${isPengawas ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200' : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'} font-bold text-[11px] transition cursor-pointer mr-1" title="${isPengawas ? 'Kembalikan ke mode Guru Mapel' : 'Jadikan Pengawas Ruang (hanya pantau ujian)'}">
+              ${isPengawas ? '👨‍🏫 Mode Guru' : '👀 Jadi Pengawas'}
+            </button>
+          ` : ''}
           <button type="button" data-id="${t.id}" class="btn-edit-teacher px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition cursor-pointer mr-1">
             ✏️ Edit
           </button>
           ${!isSuperAdmin ? `
-            <button type="button" data-id="${t.id}" class="btn-delete-teacher px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs transition cursor-pointer" title="Hapus Guru">
+            <button type="button" data-id="${t.id}" class="btn-delete-teacher px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs transition cursor-pointer" title="Hapus Akun">
               🗑️
             </button>
           ` : `
@@ -6391,12 +6488,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      const btnToggleRole = tr.querySelector('.btn-toggle-teacher-role');
+      if (btnToggleRole) {
+        btnToggleRole.addEventListener('click', () => {
+          const nextRole = isPengawas ? 'guru' : 'pengawas';
+          const upRes = window.cbtAdmin.updateTeacherProfile(t.id, { role: nextRole });
+          if (upRes.success) {
+            renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value || '');
+            setupSubjectAndClassFilters();
+            setupQuestionBankFilters();
+            setupMonitoringControls();
+            renderAdminTeacherQuestionProgress();
+          }
+        });
+      }
+
       tr.querySelector('.btn-edit-teacher').addEventListener('click', () => openEditTeacherModal(t));
 
       const btnDelete = tr.querySelector('.btn-delete-teacher');
       if (btnDelete) {
         btnDelete.addEventListener('click', () => {
-          if (confirm(`Yakin ingin menghapus guru "${t.name}" (${t.subject})?`)) {
+          if (confirm(`Yakin ingin menghapus akun "${t.name}"?`)) {
             const delRes = window.cbtAdmin.deleteTeacher(t.id);
             if (delRes.success) {
               alert(delRes.message);
@@ -6427,14 +6539,55 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseEditTeacher = document.getElementById('btnCloseEditTeacher');
   const btnCancelEditTeacher = document.getElementById('btnCancelEditTeacher');
   const btnOpenAddTeacher = document.getElementById('btnOpenAddTeacher');
+  const editTeacherRoleSelect = document.getElementById('editTeacherRole');
+
+  function syncTeacherModalRoleUI() {
+    const roleVal = editTeacherRoleSelect ? editTeacherRoleSelect.value : 'guru';
+    const isPengawas = roleVal === 'pengawas';
+    const subjInput = document.getElementById('editTeacherSubject');
+    const subjLabel = document.getElementById('editTeacherSubjectLabel');
+    const subjHint = document.getElementById('editTeacherSubjectHint');
+    const clsLabel = document.getElementById('editTeacherClassesLabel');
+    const clsHint = document.getElementById('editTeacherClassesHint');
+    const pinInput = document.getElementById('editTeacherPin');
+
+    if (subjInput) subjInput.required = !isPengawas;
+    if (subjLabel) subjLabel.innerText = isPengawas ? 'Mata Pelajaran (Otomatis Semua Mapel Aktif)' : 'Mata Pelajaran yang Diampu';
+    if (subjHint) {
+      subjHint.innerHTML = isPengawas
+        ? '👀 Akun <strong>Pengawas Ruang</strong> otomatis memantau <strong>semua mata pelajaran aktif</strong> di hari ujian (kolom ini boleh dikosongkan atau diisi catatan mapel asal guru).'
+        : '💡 Jika mengampu 2 mapel, pisahkan dengan koma atau garis miring (Contoh: <strong>Informatika, Prakarya</strong>).';
+    }
+    if (clsLabel) clsLabel.innerText = isPengawas ? 'Kelas / Ruang yang Diawasi (Sangat Disarankan)' : 'Kelas yang Diampu (Opsional)';
+    if (clsHint) {
+      clsHint.innerHTML = isPengawas
+        ? '🏫 Isi kelas ruang ujian yang diawasi (contoh: <strong>7A</strong> atau <strong>8A, 8B</strong>). Kosongkan jika boleh memantau semua kelas.'
+        : '💡 Untuk mapel yang dibagi beberapa guru (misal IPA: <strong>7B, 7C</strong> atau <strong>8A, 8B</strong>). Kosongkan jika mengajar semua kelas.';
+    }
+    if (pinInput && !document.getElementById('editTeacherId').value) {
+      if (isPengawas && pinInput.value === 'guru123') pinInput.value = 'pengawas123';
+      else if (!isPengawas && pinInput.value === 'pengawas123') pinInput.value = 'guru123';
+    }
+  }
+
+  if (editTeacherRoleSelect) {
+    editTeacherRoleSelect.addEventListener('change', syncTeacherModalRoleUI);
+  }
 
   if (btnOpenAddTeacher) btnOpenAddTeacher.addEventListener('click', openAddTeacherModal);
 
   function openAddTeacherModal() {
     if (!modalEditTeacher) return;
-    document.getElementById('modalEditTeacherTitle').innerText = "Tambah Guru Baru";
-    document.getElementById('modalEditTeacherSubtitle').innerText = "Masukkan data guru pengampu mata pelajaran & password login";
-    document.getElementById('btnSubmitEditTeacher').innerText = "Simpan Guru Baru";
+    document.getElementById('modalEditTeacherTitle').innerText = "Tambah Guru / Pengawas Baru";
+    document.getElementById('modalEditTeacherSubtitle').innerText = "Pilih peran Guru Mapel atau Pengawas Ruang & atur PIN login";
+    document.getElementById('btnSubmitEditTeacher').innerText = "Simpan Akun Baru";
+
+    const roleGroup = document.getElementById('editTeacherRoleGroup');
+    if (roleGroup) roleGroup.classList.remove('hidden');
+    if (editTeacherRoleSelect) {
+      editTeacherRoleSelect.disabled = false;
+      editTeacherRoleSelect.value = "guru";
+    }
 
     document.getElementById('editTeacherId').value = "";
     document.getElementById('editTeacherName').value = "";
@@ -6442,6 +6595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editTeacherSubject').value = "";
     document.getElementById('editTeacherClasses').value = "";
     document.getElementById('editTeacherPin').value = "guru123";
+    syncTeacherModalRoleUI();
 
     modalEditTeacher.classList.remove('hidden');
     document.getElementById('editTeacherName').focus();
@@ -6449,16 +6603,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openEditTeacherModal(teacher) {
     if (!modalEditTeacher) return;
-    document.getElementById('modalEditTeacherTitle').innerText = "Edit Data & Password Guru";
-    document.getElementById('modalEditTeacherSubtitle').innerText = "Perbarui identitas, mapel, kelas diampu, atau password/PIN akun guru";
+    const isSuperAdmin = teacher.role === 'admin' || teacher.id === 'admin';
+    document.getElementById('modalEditTeacherTitle').innerText = isSuperAdmin ? "Edit Akun Proktor / Admin" : "Edit Data & Peran Akun";
+    document.getElementById('modalEditTeacherSubtitle').innerText = "Perbarui peran (Guru/Pengawas), kelas diawasi, atau password/PIN akun";
     document.getElementById('btnSubmitEditTeacher').innerText = "Simpan Perubahan";
+
+    const roleGroup = document.getElementById('editTeacherRoleGroup');
+    if (roleGroup) {
+      if (isSuperAdmin) roleGroup.classList.add('hidden');
+      else roleGroup.classList.remove('hidden');
+    }
+    if (editTeacherRoleSelect) {
+      editTeacherRoleSelect.disabled = isSuperAdmin;
+      editTeacherRoleSelect.value = String(teacher.role || '').toLowerCase() === 'pengawas' ? 'pengawas' : 'guru';
+    }
 
     document.getElementById('editTeacherId').value = teacher.id;
     document.getElementById('editTeacherName').value = teacher.name;
     document.getElementById('editTeacherNip').value = teacher.nip;
-    document.getElementById('editTeacherSubject').value = teacher.subject;
+    document.getElementById('editTeacherSubject').value = teacher.subject || "";
     document.getElementById('editTeacherClasses').value = teacher.classes || "";
     document.getElementById('editTeacherPin').value = teacher.pin;
+    syncTeacherModalRoleUI();
 
     modalEditTeacher.classList.remove('hidden');
   }
@@ -6474,21 +6640,24 @@ document.addEventListener('DOMContentLoaded', () => {
     formEditTeacher.addEventListener('submit', (e) => {
       e.preventDefault();
       const id = document.getElementById('editTeacherId').value;
+      const role = editTeacherRoleSelect && !editTeacherRoleSelect.disabled ? editTeacherRoleSelect.value : 'guru';
       const name = document.getElementById('editTeacherName').value.trim();
       const nip = document.getElementById('editTeacherNip').value.trim();
       const subject = document.getElementById('editTeacherSubject').value.trim();
       const classes = document.getElementById('editTeacherClasses').value.trim().toUpperCase();
       const pin = document.getElementById('editTeacherPin').value.trim();
 
-      if (!name || !nip || !subject || !pin) {
-        alert("Semua kolom wajib harus diisi!");
+      if (!name || !nip || (role !== 'pengawas' && !subject) || !pin) {
+        alert(role === 'pengawas'
+          ? "Nama Pengawas, NIP/ID Login, dan PIN wajib diisi!"
+          : "Semua kolom wajib harus diisi!");
         return;
       }
 
       if (!id) {
-        const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin });
+        const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin, role });
         if (res.success) {
-          alert(`Sukses! Guru "${name}" berhasil ditambahkan ke pangkalan data.`);
+          alert(`Sukses! ${role === 'pengawas' ? 'Pengawas Ruang' : 'Guru'} "${name}" berhasil ditambahkan ke pangkalan data.`);
           closeEditTeacherModal();
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
@@ -6496,12 +6665,12 @@ document.addEventListener('DOMContentLoaded', () => {
           setupMonitoringControls();
           renderAdminTeacherQuestionProgress();
         } else {
-          alert(`Gagal menambah guru: ${res.message}`);
+          alert(`Gagal menambah akun: ${res.message}`);
         }
       } else {
-        const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin });
+        const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin, role });
         if (res.success) {
-          alert(`Data guru "${name}" berhasil diperbarui!`);
+          alert(`Data akun "${name}" berhasil diperbarui!`);
           closeEditTeacherModal();
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
@@ -6511,7 +6680,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const cur = window.cbtAdmin.getCurrentTeacher();
           if (cur && cur.id === id) renderAdminDashboard();
         } else {
-          alert(`Gagal edit guru: ${res.message}`);
+          alert(`Gagal edit akun: ${res.message}`);
         }
       }
     });
@@ -6520,9 +6689,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnResetAllTeacherPasswords = document.getElementById('btnResetAllTeacherPasswords');
   if (btnResetAllTeacherPasswords) {
     btnResetAllTeacherPasswords.addEventListener('click', () => {
-      if (confirm("Yakin ingin mereset password/PIN SELURUH guru ke default 'guru123'?")) {
+      if (confirm("Yakin ingin mereset password/PIN SELURUH guru & pengawas ke default 'guru123'?")) {
         const res = window.cbtAdmin.resetAllTeacherPasswords("guru123");
-        alert(`Sukses! Password ${res.count} guru telah direset ke 'guru123'.`);
+        alert(`Sukses! Password ${res.count} akun guru/pengawas telah direset ke 'guru123'.`);
         renderAdminTeachersList();
       }
     });
@@ -6563,7 +6732,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const teachers = getFilteredPreviewCardTeachers(filterVal);
 
     if (teacherCardPreviewCountBadge) {
-      let labelDesc = 'Hanya Guru Mapel';
+      let labelDesc = 'Guru & Pengawas';
       if (filterVal === 'ALL') labelDesc = 'Semua Akun';
       else if (filterVal.startsWith('TEACHER:') && teachers[0]) labelDesc = teachers[0].name;
       teacherCardPreviewCountBadge.innerText = `${teachers.length} Kartu (${labelDesc})`;
@@ -6588,13 +6757,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (teacherCardFilter) {
       const guruOnlyList = allTeachers.filter(t => t && t.role !== 'admin' && t.id !== 'admin');
       teacherCardFilter.innerHTML = `
-        <option value="GURU_ONLY">Hanya Guru Mapel (${guruOnlyList.length} Guru)</option>
-        <option value="ALL">Semua Akun (Guru + Proktor/Admin: ${allTeachers.length})</option>
+        <option value="GURU_ONLY">Semua Guru &amp; Pengawas (${guruOnlyList.length} Akun)</option>
+        <option value="ALL">Semua Akun (+ Proktor/Admin: ${allTeachers.length})</option>
       `;
       allTeachers.forEach(t => {
         const opt = document.createElement('option');
         opt.value = `TEACHER:${t.id}`;
-        const roleTag = (t.role === 'admin' || t.id === 'admin') ? 'Admin' : (t.subject || 'Guru');
+        const isAdm = t.role === 'admin' || t.id === 'admin';
+        const isPeng = !isAdm && String(t.role || '').toLowerCase() === 'pengawas';
+        const roleTag = isAdm ? 'Admin' : (isPeng ? `Pengawas${t.classes ? ' ' + t.classes : ''}` : (t.subject || 'Guru'));
         opt.innerText = `${t.name} (${roleTag})`;
         teacherCardFilter.appendChild(opt);
       });
@@ -6744,6 +6915,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!currentTeacher) return;
 
     const isAdmin = Boolean(currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const isPengawas = Boolean(!isAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
     const catalog = window.cbtAdmin.getButtonPermissionCatalog();
     const perms = window.cbtAdmin.getButtonPermissions();
     const mode = perms.mode === 'hide' ? 'hide' : 'disable';
@@ -6762,6 +6934,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const activeRoleItems = isAdmin ? (catalog.admin || []) : (catalog.guru || []);
     activeRoleItems.forEach(item => {
+      if (isPengawas && item && item.key === 'guru_tab_monitoring') return;
       if (item && item.selector && disabledMap[item.key] === true) {
         selectorLockStatus.set(item.selector, true);
       }
@@ -7542,9 +7715,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const isAdmin = currentTeacher.role === 'admin' || currentTeacher.id === 'admin';
     if (isAdmin) return true;
 
+    const isPengawas = typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher);
     const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
     const subLower = String(subject || '').trim().toLowerCase();
-    const subOk = teacherSubjects.length === 0 || teacherSubjects.some(ts => subLower === ts || subLower.includes(ts) || ts.includes(subLower));
+    const subOk = isPengawas || teacherSubjects.length === 0 || teacherSubjects.some(ts => subLower === ts || subLower.includes(ts) || ts.includes(subLower));
 
     const assignedClasses = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
     const clsUpper = String(className || '').trim().toUpperCase();
@@ -7629,6 +7803,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const isPengawasScope = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
     listEl.innerHTML = filtered.map(item => {
       const isCheat = item.type === 'cheat';
       const iconBg = isCheat
@@ -7637,8 +7812,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const badgeCls = isCheat
         ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
         : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300';
-      const targetTab = isCheat ? 'tabMonitoring' : 'tabResults';
-      const actionLabel = isCheat ? 'Pantau Siswa →' : 'Lihat Nilai →';
+      const targetTab = (isCheat || isPengawasScope) ? 'tabMonitoring' : 'tabResults';
+      const actionLabel = (isCheat || isPengawasScope) ? 'Pantau Siswa →' : 'Lihat Nilai →';
 
       return `
         <div class="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition flex items-start gap-2.5">
@@ -7687,7 +7862,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const isCheat = item.type === 'cheat';
-    const targetTab = isCheat ? 'tabMonitoring' : 'tabResults';
+    const isPengawasScope = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
+    const targetTab = (isCheat || isPengawasScope) ? 'tabMonitoring' : 'tabResults';
     const toast = document.createElement('div');
     toast.className = `pointer-events-auto rounded-2xl border shadow-2xl p-3.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-all duration-300 flex items-start gap-3 ${
       isCheat
@@ -7718,7 +7894,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <button type="button" class="toast-action-btn px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-white ${
             isCheat ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
           } transition cursor-pointer">
-            ${isCheat ? 'Pantau Live →' : 'Buka Rekap →'}
+            ${(isCheat || isPengawasScope) ? 'Pantau Live →' : 'Buka Rekap →'}
           </button>
         </div>
       </div>
@@ -7861,7 +8037,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastDoneMs = realtimeRecentDoneAt.get(key) || 0;
         if (Date.now() - lastDoneMs > 12000) {
           realtimeRecentDoneAt.set(key, Date.now());
-          const scoreTxt = sess.finalScore !== undefined && sess.finalScore !== null ? `Nilai Akhir: ${sess.finalScore}` : 'Nilai telah direkap';
+          const isPengawasScope = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
+          const scoreTxt = (!isPengawasScope && sess.finalScore !== undefined && sess.finalScore !== null) ? `Nilai Akhir: ${sess.finalScore}` : 'Ujian telah selesai';
           const reasonLabel = sess.finishReason === 'cheat_limit'
             ? 'Selesai otomatis (batas pelanggaran)'
             : (sess.finishReason === 'timeout' ? 'Waktu ujian habis' : 'Diselesaikan siswa');
@@ -7907,7 +8084,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     realtimeRecentDoneAt.set(key, Date.now());
     const completedAt = String(resObj.completedAt || new Date().toISOString());
-    const scoreTxt = resObj.finalScore !== undefined && resObj.finalScore !== null ? `Nilai Akhir: ${resObj.finalScore}` : 'Nilai telah masuk';
+    const isPengawasScope = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
+    const scoreTxt = (!isPengawasScope && resObj.finalScore !== undefined && resObj.finalScore !== null) ? `Nilai Akhir: ${resObj.finalScore}` : 'Jawaban siswa telah masuk';
     const cheatInfo = Number(resObj.cheatCount || 0) > 0 ? ` • ${resObj.cheatCount}x pelanggaran` : '';
     const reasonLabel = resObj.finishReason === 'cheat_limit'
       ? 'Auto-submit pelanggaran'

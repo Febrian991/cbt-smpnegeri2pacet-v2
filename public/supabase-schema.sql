@@ -463,6 +463,14 @@ BEGIN
     );
   END IF;
 
+  IF LOWER(COALESCE(v_auth->'teacher'->>'role', 'guru')) = 'pengawas' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'unauthorized', true,
+      'message', 'Akses brankas soal & kunci jawaban tertutup untuk akun Pengawas Ruang.'
+    );
+  END IF;
+
   IF COALESCE(p_replace_all, false) THEN
     DELETE FROM cbt_question_keys;
     DELETE FROM cbt_questions;

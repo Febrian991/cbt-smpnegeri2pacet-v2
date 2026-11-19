@@ -128,6 +128,10 @@ class CBTAdmin {
           pin: t.pin ? String(t.pin).trim() : "admin123"
         };
       }
+      if (t) {
+        const cleanRole = String(t.role || '').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru';
+        return { ...t, role: cleanRole };
+      }
       return t;
     }).filter(Boolean);
 
@@ -265,7 +269,7 @@ class CBTAdmin {
 
     if (Array.isArray(this.teachers)) {
       this.teachers.forEach(t => {
-        if (t.role !== 'admin' && t.id !== 'admin' && t.subject && !t.subject.toLowerCase().includes('semua')) {
+        if (t.role !== 'admin' && t.role !== 'pengawas' && t.id !== 'admin' && t.subject && !t.subject.toLowerCase().includes('semua') && !t.subject.toLowerCase().includes('pengawas')) {
           this.splitSubjectTokens(t.subject).forEach(p => subjectsSet.add(p));
         }
       });
@@ -303,7 +307,7 @@ class CBTAdmin {
 
   getTeacherSubjectsList(teacher = null) {
     const t = teacher || this.getCurrentTeacher();
-    if (!t || t.role === 'admin' || t.id === 'admin') return [];
+    if (!t || t.role === 'admin' || t.id === 'admin' || String(t.role || '').toLowerCase() === 'pengawas') return [];
     return this.splitSubjectTokens(t.subject);
   }
 
@@ -346,15 +350,19 @@ class CBTAdmin {
     );
   }
 
-  addTeacher({ name, nip, subject, classes, pin }) {
+  addTeacher({ name, nip, subject, classes, pin, role = "guru" }) {
     const cleanName = String(name || "").trim();
     const cleanNip = String(nip || "").trim();
-    const cleanSubject = String(subject || "").trim();
+    const cleanRole = String(role || "guru").trim().toLowerCase() === "pengawas" ? "pengawas" : "guru";
+    let cleanSubject = String(subject || "").trim();
+    if (cleanRole === "pengawas" && !cleanSubject) {
+      cleanSubject = "Semua Mapel Aktif (Pengawas Ruang)";
+    }
     const cleanClasses = String(classes || "").trim().toUpperCase();
-    const cleanPin = String(pin || "guru123").trim();
+    const cleanPin = String(pin || (cleanRole === "pengawas" ? "pengawas123" : "guru123")).trim();
 
-    if (!cleanName || !cleanNip || !cleanSubject) {
-      return { success: false, message: "Nama Guru, NIP, dan Mata Pelajaran wajib diisi!" };
+    if (!cleanName || !cleanNip || (cleanRole !== "pengawas" && !cleanSubject)) {
+      return { success: false, message: cleanRole === "pengawas" ? "Nama Pengawas dan NIP/ID Login wajib diisi!" : "Nama Guru, NIP, dan Mata Pelajaran wajib diisi!" };
     }
 
     const existing = this.teachers.find(t => String(t.nip).trim().toLowerCase() === cleanNip.toLowerCase());
@@ -362,14 +370,14 @@ class CBTAdmin {
       return { success: false, message: `NIP ${cleanNip} sudah digunakan oleh ${existing.name}!` };
     }
 
-    const newId = 'guru_' + Date.now();
+    const newId = (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now();
     const newTeacher = {
       id: newId,
       nip: cleanNip,
       name: cleanName,
       subject: cleanSubject,
       classes: cleanClasses,
-      role: "guru",
+      role: cleanRole,
       pin: cleanPin
     };
 
@@ -389,20 +397,29 @@ class CBTAdmin {
 
     this.teachers = this.teachers.filter(t => t.id !== teacherId);
     this.saveTeachers(this.teachers);
-    return { success: true, message: `Guru ${teacher.name} berhasil dihapus.` };
+    return { success: true, message: `Akun ${teacher.name} berhasil dihapus.` };
   }
 
-  updateTeacherProfile(teacherId, { name, nip, subject, classes, pin }) {
+  updateTeacherProfile(teacherId, { name, nip, subject, classes, pin, role }) {
     let found = false;
     this.teachers = this.teachers.map(t => {
       if (t.id === teacherId) {
         found = true;
+        const isSuperAdmin = t.role === 'admin' || t.id === 'admin';
+        const nextRole = isSuperAdmin
+          ? 'admin'
+          : (role !== undefined ? (String(role).trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') : (t.role || 'guru'));
+        let nextSubject = subject !== undefined ? String(subject).trim() : t.subject;
+        if (nextRole === 'pengawas' && !nextSubject) {
+          nextSubject = t.subject || "Semua Mapel Aktif (Pengawas Ruang)";
+        }
         return {
           ...t,
           name: name ? String(name).trim() : t.name,
           nip: nip ? String(nip).trim() : t.nip,
-          subject: subject ? String(subject).trim() : t.subject,
+          subject: nextSubject,
           classes: classes !== undefined ? String(classes).trim().toUpperCase() : (t.classes || ""),
+          role: nextRole,
           pin: pin ? String(pin).trim() : t.pin
         };
       }
@@ -499,7 +516,7 @@ class CBTAdmin {
       }
     }
 
-    if (typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.restorePrivilegedQuestionsMode === 'function') {
+    if (!this.isPengawasUser(this.currentTeacher) && typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.restorePrivilegedQuestionsMode === 'function') {
       window.examEngine.restorePrivilegedQuestionsMode();
     }
 
@@ -1707,6 +1724,7 @@ class CBTAdmin {
 
   isTabDisabledForRole(tabId, isAdmin) {
     if (!tabId || tabId === 'tabDashboard' || (isAdmin && tabId === 'tabSettings')) return false;
+    if (!isAdmin && this.isPengawasUser() && tabId === 'tabMonitoring') return false;
     const perms = this.getButtonPermissions();
     const list = isAdmin ? this.getButtonPermissionCatalog().admin : this.getButtonPermissionCatalog().guru;
     const matched = list.find(item => item.tabId === tabId);
@@ -1774,15 +1792,13 @@ class CBTAdmin {
       return;
     }
     const headers = [
-      ["TEMPLATE PANGKALAN DATA GURU CBT - SMP NEGERI 2 PACET"],
-      ["Petunjuk: Jangan ubah baris judul kolom di baris ke-3. Isi data guru mulai baris ke-4. Kolom Kelas Diampu boleh dikosongkan jika mengajar semua kelas."],
-      ["NIP / ID Pengguna (Wajib - Untuk Login)", "Nama Lengkap Guru & Gelar (Wajib)", "Mata Pelajaran yang Diampu (Wajib)", "Password / PIN Login (Wajib)", "Kelas yang Diampu (Opsional, misal: 7B, 7C)"],
-      ["198003152006041002", "Budi Santoso, S.Pd.", "Bahasa Indonesia", "guru123", ""],
-      ["197512022000032001", "Siti Rahmawati, M.Pd.", "Matematika", "guru123", ""],
-      ["198506102010011003", "Rusi, S.Pd.", "Ilmu Pengetahuan Alam (IPA)", "guru123", "7B, 7C"],
-      ["198201152007012004", "Ai Nurhasanah, S.Pd.", "Ilmu Pengetahuan Alam (IPA)", "guru123", "7A"],
-      ["198708222011011005", "Yeyen, S.Pd.", "Ilmu Pengetahuan Alam (IPA)", "guru123", "8A, 8B"],
-      ["198809122014022006", "Desy, S.Pd.", "Ilmu Pengetahuan Alam (IPA)", "guru123", "9A, 9B"]
+      ["TEMPLATE PANGKALAN DATA GURU & PENGAWAS CBT - SMP NEGERI 2 PACET"],
+      ["Petunjuk: Jangan ubah baris judul kolom di baris ke-3. Isi data mulai baris ke-4. Kolom Peran Akun diisi 'guru' atau 'pengawas' (kosong = guru)."],
+      ["NIP / ID Pengguna (Wajib - Untuk Login)", "Nama Lengkap & Gelar (Wajib)", "Mata Pelajaran yang Diampu", "Password / PIN Login (Wajib)", "Kelas / Ruang Diampu (Opsional, misal: 7A atau 7B, 7C)", "Peran Akun (guru / pengawas)"],
+      ["198003152006041002", "Budi Santoso, S.Pd.", "Bahasa Indonesia", "guru123", "", "guru"],
+      ["197512022000032001", "Siti Rahmawati, M.Pd.", "Matematika", "guru123", "", "guru"],
+      ["198506102010011003", "Rusi, S.Pd.", "Ilmu Pengetahuan Alam (IPA)", "guru123", "7B, 7C", "guru"],
+      ["pengawas7a", "Pengawas Ruang Kelas 7A", "Semua Mapel Aktif (Pengawas Ruang)", "pengawas123", "7A", "pengawas"]
     ];
 
     const wb = XLSX.utils.book_new();
@@ -1790,9 +1806,10 @@ class CBTAdmin {
     ws['!cols'] = [
       { wch: 28 },
       { wch: 32 },
-      { wch: 32 },
+      { wch: 34 },
       { wch: 20 },
-      { wch: 34 }
+      { wch: 34 },
+      { wch: 26 }
     ];
     XLSX.utils.book_append_sheet(wb, ws, "Daftar Guru");
     XLSX.writeFile(wb, "Template_Daftar_Guru_CBT_SMPN2Pacet.xlsx");
@@ -1836,12 +1853,15 @@ class CBTAdmin {
         const rawSubject = row[2];
         const rawPin = row[3];
         const rawClasses = row[4];
+        const rawRole = row[5];
 
-        if (rawNip && rawName && rawSubject) {
+        const cleanRole = String(rawRole || '').trim().toLowerCase().includes('pengawas') ? 'pengawas' : 'guru';
+
+        if (rawNip && rawName && (rawSubject || cleanRole === 'pengawas')) {
           const cleanNip = String(rawNip).trim();
           const cleanName = String(rawName).trim();
-          const cleanSubject = String(rawSubject).trim();
-          const cleanPin = rawPin ? String(rawPin).trim() : "guru123";
+          const cleanSubject = rawSubject ? String(rawSubject).trim() : "Semua Mapel Aktif (Pengawas Ruang)";
+          const cleanPin = rawPin ? String(rawPin).trim() : (cleanRole === 'pengawas' ? "pengawas123" : "guru123");
           const cleanClasses = rawClasses ? String(rawClasses).trim().toUpperCase() : "";
 
           const dupNip = this.teachers.find(t => String(t.nip).trim() === cleanNip && t.role !== 'admin');
@@ -1849,16 +1869,17 @@ class CBTAdmin {
             dupNip.name = cleanName;
             dupNip.subject = cleanSubject;
             dupNip.pin = cleanPin;
+            dupNip.role = cleanRole;
             if (rawClasses !== undefined) dupNip.classes = cleanClasses;
             importedCount++;
           } else if (cleanNip !== 'admin' && cleanNip !== '198501012010011001') {
             this.teachers.push({
-              id: 'guru_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              id: (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
               nip: cleanNip,
               name: cleanName,
               subject: cleanSubject,
               classes: cleanClasses,
-              role: "guru",
+              role: cleanRole,
               pin: cleanPin
             });
             importedCount++;
@@ -1879,6 +1900,13 @@ class CBTAdmin {
   isSuperAdminUser() {
     const cur = this.getCurrentTeacher();
     return Boolean(cur && (cur.role === 'admin' || cur.id === 'admin'));
+  }
+
+  isPengawasUser(teacher = null) {
+    const cur = teacher || this.getCurrentTeacher();
+    if (!cur) return false;
+    if (cur.role === 'admin' || cur.id === 'admin') return false;
+    return String(cur.role || '').trim().toLowerCase() === 'pengawas';
   }
 
   formatIndonesianDate(dateIso) {
@@ -3452,7 +3480,7 @@ class CBTAdmin {
       : true;
 
     return (this.teachers || [])
-      .filter(t => t && t.role !== 'admin' && t.id !== 'admin')
+      .filter(t => t && t.role !== 'admin' && t.role !== 'pengawas' && t.id !== 'admin')
       .map(t => {
         const subjects = this.getTeacherSubjectsList(t);
         const teacherClasses = t.classes ? this.parseTeacherClasses(t.classes) : [];
@@ -3543,30 +3571,33 @@ class CBTAdmin {
 
     return teachersList.map((t, idx) => {
       const isAdmin = t && (t.role === 'admin' || t.id === 'admin');
-      const roleLabel = isAdmin ? 'PROKTOR / ADMIN' : 'GURU MAPEL';
-      const roleDetail = isAdmin ? 'Proktor Utama / Admin' : 'Guru Mata Pelajaran';
-      const badgeBg = isAdmin ? '#f3e8ff' : '#dbeafe';
-      const badgeText = isAdmin ? '#6b21a8' : '#1d4ed8';
-      const badgeBorder = isAdmin ? '#c084fc' : '#93c5fd';
+      const isPengawas = Boolean(t && !isAdmin && String(t.role || '').toLowerCase() === 'pengawas');
+      const roleLabel = isAdmin ? 'PROKTOR / ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU MAPEL');
+      const roleDetail = isAdmin ? 'Proktor Utama / Admin' : (isPengawas ? 'Pengawas Ruang Ujian' : 'Guru Mata Pelajaran');
+      const badgeBg = isAdmin ? '#f3e8ff' : (isPengawas ? '#ccfbf1' : '#dbeafe');
+      const badgeText = isAdmin ? '#6b21a8' : (isPengawas ? '#0f766e' : '#1d4ed8');
+      const badgeBorder = isAdmin ? '#c084fc' : (isPengawas ? '#5eead4' : '#93c5fd');
 
       const nipText = this.escapePrintHtml(t?.nip || (isAdmin ? 'admin' : '-'));
       const nameText = this.escapePrintHtml(t?.name || '-');
       const subjectTokens = typeof this.splitSubjectTokens === 'function' ? this.splitSubjectTokens(t?.subject || '') : [];
-      const subjectText = this.escapePrintHtml(subjectTokens.length > 0 ? subjectTokens.join(', ') : (t?.subject || (isAdmin ? 'Semua Mapel' : '-')));
+      const subjectText = isPengawas
+        ? 'Semua Mapel Aktif (Pantau Ujian)'
+        : this.escapePrintHtml(subjectTokens.length > 0 ? subjectTokens.join(', ') : (t?.subject || (isAdmin ? 'Semua Mapel' : '-')));
       const parsedClasses = t?.classes && typeof this.parseTeacherClasses === 'function' ? this.parseTeacherClasses(t.classes) : [];
       const classesText = this.escapePrintHtml(isAdmin ? 'Semua Kelas' : (parsedClasses.length > 0 ? parsedClasses.join(', ') : (t?.classes || 'Semua Kelas')));
-      const pinText = this.escapePrintHtml(t?.pin || (isAdmin ? 'admin123' : 'guru123'));
+      const pinText = this.escapePrintHtml(t?.pin || (isAdmin ? 'admin123' : (isPengawas ? 'pengawas123' : 'guru123')));
 
       return `
       <div class="exam-card-9x5" style="width:9.0cm; height:5.3cm; max-width:9.0cm; max-height:5.3cm; border:1.6px solid #0f172a; border-radius:8px; padding:5px 7px; background:#ffffff; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; font-family:'Plus Jakarta Sans', Arial, sans-serif; overflow:hidden; position:relative; page-break-inside:avoid; break-inside:avoid;">
 
-        <!-- KOP SURAT KARTU LOGIN GURU -->
+        <!-- KOP SURAT KARTU LOGIN GURU / PENGAWAS -->
         <div style="border-bottom:1.5px solid #0f172a; padding-bottom:2.5px; display:flex; align-items:center; justify-content:space-between; gap:5px;">
           ${logoLeftHtml}
           <div style="flex:1; text-align:center; min-width:0;">
             <div style="font-size:6.4px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeSubtitle}</div>
             <div style="font-size:8.8px; font-weight:900; color:#0f172a; text-transform:uppercase; letter-spacing:0.2px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeSchoolName}</div>
-            <div style="font-size:6.6px; font-weight:800; color:${isAdmin ? '#6b21a8' : '#2563eb'}; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">KARTU LOGIN ${isAdmin ? 'PROKTOR / ADMIN' : 'GURU'} &bull; ${safeExamTitle}</div>
+            <div style="font-size:6.6px; font-weight:800; color:${isAdmin ? '#6b21a8' : (isPengawas ? '#0f766e' : '#2563eb')}; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">KARTU LOGIN ${isAdmin ? 'PROKTOR / ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU')} &bull; ${safeExamTitle}</div>
           </div>
           ${logoRightHtml}
         </div>
