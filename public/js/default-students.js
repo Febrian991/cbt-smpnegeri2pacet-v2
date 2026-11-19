@@ -867,7 +867,7 @@ class StudentManager {
             <div class="cards-grid-print" style="display:grid; grid-template-columns: repeat(2, 9.0cm); justify-content:center; gap:4.5mm 6mm;">
               ${cardsHtml}
             </div>
-            <div class="cbt-print-footer-note" style="margin-top:8px; padding-top:3px; border-top:0.5px solid #cbd5e1; font-size:8px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeStamp}</div>
+            <div class="cbt-print-footer-note" style="margin-top:8px; padding-top:3px; border-top:0.5px solid #cbd5e1; font-size:8px; color:#1d4ed8; font-style:italic; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeStamp}</div>
           </div>
         `);
         globalPageIndex++;

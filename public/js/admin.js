@@ -1713,21 +1713,21 @@ class CBTAdmin {
               <div style="visibility:hidden; font-weight:500;">${safeTitiMangsa}</div>
               <div style="color:#1e293b;">Mengetahui,</div>
               <div style="font-weight:700; color:#0f172a;">Kepala Sekolah</div>
-              <div style="height:38px;"></div>
-              <div style="font-weight:700; text-decoration:underline; color:#0f172a;">${safeHeadmaster}</div>
-              <div style="font-size:10px; color:#475569; margin-top:1px;">NIP. ${safeHeadmasterNip}</div>
+              <div style="height:36px;"></div>
+              <div style="font-weight:700; text-decoration:underline; text-underline-offset:2px; color:#0f172a;">${safeHeadmaster}</div>
+              <div style="font-size:10px; color:#475569; margin-top:3px;">NIP. ${safeHeadmasterNip}</div>
             </td>
             <td style="width:50%; text-align:center; vertical-align:top; padding:7px 12px 2px 12px;">
               <div style="font-weight:600; color:#1e293b;">${safeTitiMangsa}</div>
               <div style="color:#1e293b;">Dibuat Oleh,</div>
               <div style="font-weight:700; color:#0f172a;">Guru Mata Pelajaran</div>
-              <div style="height:38px;"></div>
-              <div style="font-weight:700; text-decoration:underline; color:#0f172a;">${safeTeacher}</div>
-              <div style="font-size:10px; color:#475569; margin-top:1px;">NIP. ${safeTeacherNip}</div>
+              <div style="height:36px;"></div>
+              <div style="font-weight:700; text-decoration:underline; text-underline-offset:2px; color:#0f172a;">${safeTeacher}</div>
+              <div style="font-size:10px; color:#475569; margin-top:3px;">NIP. ${safeTeacherNip}</div>
             </td>
           </tr>
         </table>
-        <div class="cbt-print-footer-note" style="font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:5px; padding-top:4px; border-top:1px solid #e2e8f0;">${safeStamp}</div>
+        <div class="cbt-print-footer-note" style="font-size:8.5px; color:#1d4ed8; font-style:italic; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:5px; padding-top:4px; border-top:1px solid #e2e8f0;">${safeStamp}</div>
       </div>
     `;
 
@@ -2549,7 +2549,7 @@ class CBTAdmin {
   }
 
   getPrintFooterNoteHtml(extraStyle = '') {
-    return `<div class="cbt-print-footer-note" style="margin-top:10px; padding-top:4px; border-top:0.5px solid #cbd5e1; font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${extraStyle}">${this.escapePrintHtml(this.getPrintStampText())}</div>`;
+    return `<div class="cbt-print-footer-note" style="margin-top:10px; padding-top:4px; border-top:0.5px solid #cbd5e1; font-size:8.5px; color:#1d4ed8; font-style:italic; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${extraStyle}">${this.escapePrintHtml(this.getPrintStampText())}</div>`;
   }
 
   escapePrintHtml(str) {
@@ -3241,7 +3241,7 @@ class CBTAdmin {
             body { font-family: "Times New Roman", Times, serif; color: #000000; margin: 0; padding: 0; }
             .naskah-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
             .naskah-page-break { page-break-before: always; break-before: page; }
-            .cbt-print-footer-note { color: #1d4ed8 !important; font-style: italic !important; font-size: 8pt !important; white-space: nowrap !important; }
+            .cbt-print-footer-note { color: #1d4ed8 !important; font-style: italic !important; font-size: 8pt !important; text-align: center !important; white-space: nowrap !important; }
           </style>
         </head>
         <body><div class="Section1">${cleanedHtml}</div></body>
@@ -3989,7 +3989,7 @@ class CBTAdmin {
           <div class="cards-grid-print" style="display:grid; grid-template-columns: repeat(2, 9.0cm); justify-content:center; gap:4.5mm 6mm;">
             ${cardsHtml}
           </div>
-          <div class="cbt-print-footer-note" style="margin-top:8px; padding-top:3px; border-top:0.5px solid #cbd5e1; font-size:8px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${stampText}</div>
+          <div class="cbt-print-footer-note" style="margin-top:8px; padding-top:3px; border-top:0.5px solid #cbd5e1; font-size:8px; color:#1d4ed8; font-style:italic; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${stampText}</div>
         </div>
       `);
     }
