@@ -667,6 +667,64 @@ body.exam-locked img {
   html.dark ::-webkit-scrollbar-thumb:hover {
     background: #9b2cf5;
   }
+
+  /* Pastikan Laporan Rekap & Area Cetak Selalu Berwarna Kertas Putih Normal Meski Dark Mode Aktif */
+  html.dark #printableTeacherReport,
+  html.dark #printableCardsArea,
+  html.dark #printableQuestionsArea,
+  html.dark .cbt-light-paper {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+  html.dark #printableTeacherReport .bg-white,
+  html.dark .cbt-light-paper .bg-white {
+    background-color: #ffffff !important;
+  }
+  html.dark #printableTeacherReport #repSummaryBox,
+  html.dark #printableTeacherReport .bg-slate-50,
+  html.dark .cbt-light-paper .bg-slate-50 {
+    background-color: #f8fafc !important;
+  }
+  html.dark #printableTeacherReport thead tr,
+  html.dark #printableTeacherReport .bg-slate-100,
+  html.dark .cbt-light-paper .bg-slate-100 {
+    background-color: #f1f5f9 !important;
+  }
+  html.dark #printableTeacherReport tbody tr:nth-child(even),
+  html.dark .cbt-light-paper tbody tr:nth-child(even) {
+    background-color: #f8fafc !important;
+  }
+  html.dark #printableTeacherReport .text-slate-900,
+  html.dark #printableTeacherReport .text-slate-800,
+  html.dark #printableTeacherReport .text-slate-700,
+  html.dark #printableTeacherReport .text-slate-600,
+  html.dark .cbt-light-paper .text-slate-900,
+  html.dark .cbt-light-paper .text-slate-800,
+  html.dark .cbt-light-paper .text-slate-700,
+  html.dark .cbt-light-paper .text-slate-600 {
+    color: #0f172a !important;
+  }
+  html.dark #printableTeacherReport .text-slate-500,
+  html.dark .cbt-light-paper .text-slate-500 {
+    color: #475569 !important;
+  }
+  html.dark #printableTeacherReport .text-blue-700 { color: #1d4ed8 !important; }
+  html.dark #printableTeacherReport .text-emerald-700 { color: #047857 !important; }
+  html.dark #printableTeacherReport .text-amber-700 { color: #b45309 !important; }
+  html.dark #printableTeacherReport .text-purple-700 { color: #7e22ce !important; }
+  html.dark #printableTeacherReport .border-slate-200,
+  html.dark #printableTeacherReport .border-slate-300,
+  html.dark #printableTeacherReport th,
+  html.dark #printableTeacherReport td,
+  html.dark .cbt-light-paper .border-slate-200,
+  html.dark .cbt-light-paper .border-slate-300 {
+    border-color: #cbd5e1 !important;
+  }
+  html.dark #printableTeacherReport .cbt-print-footer-note,
+  html.dark .cbt-light-paper .cbt-print-footer-note {
+    color: #1d4ed8 !important;
+  }
 }
 
 /* ==========================================================================
@@ -694,8 +752,10 @@ body.exam-locked img {
     color: #b91c1c;
   }
 
+  html.dark body,
   body {
     background: #ffffff !important;
+    background-image: none !important;
     color: #000000 !important;
     padding: 0 !important;
     margin: 0 !important;

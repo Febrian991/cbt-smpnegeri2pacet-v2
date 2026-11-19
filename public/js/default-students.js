@@ -938,6 +938,12 @@ class StudentManager {
           scrollY: 0,
           backgroundColor: '#ffffff',
           onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
             const container = clonedDoc.querySelector('.html2pdf__container');
             if (container) {
               container.style.left = '0px';

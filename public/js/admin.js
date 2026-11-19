@@ -1456,7 +1456,7 @@ class CBTAdmin {
   }
 
   // ===================== 2. EXPORT FORMAT PDF (.pdf) =====================
-  exportResultsPDF(subjectFilter = null, classFilter = null) {
+  async exportResultsPDF(subjectFilter = null, classFilter = null) {
     const results = this.getAllResultsSorted(subjectFilter, classFilter);
     if (results.length === 0) {
       alert("Belum ada data nilai siswa untuk di-export ke PDF.");
@@ -1464,49 +1464,115 @@ class CBTAdmin {
     }
 
     const reportElement = document.getElementById('printableTeacherReport');
-    if (!reportElement) {
-      window.print();
-      return;
+    if (reportElement) {
+      this.populateReportHTML(reportElement, results, subjectFilter, classFilter);
     }
 
-    this.populateReportHTML(reportElement, results, subjectFilter, classFilter);
-
-    reportElement.classList.remove('hidden');
-    document.body.classList.add('printing-report');
-
-    if (typeof html2pdf !== 'undefined') {
-      const opt = {
-        margin: [6, 8, 6, 8],
-        filename: `Laporan_Rekap_Nilai_CBT_${Date.now()}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['#repSignatureBlock', '#repSummaryBox', '#repAutoPrintNote', '#repTableBody tr'] },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-      };
-
-      html2pdf().set(opt).from(reportElement).save().then(() => {
-        reportElement.classList.add('hidden');
-        document.body.classList.remove('printing-report');
-      }).catch(err => {
-        console.error("Gagal export PDF:", err);
-        window.print();
-        setTimeout(() => {
-          reportElement.classList.add('hidden');
-          document.body.classList.remove('printing-report');
-        }, 1000);
-      });
-    } else {
+    if (typeof html2pdf === 'undefined') {
+      if (reportElement) reportElement.classList.remove('hidden');
+      document.body.classList.add('printing-report');
       setTimeout(() => {
         window.print();
         setTimeout(() => {
-          reportElement.classList.add('hidden');
+          if (reportElement) reportElement.classList.add('hidden');
           document.body.classList.remove('printing-report');
         }, 1000);
       }, 200);
+      return;
+    }
+
+    const btnPdf = document.getElementById('btnExportPDF');
+    const prevBtnHtml = btnPdf ? btnPdf.innerHTML : '';
+    if (btnPdf) {
+      btnPdf.disabled = true;
+      btnPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+    }
+
+    const prevScrollX = window.scrollX || window.pageXOffset || 0;
+    const prevScrollY = window.scrollY || window.pageYOffset || 0;
+    const filename = `Laporan_Rekap_Nilai_CBT_${Date.now()}.pdf`;
+
+    try {
+      window.scrollTo(0, 0);
+      const data = this.buildReportRenderData(results, subjectFilter, classFilter);
+      const sheets = this.paginateReportSheets(data);
+
+      const sheetOpt = {
+        margin: [0, 0, 0, 0],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+              clonedDoc.body.style.color = '#0f172a';
+            }
+            const container = clonedDoc.querySelector('.html2pdf__container');
+            if (container) {
+              container.style.left = '0px';
+              container.style.right = 'auto';
+              container.style.top = '0px';
+              container.style.margin = '0px';
+              container.style.background = '#ffffff';
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const seedHtml = '<div style="width:10px;height:10px;background:#ffffff;"></div>';
+      const pdfDoc = await html2pdf().set(sheetOpt).from(seedHtml).toPdf().get('pdf');
+
+      for (let i = 0; i < sheets.length; i++) {
+        const canvas = await html2pdf().set(sheetOpt).from(sheets[i]).toCanvas().get('canvas');
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+        if (i > 0) {
+          pdfDoc.addPage('a4', 'landscape');
+        }
+
+        const pageW = 297;
+        const maxPageH = 208;
+        const naturalH = (canvas.height * pageW) / canvas.width;
+        if (naturalH > maxPageH) {
+          const ratio = maxPageH / naturalH;
+          const fitW = pageW * ratio;
+          const offsetX = (pageW - fitW) / 2;
+          pdfDoc.addImage(imgData, 'JPEG', offsetX, 0, fitW, maxPageH);
+        } else {
+          pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageW, naturalH);
+        }
+      }
+
+      pdfDoc.save(filename);
+    } catch (err) {
+      console.error("Gagal export PDF rekap:", err);
+      if (reportElement) reportElement.classList.remove('hidden');
+      document.body.classList.add('printing-report');
+      window.print();
+      setTimeout(() => {
+        if (reportElement) reportElement.classList.add('hidden');
+        document.body.classList.remove('printing-report');
+      }, 1000);
+    } finally {
+      window.scrollTo(prevScrollX, prevScrollY);
+      if (btnPdf) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = prevBtnHtml;
+      }
     }
   }
 
-  populateReportHTML(el, results, subjectFilter, classFilter = null) {
+  buildReportRenderData(results, subjectFilter, classFilter = null) {
     const analytics = this.getExamAnalytics(subjectFilter, classFilter);
     const cur = this.getCurrentTeacher();
     const teacherName = cur ? cur.name : "Guru Mata Pelajaran";
@@ -1520,30 +1586,259 @@ class CBTAdmin {
       : (cur && cur.role !== 'admin' && cur.classes ? ` • Kelas ${this.parseTeacherClasses(cur.classes).join(', ')}` : '');
     const cfg = this.getSchoolConfig();
 
+    const esc = (val) => this.escapePrintHtml(val);
+    const safeSub = esc(cfg.schoolSubtitle || '');
+    const safeSchool = esc(cfg.schoolName || '');
+    const safeAddr = esc(cfg.schoolAddress || '');
+    const safeTitle = esc(window.examEngine?.config?.examTitle || 'UJIAN SEKOLAH');
+    const safeSubject = esc(subjectName || '-');
+    const safeClassLabel = esc(classLabel);
+    const safeTitiMangsa = esc(`${cfg.city || 'Pacet'}, ${cfg.date || ''}`);
+    const safeHeadmaster = esc(cfg.headmasterName || 'Kepala Sekolah');
+    const safeHeadmasterNip = esc(cfg.headmasterNip || '—');
+    const safeTeacher = esc(teacherName);
+    const safeTeacherNip = esc(teacherNip);
+    const safeStamp = esc(this.getPrintStampText());
+
     const logoLeftHtml = cfg.logoLeft
-      ? `<img src="${cfg.logoLeft}" alt="Logo Kiri" style="width:64px; height:64px; object-fit:contain; flex-shrink:0;">`
-      : `<div style="width:60px; height:60px; border-radius:8px; background:#1e3a8a; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; flex-shrink:0;">DINAS</div>`;
+      ? `<img src="${cfg.logoLeft}" alt="Logo Kiri" style="width:58px; height:58px; object-fit:contain; flex-shrink:0;">`
+      : `<div style="width:56px; height:56px; border-radius:8px; background:#1e3a8a; color:#ffffff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; flex-shrink:0;">DINAS</div>`;
 
     const logoRightHtml = cfg.logoRight
-      ? `<img src="${cfg.logoRight}" alt="Logo Kanan" style="width:64px; height:64px; object-fit:contain; flex-shrink:0;">`
-      : `<div style="width:60px; height:60px; border-radius:50%; background:#059669; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; flex-shrink:0;">SMP</div>`;
+      ? `<img src="${cfg.logoRight}" alt="Logo Kanan" style="width:58px; height:58px; object-fit:contain; flex-shrink:0;">`
+      : `<div style="width:56px; height:56px; border-radius:50%; background:#059669; color:#ffffff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; flex-shrink:0;">SMP</div>`;
+
+    const kopHtml = `
+      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #0f172a; padding-bottom:6px; margin-bottom:8px; gap:12px; background:#ffffff; color:#0f172a;">
+        ${logoLeftHtml}
+        <div style="text-align:center; flex:1; padding:0 12px;">
+          <div style="font-size:10.5px; font-weight:700; color:#475569; text-transform:uppercase;">${safeSub}</div>
+          <div style="font-size:17px; font-weight:900; color:#0f172a; text-transform:uppercase; letter-spacing:0.6px; line-height:1.15;">${safeSchool}</div>
+          <div style="font-size:9.5px; color:#334155; font-weight:600;">${safeAddr}</div>
+          <div style="font-size:12.5px; font-weight:900; text-transform:uppercase; margin-top:3px; color:#1e3a8a;">LEMBAR REKAPITULASI RESMI HASIL UJIAN SEKOLAH</div>
+          <div style="font-size:10.5px; font-weight:700; color:#334155;">${safeTitle} • Mapel: ${safeSubject}${safeClassLabel}</div>
+        </div>
+        ${logoRightHtml}
+      </div>
+    `;
+
+    const buildContHeaderHtml = (pageNum, totalPages) => `
+      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #0f172a; padding-bottom:4px; margin-bottom:8px; background:#ffffff; color:#0f172a; font-size:10.5px;">
+        <div style="font-weight:900; color:#0f172a; text-transform:uppercase;">${safeSchool} — LEMBAR REKAPITULASI HASIL UJIAN</div>
+        <div style="font-weight:700; color:#334155;">Mapel: ${safeSubject}${safeClassLabel} &bull; Halaman ${pageNum} / ${totalPages}</div>
+      </div>
+    `;
+
+    const summaryHtml = `
+      <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:7px 9px; margin-bottom:8px; color:#0f172a;">
+        <div style="font-size:10px; font-weight:800; text-transform:uppercase; color:#334155; margin-bottom:5px; border-bottom:1px solid #e2e8f0; padding-bottom:3px;">Ringkasan Statistik Rekapitulasi:</div>
+        <table style="width:100%; border-collapse:separate; border-spacing:6px 0; text-align:center;">
+          <tr>
+            <td style="width:20%; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:5px 4px;">
+              <span style="display:block; font-size:9.5px; color:#64748b;">Rata-Rata Nilai</span>
+              <span style="font-size:13px; font-weight:900; color:#1d4ed8;">${esc(analytics.averageScore)}</span>
+            </td>
+            <td style="width:20%; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:5px 4px;">
+              <span style="display:block; font-size:9.5px; color:#64748b;">Nilai Tertinggi</span>
+              <span style="font-size:12px; font-weight:900; color:#047857;">${esc(analytics.highestScore)} (${esc(analytics.highestStudent)})</span>
+            </td>
+            <td style="width:20%; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:5px 4px;">
+              <span style="display:block; font-size:9.5px; color:#64748b;">Nilai Terendah</span>
+              <span style="font-size:12px; font-weight:900; color:#b45309;">${esc(analytics.lowestScore)} (${esc(analytics.lowestStudent)})</span>
+            </td>
+            <td style="width:20%; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:5px 4px;">
+              <span style="display:block; font-size:9.5px; color:#64748b;">Total Peserta</span>
+              <span style="font-size:13px; font-weight:900; color:#0f172a;">${esc(analytics.totalStudents)} Siswa</span>
+            </td>
+            <td style="width:20%; background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:5px 4px;">
+              <span style="display:block; font-size:9.5px; color:#64748b;">Ketuntasan (&ge;75)</span>
+              <span style="font-size:13px; font-weight:900; color:#7e22ce;">${esc(analytics.passRatePercentage)}%</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+    const theadHtml = `
+      <thead>
+        <tr style="background:#f1f5f9; border-bottom:1px solid #cbd5e1; font-weight:700; color:#334155; font-size:10px;">
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:34px; color:#334155;">Rank</th>
+          <th style="padding:5px 5px; border:1px solid #cbd5e1; text-align:left; color:#334155;">Nama Siswa</th>
+          <th style="padding:5px 5px; border:1px solid #cbd5e1; text-align:left; width:82px; color:#334155;">NISN</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:46px; color:#334155;">Kelas</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:50px; color:#334155;">Nilai Akhir</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:76px; color:#334155;">Status Remedial</th>
+          <th style="padding:5px 5px; border:1px solid #cbd5e1; text-align:left; color:#334155;">Jawaban Siswa (Per Nomor)</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:96px; color:#334155;">Waktu Selesai</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:54px; color:#334155;">B/S/K</th>
+          <th style="padding:5px 4px; border:1px solid #cbd5e1; text-align:center; width:62px; color:#334155;">Ket. Curang</th>
+        </tr>
+      </thead>
+    `;
+
+    const rowsHtmlArray = results.map((r, idx) => {
+      const items = this.getAnswerBreakdownItems(r);
+      const ansHtml = items.length > 0
+        ? items.map(it => {
+            if (it.status === 'correct') {
+              return `<span style="display:inline-block; margin:1px 2px; padding:1px 4px; border-radius:3px; background:#dcfce7; color:#166534; font-weight:700; font-size:8.5px;">${esc(it.num)}.${esc(it.studentVal)}&#10003;</span>`;
+            }
+            return `<span style="display:inline-block; margin:1px 2px; padding:1px 4px; border-radius:3px; background:#fee2e2; color:#991b1b; font-weight:700; font-size:8.5px;">${esc(it.num)}.${esc(it.studentVal)}&#10007;(${esc(it.correctVal)})</span>`;
+          }).join('')
+        : '<span style="color:#64748b; font-size:9px;">-</span>';
+
+      const isRemedial = Number(r.finalScore || 0) < 75;
+      const rowBg = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      return `
+        <tr style="background:${rowBg}; color:#0f172a; border-bottom:1px solid #cbd5e1; font-size:9.5px; break-inside:avoid; page-break-inside:avoid;">
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:700; color:#0f172a;">${idx + 1}</td>
+          <td style="padding:4px 5px; border:1px solid #cbd5e1; font-weight:700; color:#0f172a;">${esc(r.student?.name || '-')}</td>
+          <td style="padding:4px 5px; border:1px solid #cbd5e1; font-family:monospace; color:#0f172a;">${esc(r.student?.nisn || '-')}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${esc(r.student?.class || '-')}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:11.5px; color:${isRemedial ? '#dc2626' : '#15803d'};">${esc(r.finalScore)}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:800; font-size:9.5px; color:${isRemedial ? '#dc2626' : '#15803d'}; white-space:nowrap;">${isRemedial ? 'Remedial' : 'Tidak Remedial'}</td>
+          <td style="padding:4px 5px; border:1px solid #cbd5e1; line-height:1.35; color:#0f172a;">${ansHtml}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${esc(r.completedAt || '-')}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${esc(r.correctCount)} / ${esc(r.incorrectCount)} / ${esc(r.unattemptedCount)}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${(r.cheatCount || 0) > 0 ? esc(r.cheatCount) + 'x Tab' : 'Tertib'}</td>
+        </tr>
+      `;
+    });
+
+    const signatureWrapHtml = `
+      <div style="background:#ffffff; color:#0f172a; padding-top:4px; padding-bottom:4px; break-inside:avoid; page-break-inside:avoid;">
+        <table style="width:100%; border-collapse:collapse; border-top:1px solid #cbd5e1; font-size:11px; line-height:1.35; color:#0f172a;">
+          <tr>
+            <td style="width:50%; text-align:center; vertical-align:top; padding:7px 12px 2px 12px;">
+              <div style="visibility:hidden; font-weight:500;">${safeTitiMangsa}</div>
+              <div style="color:#1e293b;">Mengetahui,</div>
+              <div style="font-weight:700; color:#0f172a;">Kepala Sekolah</div>
+              <div style="height:38px;"></div>
+              <div style="font-weight:700; text-decoration:underline; color:#0f172a;">${safeHeadmaster}</div>
+              <div style="font-size:10px; color:#475569; margin-top:1px;">NIP. ${safeHeadmasterNip}</div>
+            </td>
+            <td style="width:50%; text-align:center; vertical-align:top; padding:7px 12px 2px 12px;">
+              <div style="font-weight:600; color:#1e293b;">${safeTitiMangsa}</div>
+              <div style="color:#1e293b;">Dibuat Oleh,</div>
+              <div style="font-weight:700; color:#0f172a;">Guru Mata Pelajaran</div>
+              <div style="height:38px;"></div>
+              <div style="font-weight:700; text-decoration:underline; color:#0f172a;">${safeTeacher}</div>
+              <div style="font-size:10px; color:#475569; margin-top:1px;">NIP. ${safeTeacherNip}</div>
+            </td>
+          </tr>
+        </table>
+        <div class="cbt-print-footer-note" style="font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:5px; padding-top:4px; border-top:1px solid #e2e8f0;">${safeStamp}</div>
+      </div>
+    `;
+
+    return {
+      analytics,
+      teacherName,
+      teacherNip,
+      subjectName,
+      classLabel,
+      cfg,
+      kopHtml,
+      buildContHeaderHtml,
+      summaryHtml,
+      theadHtml,
+      rowsHtmlArray,
+      signatureWrapHtml
+    };
+  }
+
+  paginateReportSheets(data) {
+    const measurer = document.createElement('div');
+    measurer.className = 'cbt-light-paper';
+    measurer.style.cssText = 'position:fixed; left:-99999px; top:0; width:297mm; padding:6mm 8mm 7mm 8mm; background:#ffffff; color:#0f172a; font-family:"Plus Jakarta Sans", Arial, sans-serif; box-sizing:border-box; visibility:hidden; pointer-events:none; z-index:-1;';
+    document.body.appendChild(measurer);
+
+    const wrapSheet = (innerHtml) => `
+      <div class="cbt-report-paper-sheet cbt-light-paper" style="width:297mm; padding:6mm 8mm 7mm 8mm; background:#ffffff; color:#0f172a; font-family:'Plus Jakarta Sans', Arial, sans-serif; box-sizing:border-box;">
+        ${innerHtml}
+      </div>
+    `;
+
+    try {
+      const sheetRectW = measurer.getBoundingClientRect().width || 1122;
+      const pxPerMm = sheetRectW / 297;
+      // Total tinggi A4 landscape = 210mm; padding atas+bawah = 13mm; sisakan 5mm ruang aman -> budget konten dalam 192mm
+      const maxInnerPx = Math.floor(191 * pxPerMm);
+
+      measurer.innerHTML = `
+        <div class="_m_kop">${data.kopHtml}</div>
+        <div class="_m_cont">${data.buildContHeaderHtml(2, 2)}</div>
+        <div class="_m_sum">${data.summaryHtml}</div>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
+          ${data.theadHtml}
+          <tbody class="_m_tbody">${data.rowsHtmlArray.join('')}</tbody>
+        </table>
+        <div class="_m_sig">${data.signatureWrapHtml}</div>
+      `;
+
+      const kopH = Math.ceil(measurer.querySelector('._m_kop')?.getBoundingClientRect().height || 95);
+      const contH = Math.ceil(measurer.querySelector('._m_cont')?.getBoundingClientRect().height || 30);
+      const sumH = Math.ceil(measurer.querySelector('._m_sum')?.getBoundingClientRect().height || 82);
+      const theadH = Math.ceil(measurer.querySelector('thead')?.getBoundingClientRect().height || 28);
+      const sigH = Math.ceil(measurer.querySelector('._m_sig')?.getBoundingClientRect().height || 135);
+      const rowNodes = Array.from(measurer.querySelectorAll('._m_tbody tr'));
+      const rowHeights = rowNodes.map(tr => Math.ceil(tr.getBoundingClientRect().height || 32));
+      const tableMarginGap = 10;
+
+      const pageGroups = [];
+      let currentRows = [];
+      let isFirstPage = true;
+      let currentH = kopH + sumH + theadH + tableMarginGap;
+
+      for (let i = 0; i < data.rowsHtmlArray.length; i++) {
+        const rh = rowHeights[i] || 32;
+        if (currentRows.length > 0 && currentH + rh > maxInnerPx) {
+          pageGroups.push({ isFirst: isFirstPage, rows: currentRows, withSig: false });
+          isFirstPage = false;
+          currentRows = [];
+          currentH = contH + theadH + tableMarginGap;
+        }
+        currentRows.push({ html: data.rowsHtmlArray[i], height: rh });
+        currentH += rh;
+      }
+
+      if (currentH + sigH <= maxInnerPx) {
+        pageGroups.push({ isFirst: isFirstPage, rows: currentRows, withSig: true });
+      } else {
+        // Jika titi mangsa tidak muat di halaman terakhir, pindahkan 1 baris terakhir (jika cukup & aman) agar halaman penutup tetap proporsional
+        let carriedRows = [];
+        if (currentRows.length > 1) {
+          const lastItem = currentRows[currentRows.length - 1];
+          if (contH + theadH + tableMarginGap + lastItem.height + sigH <= maxInnerPx) {
+            carriedRows.push(currentRows.pop());
+          }
+        }
+        pageGroups.push({ isFirst: isFirstPage, rows: currentRows, withSig: false });
+        pageGroups.push({ isFirst: false, rows: carriedRows, withSig: true });
+      }
+
+      const totalPages = pageGroups.length;
+      return pageGroups.map((pg, idx) => {
+        const headerHtml = pg.isFirst
+          ? `${data.kopHtml}${data.summaryHtml}`
+          : data.buildContHeaderHtml(idx + 1, totalPages);
+        const tableHtml = pg.rows.length > 0
+          ? `<table style="width:100%; border-collapse:collapse; background:#ffffff; color:#0f172a; margin-bottom:6px;">${data.theadHtml}<tbody>${pg.rows.map(r => r.html).join('')}</tbody></table>`
+          : '';
+        const sigHtml = pg.withSig ? data.signatureWrapHtml : '';
+        return wrapSheet(`${headerHtml}${tableHtml}${sigHtml}`);
+      });
+    } finally {
+      measurer.remove();
+    }
+  }
+
+  populateReportHTML(el, results, subjectFilter, classFilter = null) {
+    const data = this.buildReportRenderData(results, subjectFilter, classFilter);
+    const { analytics, teacherName, teacherNip, cfg, kopHtml, rowsHtmlArray } = data;
 
     const kopEl = document.getElementById('repKopSurat');
-    if (kopEl) {
-      kopEl.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #0f172a; padding-bottom:8px; margin-bottom:10px; gap:12px;">
-          ${logoLeftHtml}
-          <div style="text-align:center; flex:1; padding:0 12px;">
-            <div style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase;">${cfg.schoolSubtitle}</div>
-            <div style="font-size:18px; font-weight:900; color:#0f172a; text-transform:uppercase; letter-spacing:0.8px;">${cfg.schoolName}</div>
-            <div style="font-size:10px; color:#334155; font-weight:600;">${cfg.schoolAddress}</div>
-            <div style="font-size:13px; font-weight:900; text-transform:uppercase; margin-top:4px; color:#1e3a8a;">LEMBAR REKAPITULASI RESMI HASIL UJIAN SEKOLAH</div>
-            <div style="font-size:11px; font-weight:700; color:#334155;">${window.examEngine.config.examTitle} • Mapel: ${subjectName}${classLabel}</div>
-          </div>
-          ${logoRightHtml}
-        </div>
-      `;
-    }
+    if (kopEl) kopEl.innerHTML = kopHtml;
 
     const repAvgEl = document.getElementById('repAvg');
     if (repAvgEl) repAvgEl.innerText = analytics.averageScore;
@@ -1579,40 +1874,10 @@ class CBTAdmin {
     if (repTitiMangsaLeftEl) repTitiMangsaLeftEl.innerText = `${cfg.city}, ${cfg.date}`;
 
     const tbody = document.getElementById('repTableBody');
-    if (tbody) {
-      tbody.innerHTML = results.map((r, idx) => {
-        const items = this.getAnswerBreakdownItems(r);
-        const ansHtml = items.length > 0
-          ? items.map(it => {
-              if (it.status === 'correct') {
-                return `<span style="display:inline-block; margin:1px 2px; padding:1px 4px; border-radius:3px; background:#dcfce7; color:#166534; font-weight:700; font-size:9px;">${it.num}.${it.studentVal}✓</span>`;
-              }
-              return `<span style="display:inline-block; margin:1px 2px; padding:1px 4px; border-radius:3px; background:#fee2e2; color:#991b1b; font-weight:700; font-size:9px;">${it.num}.${it.studentVal}✗(${it.correctVal})</span>`;
-            }).join('')
-          : '<span style="color:#64748b; font-size:9px;">-</span>';
-
-        const isRemedial = Number(r.finalScore || 0) < 75;
-        return `
-          <tr style="border-bottom:1px solid #cbd5e1; font-size:10px; break-inside:avoid; page-break-inside:avoid;">
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:700;">${idx + 1}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; font-weight:700;">${r.student?.name || '-'}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; font-family:monospace;">${r.student?.nisn || '-'}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.student?.class || '-'}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:12px; color:${isRemedial ? '#dc2626' : '#15803d'};">${r.finalScore}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center; font-weight:800; font-size:10px; color:${isRemedial ? '#dc2626' : '#15803d'}; white-space:nowrap;">${isRemedial ? 'Remedial' : 'Tidak Remedial'}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; line-height:1.35;">${ansHtml}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.completedAt}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${r.correctCount} / ${r.incorrectCount} / ${r.unattemptedCount}</td>
-            <td style="padding:4px 5px; border:1px solid #cbd5e1; text-align:center;">${(r.cheatCount || 0) > 0 ? r.cheatCount + 'x Tab' : 'Tertib'}</td>
-          </tr>
-        `;
-      }).join('');
-    }
+    if (tbody) tbody.innerHTML = rowsHtmlArray.join('');
 
     const repAutoNoteEl = document.getElementById('repAutoPrintNote');
-    if (repAutoNoteEl) {
-      repAutoNoteEl.innerText = this.getPrintStampText();
-    }
+    if (repAutoNoteEl) repAutoNoteEl.innerText = this.getPrintStampText();
   }
 
   // ===================== STATUS REMEDIAL & HAK AKSES TOMBOL =====================
@@ -2803,6 +3068,12 @@ class CBTAdmin {
           scrollY: 0,
           backgroundColor: '#ffffff',
           onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
             const container = clonedDoc.querySelector('.html2pdf__container');
             if (container) {
               container.style.left = '0px';
@@ -3782,6 +4053,12 @@ class CBTAdmin {
           scrollY: 0,
           backgroundColor: '#ffffff',
           onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
             const container = clonedDoc.querySelector('.html2pdf__container');
             if (container) {
               container.style.left = '0px';

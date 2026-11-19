@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.52">
+  <link rel="stylesheet" href="css/styles.css?v=3.58">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -2133,75 +2133,79 @@
   </main>
 
   <!-- ======================== TEMPLATE CETAK PDF RESMI GURU ======================== -->
-  <div id="printableTeacherReport" class="hidden p-4 bg-white text-slate-900 font-sans max-w-6xl mx-auto">
+  <div id="printableTeacherReport" class="hidden cbt-light-paper p-4 bg-white text-slate-900 font-sans max-w-6xl mx-auto" style="background:#ffffff; color:#0f172a;">
     <!-- Kop Surat dengan Logo Kiri & Logo Kanan -->
     <div id="repKopSurat"></div>
 
-    <div id="repSummaryBox" style="break-inside: avoid; page-break-inside: avoid;" class="mb-3 bg-slate-50 border border-slate-300 rounded-xl p-2.5">
-      <h3 class="text-[11px] font-bold uppercase text-slate-700 mb-1.5 border-b border-slate-200 pb-1">Ringkasan Statistik Rekapitulasi:</h3>
-      <div class="grid grid-cols-5 gap-2.5 text-xs text-center">
-        <div class="p-1.5 bg-white rounded border border-slate-200">
-          <span class="text-slate-500 block text-[10px]">Rata-Rata Nilai</span>
-          <span id="repAvg" class="text-sm font-black text-blue-700">0</span>
+    <div id="repSummaryBox" style="break-inside: avoid; page-break-inside: avoid; background:#f8fafc; border:1px solid #cbd5e1; color:#0f172a;" class="mb-2.5 bg-slate-50 border border-slate-300 rounded-xl p-2.5">
+      <h3 style="color:#334155; border-bottom:1px solid #e2e8f0;" class="text-[11px] font-bold uppercase text-slate-700 mb-1.5 border-b border-slate-200 pb-1">Ringkasan Statistik Rekapitulasi:</h3>
+      <div class="grid grid-cols-5 gap-2 text-xs text-center">
+        <div style="background:#ffffff; border:1px solid #e2e8f0;" class="p-1.5 bg-white rounded border border-slate-200">
+          <span style="color:#64748b;" class="text-slate-500 block text-[10px]">Rata-Rata Nilai</span>
+          <span id="repAvg" style="color:#1d4ed8;" class="text-sm font-black text-blue-700">0</span>
         </div>
-        <div class="p-1.5 bg-white rounded border border-slate-200">
-          <span class="text-slate-500 block text-[10px]">Nilai Tertinggi</span>
-          <span id="repHigh" class="text-sm font-black text-emerald-700">0</span>
+        <div style="background:#ffffff; border:1px solid #e2e8f0;" class="p-1.5 bg-white rounded border border-slate-200">
+          <span style="color:#64748b;" class="text-slate-500 block text-[10px]">Nilai Tertinggi</span>
+          <span id="repHigh" style="color:#047857;" class="text-sm font-black text-emerald-700">0</span>
         </div>
-        <div class="p-1.5 bg-white rounded border border-slate-200">
-          <span class="text-slate-500 block text-[10px]">Nilai Terendah</span>
-          <span id="repLow" class="text-sm font-black text-amber-700">0</span>
+        <div style="background:#ffffff; border:1px solid #e2e8f0;" class="p-1.5 bg-white rounded border border-slate-200">
+          <span style="color:#64748b;" class="text-slate-500 block text-[10px]">Nilai Terendah</span>
+          <span id="repLow" style="color:#b45309;" class="text-sm font-black text-amber-700">0</span>
         </div>
-        <div class="p-1.5 bg-white rounded border border-slate-200">
-          <span class="text-slate-500 block text-[10px]">Total Peserta</span>
-          <span id="repTotal" class="text-sm font-black text-slate-900">0</span>
+        <div style="background:#ffffff; border:1px solid #e2e8f0;" class="p-1.5 bg-white rounded border border-slate-200">
+          <span style="color:#64748b;" class="text-slate-500 block text-[10px]">Total Peserta</span>
+          <span id="repTotal" style="color:#0f172a;" class="text-sm font-black text-slate-900">0</span>
         </div>
-        <div class="p-1.5 bg-white rounded border border-slate-200">
-          <span class="text-slate-500 block text-[10px]">Ketuntasan (≥75)</span>
-          <span id="repPass" class="text-sm font-black text-purple-700">0%</span>
+        <div style="background:#ffffff; border:1px solid #e2e8f0;" class="p-1.5 bg-white rounded border border-slate-200">
+          <span style="color:#64748b;" class="text-slate-500 block text-[10px]">Ketuntasan (≥75)</span>
+          <span id="repPass" style="color:#7e22ce;" class="text-sm font-black text-purple-700">0%</span>
         </div>
       </div>
     </div>
 
-    <table class="w-full border-collapse border border-slate-300 text-xs mb-3">
+    <table style="width:100%; border-collapse:collapse; background:#ffffff; color:#0f172a;" class="w-full border-collapse border border-slate-300 text-xs mb-2.5">
       <thead>
-        <tr class="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
-          <th class="p-1.5 border border-slate-300 text-center w-10">Rank</th>
-          <th class="p-1.5 border border-slate-300">Nama Siswa</th>
-          <th class="p-1.5 border border-slate-300 w-24">NISN</th>
-          <th class="p-1.5 border border-slate-300 w-14 text-center">Kelas</th>
-          <th class="p-1.5 border border-slate-300 text-center w-16">Nilai Akhir</th>
-          <th class="p-1.5 border border-slate-300 text-center w-24">Status Remedial</th>
-          <th class="p-1.5 border border-slate-300">Jawaban Siswa (Per Nomor)</th>
-          <th class="p-1.5 border border-slate-300 text-center w-28">Waktu Selesai</th>
-          <th class="p-1.5 border border-slate-300 text-center w-16">B/S/K</th>
-          <th class="p-1.5 border border-slate-300 text-center w-20">Ket. Curang</th>
+        <tr style="background:#f1f5f9; color:#334155;" class="bg-slate-100 border-b border-slate-300 font-bold text-slate-700">
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-10">Rank</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300">Nama Siswa</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 w-24">NISN</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 w-14 text-center">Kelas</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-16">Nilai Akhir</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-24">Status Remedial</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300">Jawaban Siswa (Per Nomor)</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-28">Waktu Selesai</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-16">B/S/K</th>
+          <th style="border:1px solid #cbd5e1; color:#334155;" class="p-1.5 border border-slate-300 text-center w-20">Ket. Curang</th>
         </tr>
       </thead>
       <tbody id="repTableBody"></tbody>
     </table>
 
-    <!-- Tanda Tangan Mengetahui Kepala Sekolah & Dibuat Oleh Guru Mapel -->
-    <div id="repSignatureBlock" style="break-inside: avoid; page-break-inside: avoid;" class="flex justify-between text-xs pt-2.5 border-t border-slate-300">
-      <div class="text-center w-64">
-        <p id="repTitiMangsaLeft" class="text-transparent select-none">.</p>
-        <p>Mengetahui,</p>
-        <p class="font-bold">Kepala Sekolah</p>
-        <div class="h-12"></div>
-        <p id="repHeadmasterName" class="font-bold underline">Drs. H. Mulyono, M.Pd.</p>
-        <p id="repHeadmasterNip" class="text-[10px] text-slate-500">NIP. 19680512 199403 1 004</p>
-      </div>
-      <div class="text-center w-64">
-        <p id="repTitiMangsa" class="font-medium text-slate-700">Pacet, ...</p>
-        <p>Dibuat Oleh,</p>
-        <p class="font-bold">Guru Mata Pelajaran</p>
-        <div class="h-12"></div>
-        <p id="repTeacherName" class="font-bold underline">Guru Mata Pelajaran</p>
-        <p id="repTeacherNip" class="text-[10px] text-slate-500">NIP. —</p>
-      </div>
-    </div>
+    <!-- Tanda Tangan Mengetahui Kepala Sekolah & Dibuat Oleh Guru Mapel (Layout Tabel Non-Flex agar Titi Mangsa Utuh 100%) -->
+    <div id="repSignatureWrap" style="break-inside: avoid; page-break-inside: avoid; background:#ffffff; color:#0f172a; padding-bottom:4px;">
+      <table id="repSignatureBlock" style="width:100%; border-collapse:collapse; border-top:1px solid #cbd5e1; font-size:11.5px; line-height:1.35; color:#0f172a; break-inside: avoid; page-break-inside: avoid;">
+        <tr>
+          <td style="width:50%; text-align:center; vertical-align:top; padding:8px 12px 2px 12px;">
+            <div id="repTitiMangsaLeft" style="visibility:hidden; font-weight:500;">Pacet, ...</div>
+            <div style="color:#1e293b;">Mengetahui,</div>
+            <div style="font-weight:700; color:#0f172a;">Kepala Sekolah</div>
+            <div style="height:42px;"></div>
+            <div id="repHeadmasterName" style="font-weight:700; text-decoration:underline; color:#0f172a;">Drs. H. Mulyono, M.Pd.</div>
+            <div id="repHeadmasterNip" style="font-size:10px; color:#475569; margin-top:1px;">NIP. 19680512 199403 1 004</div>
+          </td>
+          <td style="width:50%; text-align:center; vertical-align:top; padding:8px 12px 2px 12px;">
+            <div id="repTitiMangsa" style="font-weight:600; color:#1e293b;">Pacet, ...</div>
+            <div style="color:#1e293b;">Dibuat Oleh,</div>
+            <div style="font-weight:700; color:#0f172a;">Guru Mata Pelajaran</div>
+            <div style="height:42px;"></div>
+            <div id="repTeacherName" style="font-weight:700; text-decoration:underline; color:#0f172a;">Guru Mata Pelajaran</div>
+            <div id="repTeacherNip" style="font-size:10px; color:#475569; margin-top:1px;">NIP. —</div>
+          </td>
+        </tr>
+      </table>
 
-    <div id="repAutoPrintNote" style="break-inside: avoid; page-break-inside: avoid; font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" class="cbt-print-footer-note mt-2.5 pt-1.5 border-t border-slate-200"></div>
+      <div id="repAutoPrintNote" style="break-inside: avoid; page-break-inside: avoid; font-size:8.5px; color:#1d4ed8; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:6px; padding-top:4px; border-top:1px solid #e2e8f0;" class="cbt-print-footer-note"></div>
+    </div>
   </div>
 
   <!-- TEMPLATE CETAK & PDF KARTU PESERTA UJIAN (UKURAN 9,0 x 5,3 CM) -->
@@ -2835,10 +2839,10 @@
   <!-- ======================== SCRIPTS ======================== -->
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
-  <script src="js/default-students.js?v=3.39"></script>
+  <script src="js/default-students.js?v=3.58"></script>
   <script src="js/supabase-config.js?v=3.57"></script>
   <script src="js/exam-engine.js?v=3.57"></script>
-  <script src="js/admin.js?v=3.57"></script>
+  <script src="js/admin.js?v=3.58"></script>
   <script src="js/app.js?v=3.57"></script>
   <script>
     if ('serviceWorker' in navigator) {
