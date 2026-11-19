@@ -673,6 +673,14 @@ class CBTAdmin {
       sessionStorage.removeItem('cbt_guru_roster_cache');
     } catch (e) {}
 
+    if (isCloud && Array.isArray(this.schedules)) {
+      this.schedules = this.schedules.map(s => {
+        if (!s || typeof s !== 'object') return s;
+        const { token, ...rest } = s;
+        return rest;
+      });
+    }
+
     if (typeof window !== 'undefined') {
       if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
         window.studentManager.scrubSensitiveDataForStudentMode();

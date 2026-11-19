@@ -154,6 +154,80 @@ CREATE TABLE IF NOT EXISTS cbt_question_keys (
 ALTER TABLE cbt_question_keys ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE cbt_question_keys FROM anon, authenticated;
 
+-- Brankas Token Ujian Terpisah (v3.57): Token hanya di server & dibaca Admin/Guru/Pengawas via RPC terautentikasi!
+CREATE TABLE IF NOT EXISTS cbt_exam_tokens (
+  token_key TEXT PRIMARY KEY,
+  token_value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE cbt_exam_tokens ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE cbt_exam_tokens FROM anon, authenticated;
+
+-- Helper Internal: Hapus field sensitif (token / adminPin) dari cbt_exam_schedules / cbt_config
+CREATE OR REPLACE FUNCTION cbt_strip_schedule_tokens(p_schedules JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_res JSONB;
+BEGIN
+  IF p_schedules IS NULL OR jsonb_typeof(p_schedules) <> 'array' THEN
+    RETURN '[]'::jsonb;
+  END IF;
+  SELECT COALESCE(jsonb_agg(elem - 'token'), '[]'::jsonb)
+  INTO v_res
+  FROM jsonb_array_elements(p_schedules) AS elem;
+  RETURN v_res;
+END;
+$$;
+
+-- Migrasi idempoten: pindahkan token dari cbt_school_state ke cbt_exam_tokens lalu bersihkan cbt_school_state
+DO $$
+DECLARE
+  v_cfg JSONB;
+  v_scheds JSONB;
+  v_sch JSONB;
+  v_tok TEXT;
+BEGIN
+  SELECT value INTO v_cfg FROM cbt_school_state WHERE key = 'cbt_config' LIMIT 1;
+  IF v_cfg IS NOT NULL AND jsonb_typeof(v_cfg) = 'object' THEN
+    v_tok := UPPER(BTRIM(COALESCE(v_cfg->>'examToken', '')));
+    IF v_tok <> '' THEN
+      INSERT INTO cbt_exam_tokens (token_key, token_value, updated_at)
+      VALUES ('config', v_tok, NOW())
+      ON CONFLICT (token_key) DO UPDATE SET
+        token_value = EXCLUDED.token_value,
+        updated_at = NOW();
+    END IF;
+    IF (v_cfg ? 'examToken') OR (v_cfg ? 'adminPin') THEN
+      UPDATE cbt_school_state
+      SET value = (v_cfg - 'examToken' - 'adminPin'), updated_at = NOW()
+      WHERE key = 'cbt_config';
+    END IF;
+  END IF;
+
+  SELECT value INTO v_scheds FROM cbt_school_state WHERE key = 'cbt_exam_schedules' LIMIT 1;
+  IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' THEN
+    FOR v_sch IN SELECT * FROM jsonb_array_elements(v_scheds) LOOP
+      v_tok := UPPER(BTRIM(COALESCE(v_sch->>'token', '')));
+      IF COALESCE(BTRIM(v_sch->>'id'), '') <> '' AND v_tok <> '' THEN
+        INSERT INTO cbt_exam_tokens (token_key, token_value, updated_at)
+        VALUES ('schedule:' || BTRIM(v_sch->>'id'), v_tok, NOW())
+        ON CONFLICT (token_key) DO UPDATE SET
+          token_value = EXCLUDED.token_value,
+          updated_at = NOW();
+      END IF;
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_scheds) s WHERE s ? 'token') THEN
+      UPDATE cbt_school_state
+      SET value = cbt_strip_schedule_tokens(v_scheds), updated_at = NOW()
+      WHERE key = 'cbt_exam_schedules';
+    END IF;
+  END IF;
+END $$;
+
 -- Helper Internal: Bersihkan kunci jawaban dari raw_data soal
 CREATE OR REPLACE FUNCTION cbt_strip_question_keys(p_q JSONB)
 RETURNS JSONB
@@ -939,8 +1013,354 @@ BEGIN
 END;
 $$;
 
+-- RPC 6: Ambil Konfigurasi Publik untuk Layar Login Siswa (TANPA token & TANPA PIN)
+CREATE OR REPLACE FUNCTION cbt_get_public_exam_config()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_cfg JSONB;
+  v_school_cfg JSONB;
+  v_scheds JSONB;
+  v_migrated JSONB;
+  v_state JSONB := '{}'::jsonb;
+BEGIN
+  SELECT value INTO v_cfg FROM cbt_school_state WHERE key = 'cbt_config' LIMIT 1;
+  IF v_cfg IS NULL THEN
+    SELECT raw_data INTO v_cfg FROM cbt_exam_results
+    WHERE student_nisn = '__CBT_STATE__' AND student_name = 'cbt_config'
+    ORDER BY id DESC LIMIT 1;
+  END IF;
+
+  SELECT value INTO v_school_cfg FROM cbt_school_state WHERE key = 'cbt_school_config' LIMIT 1;
+  IF v_school_cfg IS NULL THEN
+    SELECT raw_data INTO v_school_cfg FROM cbt_exam_results
+    WHERE student_nisn = '__CBT_STATE__' AND student_name = 'cbt_school_config'
+    ORDER BY id DESC LIMIT 1;
+  END IF;
+
+  SELECT value INTO v_scheds FROM cbt_school_state WHERE key = 'cbt_exam_schedules' LIMIT 1;
+  IF v_scheds IS NULL THEN
+    SELECT raw_data INTO v_scheds FROM cbt_exam_results
+    WHERE student_nisn = '__CBT_STATE__' AND student_name = 'cbt_exam_schedules'
+    ORDER BY id DESC LIMIT 1;
+  END IF;
+
+  SELECT value INTO v_migrated FROM cbt_school_state WHERE key = 'cbt_questions_migrated_v1' LIMIT 1;
+
+  IF v_school_cfg IS NOT NULL THEN
+    v_state := jsonb_set(v_state, '{cbt_school_config}', v_school_cfg, true);
+  END IF;
+  IF v_cfg IS NOT NULL AND jsonb_typeof(v_cfg) = 'object' THEN
+    v_state := jsonb_set(v_state, '{cbt_config}', (v_cfg - 'examToken' - 'adminPin'), true);
+  END IF;
+  IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' THEN
+    v_state := jsonb_set(v_state, '{cbt_exam_schedules}', cbt_strip_schedule_tokens(v_scheds), true);
+  END IF;
+  IF v_migrated IS NOT NULL THEN
+    v_state := jsonb_set(v_state, '{cbt_questions_migrated_v1}', v_migrated, true);
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'state', v_state);
+END;
+$$;
+
+-- RPC 7: Baca / Simpan Token Ujian di Brankas Server (Hanya Admin/Guru/Pengawas Terautentikasi)
+CREATE OR REPLACE FUNCTION cbt_sync_token_vault(
+  p_identifier TEXT,
+  p_pin TEXT,
+  p_config_token TEXT DEFAULT NULL,
+  p_schedule_tokens JSONB DEFAULT NULL,
+  p_mode TEXT DEFAULT 'read'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_auth JSONB;
+  v_role TEXT;
+  v_item JSONB;
+  v_sid TEXT;
+  v_tok TEXT;
+  v_cfg_token TEXT;
+  v_sched_tokens JSONB := '{}'::jsonb;
+  v_cfg JSONB;
+  v_scheds JSONB;
+  v_rec RECORD;
+BEGIN
+  v_auth := cbt_verify_teacher_pin_internal(p_identifier, p_pin);
+  IF NOT COALESCE((v_auth->>'valid')::boolean, false) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'unauthorized', true,
+      'message', COALESCE(v_auth->>'message', 'Autentikasi staf gagal.')
+    );
+  END IF;
+
+  v_role := LOWER(COALESCE(v_auth->'teacher'->>'role', 'guru'));
+
+  IF LOWER(COALESCE(p_mode, 'read')) = 'write' THEN
+    IF v_role <> 'admin' THEN
+      RETURN jsonb_build_object('success', false, 'unauthorized', true, 'message', 'Hanya Admin yang dapat mengubah token ujian.');
+    END IF;
+
+    IF p_config_token IS NOT NULL AND BTRIM(p_config_token) <> '' THEN
+      INSERT INTO cbt_exam_tokens (token_key, token_value, updated_at)
+      VALUES ('config', UPPER(BTRIM(p_config_token)), NOW())
+      ON CONFLICT (token_key) DO UPDATE SET
+        token_value = EXCLUDED.token_value,
+        updated_at = NOW();
+    END IF;
+
+    IF p_schedule_tokens IS NOT NULL AND jsonb_typeof(p_schedule_tokens) = 'array' THEN
+      DELETE FROM cbt_exam_tokens WHERE token_key LIKE 'schedule:%';
+      FOR v_item IN SELECT * FROM jsonb_array_elements(p_schedule_tokens) LOOP
+        v_sid := BTRIM(COALESCE(v_item->>'id', ''));
+        v_tok := UPPER(BTRIM(COALESCE(v_item->>'token', '')));
+        IF v_sid <> '' AND v_tok <> '' THEN
+          INSERT INTO cbt_exam_tokens (token_key, token_value, updated_at)
+          VALUES ('schedule:' || v_sid, v_tok, NOW())
+          ON CONFLICT (token_key) DO UPDATE SET
+            token_value = EXCLUDED.token_value,
+            updated_at = NOW();
+        END IF;
+      END LOOP;
+    END IF;
+
+    -- Pastikan tabel publik cbt_school_state bebas dari token
+    SELECT value INTO v_cfg FROM cbt_school_state WHERE key = 'cbt_config' LIMIT 1;
+    IF v_cfg IS NOT NULL AND ((v_cfg ? 'examToken') OR (v_cfg ? 'adminPin')) THEN
+      UPDATE cbt_school_state
+      SET value = (v_cfg - 'examToken' - 'adminPin'), updated_at = NOW()
+      WHERE key = 'cbt_config';
+    END IF;
+
+    SELECT value INTO v_scheds FROM cbt_school_state WHERE key = 'cbt_exam_schedules' LIMIT 1;
+    IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_scheds) s WHERE s ? 'token') THEN
+      UPDATE cbt_school_state
+      SET value = cbt_strip_schedule_tokens(v_scheds), updated_at = NOW()
+      WHERE key = 'cbt_exam_schedules';
+    END IF;
+
+    RETURN jsonb_build_object('success', true);
+  END IF;
+
+  -- Mode Read: hanya untuk Admin, Guru Mapel, atau Pengawas Ruang terautentikasi
+  SELECT token_value INTO v_cfg_token FROM cbt_exam_tokens WHERE token_key = 'config' LIMIT 1;
+  IF COALESCE(v_cfg_token, '') = '' THEN
+    SELECT UPPER(BTRIM(COALESCE(value->>'examToken', ''))) INTO v_cfg_token
+    FROM cbt_school_state WHERE key = 'cbt_config' LIMIT 1;
+  END IF;
+
+  FOR v_rec IN SELECT token_key, token_value FROM cbt_exam_tokens WHERE token_key LIKE 'schedule:%' LOOP
+    v_sid := SUBSTRING(v_rec.token_key FROM 10);
+    IF v_sid <> '' THEN
+      v_sched_tokens := jsonb_set(v_sched_tokens, ARRAY[v_sid], to_jsonb(v_rec.token_value), true);
+    END IF;
+  END LOOP;
+
+  -- Fallback baca jika jadwal masih menyimpan token sebelum migrasi penuh
+  SELECT value INTO v_scheds FROM cbt_school_state WHERE key = 'cbt_exam_schedules' LIMIT 1;
+  IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' THEN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(v_scheds) LOOP
+      v_sid := BTRIM(COALESCE(v_item->>'id', ''));
+      v_tok := UPPER(BTRIM(COALESCE(v_item->>'token', '')));
+      IF v_sid <> '' AND v_tok <> '' AND NOT (v_sched_tokens ? v_sid) THEN
+        v_sched_tokens := jsonb_set(v_sched_tokens, ARRAY[v_sid], to_jsonb(v_tok), true);
+      END IF;
+    END LOOP;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'configToken', COALESCE(NULLIF(v_cfg_token, ''), 'CBT80M'),
+    'scheduleTokens', v_sched_tokens
+  );
+END;
+$$;
+
+-- Helper Internal: Cek kesesuaian kelas siswa terhadap classLevel jadwal di server
+CREATE OR REPLACE FUNCTION cbt_matches_class_level(p_sched_class TEXT, p_student_class TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_qc TEXT := UPPER(BTRIM(COALESCE(p_sched_class, '')));
+  v_tc TEXT := UPPER(BTRIM(COALESCE(p_student_class, '')));
+  v_q_parts TEXT[];
+  v_t_parts TEXT[];
+  v_q TEXT;
+  v_t TEXT;
+  v_q_grade TEXT;
+  v_t_grade TEXT;
+BEGIN
+  IF v_qc = '' OR v_qc IN ('SEMUA', 'SEMUA KELAS', 'ALL') THEN RETURN true; END IF;
+  IF v_tc = '' OR v_tc IN ('SEMUA', 'SEMUA KELAS', 'ALL') THEN RETURN true; END IF;
+
+  v_q_parts := regexp_split_to_array(regexp_replace(v_qc, 'KELAS\s*', '', 'g'), '[,;/]+');
+  v_t_parts := regexp_split_to_array(regexp_replace(v_tc, 'KELAS\s*', '', 'g'), '[,;/]+');
+
+  FOREACH v_q IN ARRAY v_q_parts LOOP
+    v_q := regexp_replace(BTRIM(v_q), '\s+', '', 'g');
+    IF v_q = '' THEN CONTINUE; END IF;
+    IF v_q IN ('SEMUA', 'SEMUAKELAS', 'ALL') THEN RETURN true; END IF;
+    v_q_grade := substring(v_q FROM '^(\d+)');
+
+    FOREACH v_t IN ARRAY v_t_parts LOOP
+      v_t := regexp_replace(BTRIM(v_t), '\s+', '', 'g');
+      IF v_t = '' THEN CONTINUE; END IF;
+      IF v_q = v_t THEN RETURN true; END IF;
+      v_t_grade := substring(v_t FROM '^(\d+)');
+      IF v_q_grade IS NOT NULL AND v_t_grade IS NOT NULL AND v_q_grade = v_t_grade THEN
+        IF v_q = v_q_grade OR v_t = v_t_grade THEN RETURN true; END IF;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  RETURN false;
+END;
+$$;
+
+-- RPC 8: Validasi Token Ujian Siswa di Sisi Server (tanpa mengirim token asli ke browser siswa!)
+CREATE OR REPLACE FUNCTION cbt_verify_exam_token(
+  p_token TEXT,
+  p_schedule_id TEXT DEFAULT NULL,
+  p_student_class TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_input_token TEXT := UPPER(BTRIM(COALESCE(p_token, '')));
+  v_sched_id TEXT := BTRIM(COALESCE(p_schedule_id, ''));
+  v_stu_class TEXT := BTRIM(COALESCE(p_student_class, ''));
+  v_cfg JSONB;
+  v_scheds JSONB;
+  v_cfg_token TEXT;
+  v_has_active BOOLEAN := false;
+  v_selected JSONB := NULL;
+  v_matched JSONB := NULL;
+  v_sch JSONB;
+  v_sch_tok TEXT;
+  v_match_count INTEGER := 0;
+BEGIN
+  IF v_input_token = '' THEN
+    RETURN jsonb_build_object('success', false, 'valid', false, 'message', 'Harap masukkan Token Ujian!');
+  END IF;
+
+  SELECT value INTO v_cfg FROM cbt_school_state WHERE key = 'cbt_config' LIMIT 1;
+  IF v_cfg IS NULL THEN
+    SELECT raw_data INTO v_cfg FROM cbt_exam_results
+    WHERE student_nisn = '__CBT_STATE__' AND student_name = 'cbt_config'
+    ORDER BY id DESC LIMIT 1;
+  END IF;
+
+  SELECT value INTO v_scheds FROM cbt_school_state WHERE key = 'cbt_exam_schedules' LIMIT 1;
+  IF v_scheds IS NULL THEN
+    SELECT raw_data INTO v_scheds FROM cbt_exam_results
+    WHERE student_nisn = '__CBT_STATE__' AND student_name = 'cbt_exam_schedules'
+    ORDER BY id DESC LIMIT 1;
+  END IF;
+
+  SELECT token_value INTO v_cfg_token FROM cbt_exam_tokens WHERE token_key = 'config' LIMIT 1;
+  IF COALESCE(v_cfg_token, '') = '' THEN
+    v_cfg_token := UPPER(BTRIM(COALESCE(v_cfg->>'examToken', '')));
+  END IF;
+  IF COALESCE(v_cfg_token, '') = '' THEN
+    v_cfg_token := 'CBT80M';
+  END IF;
+
+  IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' THEN
+    FOR v_sch IN SELECT * FROM jsonb_array_elements(v_scheds) LOOP
+      IF COALESCE((v_sch->>'active')::boolean, false) THEN
+        v_has_active := true;
+        IF v_selected IS NULL OR (v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id) THEN
+          v_selected := v_sch;
+        END IF;
+
+        SELECT token_value INTO v_sch_tok
+        FROM cbt_exam_tokens
+        WHERE token_key = 'schedule:' || BTRIM(COALESCE(v_sch->>'id', ''))
+        LIMIT 1;
+        IF COALESCE(v_sch_tok, '') = '' THEN
+          v_sch_tok := UPPER(BTRIM(COALESCE(v_sch->>'token', '')));
+        END IF;
+        IF COALESCE(v_sch_tok, '') = '' THEN
+          v_sch_tok := v_cfg_token;
+        END IF;
+
+        IF v_sch_tok = v_input_token THEN
+          v_match_count := v_match_count + 1;
+          IF v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id THEN
+            v_matched := v_sch;
+          ELSIF v_matched IS NULL THEN
+            v_matched := v_sch;
+          ELSIF v_stu_class <> '' AND cbt_matches_class_level(COALESCE(v_sch->>'classLevel', 'Semua Kelas'), v_stu_class) THEN
+            v_matched := v_sch;
+          END IF;
+        END IF;
+      END IF;
+    END LOOP;
+  END IF;
+
+  IF v_has_active THEN
+    IF v_matched IS NULL THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'valid', false,
+        'message', 'Token ujian "' || v_input_token || '" tidak cocok dengan jadwal ujian (' || COALESCE(v_selected->>'subject', '-') || '). Periksa kembali atau tanyakan kepada Pengawas Ruang!'
+      );
+    END IF;
+
+    IF v_stu_class <> '' AND COALESCE(v_matched->>'classLevel', '') <> '' AND NOT cbt_matches_class_level(v_matched->>'classLevel', v_stu_class) THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'valid', false,
+        'message', '⛔ Ujian Ditolak: Jadwal "' || COALESCE(v_matched->>'subject', '-') || '" (' || COALESCE(v_matched->>'classLevel', '-') || ') bukan untuk Kelas ' || v_stu_class || '. Pilih mata pelajaran lain yang sesuai kelas Anda.'
+      );
+    END IF;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'valid', true,
+      'mode', 'schedule',
+      'schedule', (v_matched - 'token')
+    );
+  END IF;
+
+  -- Mode Manual (belum ada jadwal aktif)
+  IF v_input_token <> v_cfg_token THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'valid', false,
+      'message', 'Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.'
+    );
+  END IF;
+
+  IF v_stu_class <> '' AND COALESCE(v_cfg->>'targetClass', '') <> '' AND NOT cbt_matches_class_level(v_cfg->>'targetClass', v_stu_class) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'valid', false,
+      'message', '⛔ Ujian Ditolak: Ujian "' || COALESCE(v_cfg->>'subject', '-') || '" saat ini dikhususkan untuk ' || COALESCE(v_cfg->>'targetClass', '-') || '.'
+    );
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'valid', true, 'mode', 'manual');
+END;
+$$;
+
 GRANT EXECUTE ON FUNCTION cbt_verify_teacher_login(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_verify_student_login(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_lookup_student_hint(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_sync_question_vault(TEXT, TEXT, JSONB, TEXT, BOOLEAN) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_grade_and_submit_exam(JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION cbt_get_public_exam_config() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION cbt_sync_token_vault(TEXT, TEXT, TEXT, JSONB, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION cbt_verify_exam_token(TEXT, TEXT, TEXT) TO anon, authenticated;

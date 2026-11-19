@@ -278,11 +278,29 @@ class ExamEngine {
         localStorage.setItem('cbt_questions', JSON.stringify(this.questions));
       } catch (e) {}
     }
-    if (this.config && 'adminPin' in this.config) {
+    const isCloud = Boolean(typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.isCloudConfigured === 'function' && window.supabaseSync.isCloudConfigured());
+    if (this.config && ('adminPin' in this.config || (isCloud && 'examToken' in this.config))) {
       const { adminPin, ...cleanCfg } = this.config;
+      if (isCloud) cleanCfg.examToken = '';
       this.config = cleanCfg;
       try {
         localStorage.setItem('cbt_config', JSON.stringify(this.config));
+      } catch (e) {}
+    }
+    if (isCloud) {
+      try {
+        const rawSched = localStorage.getItem('cbt_exam_schedules');
+        if (rawSched) {
+          const parsedSched = JSON.parse(rawSched);
+          if (Array.isArray(parsedSched)) {
+            const sanitizedSched = parsedSched.map(s => {
+              if (!s || typeof s !== 'object') return s;
+              const { token, ...rest } = s;
+              return rest;
+            });
+            localStorage.setItem('cbt_exam_schedules', JSON.stringify(sanitizedSched));
+          }
+        }
       } catch (e) {}
     }
   }

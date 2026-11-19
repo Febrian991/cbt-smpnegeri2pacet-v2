@@ -132,7 +132,14 @@ document.addEventListener('DOMContentLoaded', () => {
       changed = true;
     }
     if (Array.isArray(stateMap.cbt_exam_schedules) && window.cbtAdmin) {
-      window.cbtAdmin.saveSchedules(stateMap.cbt_exam_schedules, true);
+      const schedPayload = isStaff
+        ? stateMap.cbt_exam_schedules
+        : stateMap.cbt_exam_schedules.map(s => {
+            if (!s || typeof s !== 'object') return s;
+            const { token, ...rest } = s;
+            return rest;
+          });
+      window.cbtAdmin.saveSchedules(schedPayload, true);
       changed = true;
     }
     if (!isPengawas && Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || stateMap.cbt_questions_migrated === true) && window.examEngine) {
@@ -144,7 +151,12 @@ document.addEventListener('DOMContentLoaded', () => {
       changed = true;
     }
     if (stateMap.cbt_config && typeof stateMap.cbt_config === 'object' && window.examEngine) {
-      window.examEngine.saveConfig(stateMap.cbt_config, true);
+      let cfgPayload = stateMap.cbt_config;
+      if (!isStaff) {
+        const { adminPin, examToken, ...restCfg } = stateMap.cbt_config;
+        cfgPayload = { ...restCfg, examToken: '' };
+      }
+      window.examEngine.saveConfig(cfgPayload, true);
       changed = true;
     }
     return changed;
@@ -308,7 +320,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!document.hidden && viewLogin && !viewLogin.classList.contains('hidden')) {
       syncFromCloud(true, { publicOnly: true });
     } else if (!document.hidden && viewAdmin && !viewAdmin.classList.contains('hidden')) {
-      syncQuestionsFromCloud(true);
+      const isPengawas = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
+      if (isPengawas) {
+        syncFromCloud(true, { publicOnly: true });
+      } else {
+        syncQuestionsFromCloud(true);
+      }
     }
   });
 
@@ -843,7 +860,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const scheduleTextEl = document.getElementById('loginScheduleText');
     const cfg = window.examEngine.config;
 
-    const targetToken = sched ? (sched.token || cfg.examToken) : cfg.examToken;
     const targetDay = sched ? sched.day : cfg.scheduleDay;
     const targetDate = sched ? (sched.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(sched.dateIso) : '')) : cfg.scheduleDate;
     const targetTime = sched ? (sched.timeRange || '') : cfg.scheduleTime;
@@ -1075,14 +1091,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-        const activeTokens = (window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : []).map(s => String(s.token || '').toUpperCase());
-        const cfgToken = String(window.examEngine.config.examToken || '').toUpperCase();
-        const needsRefresh = Boolean(token && token !== cfgToken && !activeTokens.includes(token));
+      const isCloudOnline = Boolean(window.supabaseSync && window.supabaseSync.isCloudConfigured());
+      if (isCloudOnline) {
         if (cloudSyncPromise) {
           await cloudSyncPromise;
-        } else if (needsRefresh) {
-          await syncFromCloud(true, { publicOnly: true });
         }
       }
 
@@ -1137,39 +1149,115 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedScheduleId = selectEl ? selectEl.value : '';
       let matchedSchedule = null;
 
-      if (activeSchedules.length > 0) {
-        const selectedSchObj = activeSchedules.find(s => s.id === selectedScheduleId) || activeSchedules[0];
-        if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
-          matchedSchedule = selectedSchObj;
+      if (isCloudOnline && typeof window.supabaseSync.verifyExamTokenRpc === 'function') {
+        const tokRes = await window.supabaseSync.verifyExamTokenRpc(
+          token,
+          selectedScheduleId || null,
+          authenticatedStudent.class || null
+        );
+        if (!tokRes || !tokRes.rpcUnavailable) {
+          if (!tokRes || !tokRes.valid) {
+            showLoginRejection((tokRes && tokRes.message) || 'Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang!');
+            return;
+          }
+          if (tokRes.mode === 'schedule' && tokRes.schedule) {
+            matchedSchedule = tokRes.schedule;
+          }
         } else {
-          const tokenMatches = activeSchedules.filter(s => String(s.token || '').trim().toUpperCase() === token);
-          if (tokenMatches.length === 1) {
-            matchedSchedule = tokenMatches[0];
-          } else if (tokenMatches.length > 1) {
-            matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
+          // Fallback sementara di memori jika RPC server v3.57 belum dijalankan di Supabase (tanpa menyimpan token ke localStorage siswa)
+          let cloudCfg = null;
+          let cloudScheds = null;
+          try {
+            const client = window.supabaseSync.client;
+            if (client && !window.supabaseSync.stateTableMissing) {
+              const { data } = await client
+                .from('cbt_school_state')
+                .select('key, value')
+                .in('key', ['cbt_config', 'cbt_exam_schedules']);
+              if (Array.isArray(data)) {
+                data.forEach(r => {
+                  if (r.key === 'cbt_config') cloudCfg = r.value;
+                  if (r.key === 'cbt_exam_schedules') cloudScheds = r.value;
+                });
+              }
+            }
+          } catch (e) {}
+
+          const serverActiveScheds = Array.isArray(cloudScheds)
+            ? cloudScheds.filter(s => s && s.active)
+            : activeSchedules;
+          const serverCfg = cloudCfg || window.examEngine.config;
+
+          if (serverActiveScheds.length > 0) {
+            const selectedSchObj = serverActiveScheds.find(s => s.id === selectedScheduleId) || serverActiveScheds[0];
+            if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
+              matchedSchedule = selectedSchObj;
+            } else {
+              const tokenMatches = serverActiveScheds.filter(s => String(s.token || '').trim().toUpperCase() === token);
+              if (tokenMatches.length === 1) {
+                matchedSchedule = tokenMatches[0];
+              } else if (tokenMatches.length > 1) {
+                matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
+              }
+            }
+            if (!matchedSchedule) {
+              showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
+              return;
+            }
+            if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
+              showLoginRejection(`⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`);
+              return;
+            }
+            const { token: _strippedTok, ...cleanMatched } = matchedSchedule;
+            matchedSchedule = cleanMatched;
+          } else {
+            const validToken = String(serverCfg?.examToken || 'CBT80M').trim().toUpperCase();
+            if (token !== validToken) {
+              showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
+              return;
+            }
+            if (serverCfg?.targetClass && !window.examEngine.matchesClassLevel(serverCfg.targetClass, authenticatedStudent.class)) {
+              showLoginRejection(`⛔ Ujian Ditolak: Ujian "${serverCfg.subject}" saat ini dikhususkan untuk ${serverCfg.targetClass}.`);
+              return;
+            }
           }
         }
-
-        if (!matchedSchedule) {
-          showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
-          return;
-        }
-
-        if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
-          const msg = `⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`;
-          showLoginRejection(msg);
-          return;
-        }
       } else {
-        const validToken = window.examEngine.config.examToken.toUpperCase();
-        if (token !== validToken) {
-          showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
-          return;
-        }
-        if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
-          const msg = `⛔ Ujian Ditolak: Ujian "${window.examEngine.config.subject}" saat ini dikhususkan untuk ${window.examEngine.config.targetClass}.`;
-          showLoginRejection(msg);
-          return;
+        // Mode Offline Lokal (tanpa Supabase Cloud)
+        if (activeSchedules.length > 0) {
+          const selectedSchObj = activeSchedules.find(s => s.id === selectedScheduleId) || activeSchedules[0];
+          if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
+            matchedSchedule = selectedSchObj;
+          } else {
+            const tokenMatches = activeSchedules.filter(s => String(s.token || '').trim().toUpperCase() === token);
+            if (tokenMatches.length === 1) {
+              matchedSchedule = tokenMatches[0];
+            } else if (tokenMatches.length > 1) {
+              matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
+            }
+          }
+
+          if (!matchedSchedule) {
+            showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
+            return;
+          }
+
+          if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
+            const msg = `⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`;
+            showLoginRejection(msg);
+            return;
+          }
+        } else {
+          const validToken = String(window.examEngine.config.examToken || 'CBT80M').toUpperCase();
+          if (token !== validToken) {
+            showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
+            return;
+          }
+          if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
+            const msg = `⛔ Ujian Ditolak: Ujian "${window.examEngine.config.subject}" saat ini dikhususkan untuk ${window.examEngine.config.targetClass}.`;
+            showLoginRejection(msg);
+            return;
+          }
         }
       }
 
@@ -1181,12 +1269,13 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleDate: matchedSchedule.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(matchedSchedule.dateIso) : ''),
         scheduleTime: matchedSchedule.timeRange || '',
         durationMinutes: matchedSchedule.durationMinutes || 80,
-        examToken: matchedSchedule.token || window.examEngine.config.examToken,
+        examToken: '',
         activeScheduleId: matchedSchedule.id,
         maxAttempts: matchedSchedule.maxAttempts || 1,
         questionCategory: matchedSchedule.questionCategory || 'ALL'
       } : {
-        ...window.examEngine.config
+        ...window.examEngine.config,
+        examToken: ''
       };
 
       if (window.supabaseSync && window.supabaseSync.isCloudConfigured() && typeof window.supabaseSync.checkActiveDeviceSessionConflict === 'function') {
@@ -2160,8 +2249,11 @@ document.addEventListener('DOMContentLoaded', () => {
           const scopeLabel = pCls.length > 0 ? `<strong>Kelas/Ruang: ${escapeHtmlSafe(pCls.join(', '))}</strong>` : '<strong>Semua Kelas</strong>';
           pengawasBannerDesc.innerHTML = `Ruang lingkup pantauan Anda: ${scopeLabel} (untuk <strong>semua mata pelajaran aktif</strong>). Anda dapat memantau status login, progres soal, pelanggaran tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban &amp; Rekap Nilai terkunci aman.`;
         }
+        renderPengawasActiveTokens(currentTeacher);
       } else {
         pengawasBanner.classList.add('hidden');
+        const tokList = document.getElementById('pengawasActiveTokensList');
+        if (tokList) tokList.innerHTML = '';
       }
     }
 
@@ -2666,9 +2758,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       if (activeSchedules.length === 0) {
+        const cfgMan = window.examEngine?.config || {};
+        const manTok = String(cfgMan.examToken || 'CBT80M').trim().toUpperCase();
         schedListEl.innerHTML = `
-          <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-300 text-xs text-slate-500 text-center">
-            Belum ada jadwal mapel berstatus <strong>Aktif</strong> saat ini.
+          <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
+            <div class="min-w-0">
+              <div class="font-bold text-slate-800 dark:text-slate-100 truncate">${escapeHtmlSafe(cfgMan.subject || 'Mode Manual')}</div>
+              <div class="text-[10px] text-slate-500 truncate">${escapeHtmlSafe(cfgMan.targetClass || 'Semua Kelas')} • Mode Manual (${cfgMan.durationMinutes || 80} mnt)</div>
+            </div>
+            <span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-mono font-black text-[11px] shrink-0" title="Token Ujian">
+              ${escapeHtmlSafe(manTok)}
+            </span>
           </div>
         `;
       } else {
@@ -3651,6 +3751,89 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function renderPengawasActiveTokens(teacherObj = null) {
+    const listEl = document.getElementById('pengawasActiveTokensList');
+    if (!listEl || !window.cbtAdmin) return;
+
+    const cur = teacherObj || window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const isPengawas = Boolean(cur && !isAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(cur));
+    if (!isPengawas) {
+      listEl.innerHTML = '';
+      return;
+    }
+
+    const pCls = cur.classes ? window.cbtAdmin.parseTeacherClasses(cur.classes) : [];
+    const activeSchedules = window.cbtAdmin.getActiveSchedules ? window.cbtAdmin.getActiveSchedules() : [];
+    const cfg = (window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
+
+    const matchesRoom = (schedTargetClass) => {
+      if (pCls.length === 0) return true;
+      const clsStr = String(schedTargetClass || '').trim();
+      if (!clsStr || clsStr.toLowerCase().includes('semua')) return true;
+      if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+        return window.examEngine.matchesClassLevel(clsStr, pCls.join(', '));
+      }
+      return true;
+    };
+
+    const roomMatchedSchedules = activeSchedules.filter(s => matchesRoom(s.targetClass));
+    const schedulesToShow = roomMatchedSchedules.length > 0 ? roomMatchedSchedules : activeSchedules;
+
+    const items = schedulesToShow.length > 0
+      ? schedulesToShow.map(s => ({
+          subject: s.subject || 'Ujian Sekolah',
+          targetClass: s.targetClass || 'Semua Kelas',
+          token: String(s.token || cfg.examToken || 'CBT80M').trim().toUpperCase(),
+          timeLabel: [s.day, s.time].filter(Boolean).join(' • ')
+        }))
+      : [{
+          subject: cfg.subject || 'Ujian Sekolah (Mode Manual)',
+          targetClass: cfg.targetClass || 'Semua Kelas',
+          token: String(cfg.examToken || 'CBT80M').trim().toUpperCase(),
+          timeLabel: 'Jadwal Manual'
+        }];
+
+    listEl.innerHTML = items.map((item, idx) => `
+      <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-700 shadow-xs min-w-[230px] flex-1 sm:flex-initial">
+        <div class="min-w-0">
+          <div class="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate">${escapeHtmlSafe(item.subject)}</div>
+          <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">${escapeHtmlSafe(item.targetClass)}${item.timeLabel ? ` • ${escapeHtmlSafe(item.timeLabel)}` : ''}</div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <span class="px-2.5 py-1 rounded-xl bg-teal-600 text-white font-mono font-black text-sm sm:text-base tracking-widest select-all shadow-xs">${escapeHtmlSafe(item.token)}</span>
+          <button type="button" data-copy-token="${escapeHtmlSafe(item.token)}" data-token-idx="${idx}" class="btn-copy-pengawas-token px-2 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/40 dark:hover:bg-teal-900/70 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700 text-[11px] font-bold transition cursor-pointer" title="Salin Token">
+            📋 Salin
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.btn-copy-pengawas-token').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tok = btn.getAttribute('data-copy-token') || '';
+        if (!tok) return;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(tok);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = tok;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          const prev = btn.innerText;
+          btn.innerText = '✓ Disalin';
+          setTimeout(() => { btn.innerText = prev; }, 1600);
+        } catch (e) {}
+      });
+    });
+  }
+
   async function renderMonitoringDashboard(pullCloud = false) {
     const tbody = document.getElementById('adminMonitoringTbody');
     const emptyEl = document.getElementById('adminMonitoringEmpty');
@@ -3665,12 +3848,19 @@ document.addEventListener('DOMContentLoaded', () => {
       : [];
 
     if (pullCloud && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-      const [sessRes] = await Promise.all([
+      const cloudTasks = [
         window.supabaseSync.fetchStudentSessions(),
         window.supabaseSync.fetchCloudResults()
-      ]);
+      ];
+      if (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function') {
+        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: true }));
+      }
+      const [sessRes, , stateRes] = await Promise.all(cloudTasks);
       if (sessRes && Array.isArray(sessRes.data)) {
         cachedMonitoringSessions = sessRes.data;
+      }
+      if (stateRes && stateRes.success && stateRes.state) {
+        applyCloudState(stateRes.state);
       }
     } else if (window.supabaseSync) {
       const localS = window.supabaseSync.getLocalStudentSessions();
@@ -3680,6 +3870,10 @@ document.addEventListener('DOMContentLoaded', () => {
         localS.forEach(s => mergedMap.set(window.supabaseSync.buildSessionKey(s.nisn, s.subject), s));
         cachedMonitoringSessions = Array.from(mergedMap.values());
       }
+    }
+
+    if (isPengawas) {
+      renderPengawasActiveTokens(currentTeacher);
     }
 
     const subjFilter = document.getElementById('filterMonitoringSubject')?.value || 'ALL';
@@ -7263,7 +7457,7 @@ document.addEventListener('DOMContentLoaded', () => {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold';
       badge.innerText = 'Belum Terhubung';
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
-      banner.innerHTML = 'Masukkan <strong>Supabase Project URL</strong> dan <strong>Anon Public API Key</strong> terlebih dahulu, lalu simpan konfigurasi untuk mengecek status 5 tabel khusus.';
+      banner.innerHTML = 'Masukkan <strong>Supabase Project URL</strong> dan <strong>Anon Public API Key</strong> terlebih dahulu, lalu simpan konfigurasi untuk mengecek status 6 tabel khusus.';
       grid.innerHTML = '';
       return null;
     }
@@ -7280,24 +7474,24 @@ document.addEventListener('DOMContentLoaded', () => {
       return health;
     }
 
-    const totalTables = Array.isArray(health.tables) ? health.tables.length : 5;
+    const totalTables = Array.isArray(health.tables) ? health.tables.length : 6;
     const readyCount = Array.isArray(health.tables) ? health.tables.filter(t => t.ready).length : 0;
 
     if (health.allOptimal) {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold';
       badge.innerText = `✅ ${readyCount}/${totalTables} Tabel + RPC Optimal`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800';
-      banner.innerHTML = '<strong>🚀 Database Sudah Optimal untuk 250 Siswa Serentak!</strong> Semua tabel khusus (<code>cbt_exam_results</code>, <code>cbt_school_state</code>, <code>cbt_questions</code>, <code>cbt_student_sessions</code>, <code>cbt_question_keys</code>) dan fungsi keamanan server sudah aktif & terindeks cepat.';
-    } else if (health.allDedicatedTablesReady && !health.rpcReady) {
+      banner.innerHTML = '<strong>🚀 Database Sudah Optimal untuk 250 Siswa Serentak!</strong> Semua 6 tabel khusus (termasuk brankas kunci &amp; brankas token server) serta validasi server-side sudah aktif &amp; terkunci aman.';
+    } else if (health.allDedicatedTablesReady && (!health.rpcReady || !health.tokenRpcReady)) {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
       badge.innerText = `⚡ ${readyCount}/${totalTables} Tabel Aktif (Perbarui RPC)`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
-      banner.innerHTML = '<strong>Semua 5 tabel sudah ada</strong>, namun fungsi keamanan & koreksi server (RPC + index performa terbaru) belum lengkap. Klik <strong>📋 Salin Script SQL Optimal</strong> lalu jalankan (<strong>Run</strong>) di <em>SQL Editor</em> Supabase untuk pembaruan lengkap.';
+      banner.innerHTML = `<strong>Semua ${totalTables} tabel sudah ada</strong>, namun fungsi keamanan &amp; validasi token server (RPC terbaru) belum lengkap. Klik <strong>📋 Salin Script SQL Optimal</strong> lalu jalankan (<strong>Run</strong>) di <em>SQL Editor</em> Supabase untuk pembaruan lengkap.`;
     } else {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
       badge.innerText = `⚠️ Mode Fallback (${health.missingTables.length} Tabel Belum Ada)`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
-      banner.innerHTML = `<strong>⚠️ Saat ini masih berjalan di Mode Fallback</strong> (tabel berikut belum dibuat: <code>${escapeHtmlSafe(health.missingTables.join(', '))}</code>).<br>Agar ujian serentak <strong>250 siswa</strong> sangat ringan & cepat: klik <strong>📋 Salin Script SQL Optimal</strong> → Paste & klik <strong>Run</strong> di menu <em>SQL Editor</em> Supabase → lalu klik <strong>🚀 Pindahkan &amp; Sinkronkan Data ke Tabel Khusus</strong>.`;
+      banner.innerHTML = `<strong>⚠️ Masih perlu pembaruan tabel khusus</strong> (tabel berikut belum dibuat: <code>${escapeHtmlSafe(health.missingTables.join(', '))}</code>).<br>Agar brankas token server &amp; ujian serentak <strong>250 siswa</strong> aman optimal: klik <strong>📋 Salin Script SQL Optimal</strong> → Paste &amp; klik <strong>Run</strong> di menu <em>SQL Editor</em> Supabase → lalu klik <strong>🚀 Pindahkan &amp; Sinkronkan Data ke Tabel Khusus</strong>.`;
     }
 
     const cards = (health.tables || []).map(tbl => {

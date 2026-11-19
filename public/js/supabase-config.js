@@ -16,6 +16,7 @@ class SupabaseSyncManager {
     this.sessionTableMissing = false;
     this.questionTableMissing = false;
     this.securityRpcMissing = false;
+    this.tokenRpcMissing = false;
     this.PUBLIC_STATE_KEYS = ['cbt_config', 'cbt_school_config', 'cbt_exam_schedules', 'cbt_questions_migrated_v1'];
     this.pendingQuestionsStorageKey = 'cbt_pending_question_sync';
     this.questionsMigrationStorageKey = 'cbt_questions_migrated_v1';
@@ -190,6 +191,75 @@ class SupabaseSyncManager {
     });
   }
 
+  async callTokenRpc(fnName, params = {}) {
+    if (!this.client || !this.isConnected || this.tokenRpcMissing || typeof this.client.rpc !== 'function') {
+      return { rpcUnavailable: true };
+    }
+    try {
+      const { data, error } = await this.client.rpc(fnName, params);
+      if (error) {
+        if (this.isMissingRpcError(error)) {
+          this.tokenRpcMissing = true;
+          return { rpcUnavailable: true };
+        }
+        return { rpcUnavailable: false, success: false, valid: false, message: error.message };
+      }
+      if (data && typeof data === 'object') {
+        return data;
+      }
+      return { success: false, valid: false, message: 'Respons server tidak valid.' };
+    } catch (err) {
+      return { rpcUnavailable: true, message: err.message };
+    }
+  }
+
+  stripSensitiveStateFields(key, val) {
+    if (key === 'cbt_config' && val && typeof val === 'object') {
+      const { adminPin, examToken, ...restCfg } = val;
+      return restCfg;
+    }
+    if (key === 'cbt_exam_schedules' && Array.isArray(val)) {
+      return val.map(item => {
+        if (!item || typeof item !== 'object') return item;
+        const { token, ...restItem } = item;
+        return restItem;
+      });
+    }
+    return val;
+  }
+
+  async getPublicExamConfigRpc() {
+    return this.callTokenRpc('cbt_get_public_exam_config', {});
+  }
+
+  async verifyExamTokenRpc(token, scheduleId = null, studentClass = null) {
+    return this.callTokenRpc('cbt_verify_exam_token', {
+      p_token: String(token || '').trim().toUpperCase(),
+      p_schedule_id: scheduleId ? String(scheduleId).trim() : null,
+      p_student_class: studentClass ? String(studentClass).trim() : null
+    });
+  }
+
+  async fetchTokenVaultRpc(identifier, pin) {
+    return this.callTokenRpc('cbt_sync_token_vault', {
+      p_identifier: String(identifier || '').trim(),
+      p_pin: String(pin || '').trim(),
+      p_config_token: null,
+      p_schedule_tokens: null,
+      p_mode: 'read'
+    });
+  }
+
+  async saveTokenVaultRpc(identifier, pin, configToken = null, scheduleTokens = null) {
+    return this.callTokenRpc('cbt_sync_token_vault', {
+      p_identifier: String(identifier || '').trim(),
+      p_pin: String(pin || '').trim(),
+      p_config_token: configToken ? String(configToken).trim().toUpperCase() : null,
+      p_schedule_tokens: Array.isArray(scheduleTokens) ? scheduleTokens : null,
+      p_mode: 'write'
+    });
+  }
+
   initClient() {
     if (this.config.supabaseUrl && this.config.supabaseKey && typeof window.supabase !== 'undefined') {
       try {
@@ -237,14 +307,15 @@ class SupabaseSyncManager {
         { name: 'cbt_school_state', label: 'Pengaturan & Jadwal', purpose: 'Sinkronisasi pengaturan, jadwal, siswa & guru', countReadable: true },
         { name: 'cbt_questions', label: 'Bank Soal Per-Baris', purpose: 'Akses cepat soal tanpa kunci jawaban di browser siswa', countReadable: true },
         { name: 'cbt_student_sessions', label: 'Sesi Live Siswa', purpose: 'Pantau 250 siswa login, mengerjakan & selesai real-time', countReadable: true },
-        { name: 'cbt_question_keys', label: 'Brankas Kunci Server', purpose: 'Menjaga kunci jawaban tersembunyi & koreksi di Postgres', countReadable: false }
+        { name: 'cbt_question_keys', label: 'Brankas Kunci Server', purpose: 'Menjaga kunci jawaban tersembunyi & koreksi di Postgres', countReadable: false, keyCol: 'question_key' },
+        { name: 'cbt_exam_tokens', label: 'Brankas Token Server', purpose: 'Menjaga token ujian tersembunyi & validasi di Postgres', countReadable: false, keyCol: 'token_key' }
       ];
 
       const results = [];
       for (const sp of specs) {
         const resp = sp.countReadable
           ? await client.from(sp.name).select('*', { count: 'exact', head: true })
-          : await client.from(sp.name).select('question_key').limit(1);
+          : await client.from(sp.name).select(sp.keyCol || 'question_key').limit(1);
         const { count, error, status } = resp;
         let ready = false;
         let note = '';
@@ -261,8 +332,8 @@ class SupabaseSyncManager {
         if (!error) {
           ready = true;
           note = typeof count === 'number' ? `${count} baris` : 'Aktif';
-        } else if (sp.name === 'cbt_question_keys' && isPermDenied) {
-          // Tabel cbt_question_keys sengaja memblokir SELECT dari anon agar kunci jawaban aman 100%
+        } else if ((sp.name === 'cbt_question_keys' || sp.name === 'cbt_exam_tokens') && isPermDenied) {
+          // Tabel cbt_question_keys & cbt_exam_tokens sengaja memblokir SELECT dari anon agar kunci/token aman 100%
           ready = true;
           note = 'Aktif & Terkunci Aman';
         } else if (this.isTableMissingErr(error, sp.name)) {
@@ -278,18 +349,29 @@ class SupabaseSyncManager {
         results.push({ ...sp, ready, count: typeof count === 'number' ? count : null, note });
       }
 
-      // Cek apakah RPC server-side (keamanan & koreksi Postgres) sudah terpasang
+      // Cek apakah RPC server-side (keamanan, validasi token & koreksi Postgres) sudah terpasang
       let rpcReady = false;
+      let tokenRpcReady = false;
       try {
-        const rpcTest = await client.rpc('cbt_lookup_student_hint', { p_nisn: '__HEALTH_CHECK__' });
+        const [rpcTest, tokRpcTest] = await Promise.all([
+          client.rpc('cbt_lookup_student_hint', { p_nisn: '__HEALTH_CHECK__' }),
+          client.rpc('cbt_verify_exam_token', { p_token: '', p_schedule_id: null, p_student_class: null })
+        ]);
         if (!rpcTest.error) {
           rpcReady = true;
         } else {
           const rMsg = String(rpcTest.error.message || '').toLowerCase();
           rpcReady = !(rpcTest.error.code === 'PGRST202' || rMsg.includes('could not find the function'));
         }
+        if (!tokRpcTest.error) {
+          tokenRpcReady = true;
+        } else {
+          const tMsg = String(tokRpcTest.error.message || '').toLowerCase();
+          tokenRpcReady = !(tokRpcTest.error.code === 'PGRST202' || tMsg.includes('could not find the function'));
+        }
       } catch (e) {
         rpcReady = false;
+        tokenRpcReady = false;
       }
 
       const missingTables = results.filter(r => !r.ready).map(r => r.name);
@@ -298,14 +380,16 @@ class SupabaseSyncManager {
         this.questionTableMissing = missingTables.includes('cbt_questions');
         this.sessionTableMissing = missingTables.includes('cbt_student_sessions');
         this.securityRpcMissing = !rpcReady;
+        this.tokenRpcMissing = !tokenRpcReady;
       }
 
       return {
         success: true,
-        allOptimal: missingTables.length === 0 && rpcReady,
+        allOptimal: missingTables.length === 0 && rpcReady && tokenRpcReady,
         allDedicatedTablesReady: missingTables.length === 0,
         missingTables,
         rpcReady,
+        tokenRpcReady,
         tables: results
       };
     } catch (err) {
@@ -378,19 +462,19 @@ class SupabaseSyncManager {
         };
       }
 
-      if (health.success && !health.rpcReady) {
+      if (health.success && (!health.rpcReady || !health.tokenRpcReady)) {
         return {
           success: true,
           warning: true,
           health,
-          message: "Semua 5 tabel utama sudah aktif! Namun fungsi keamanan server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru."
+          message: "Semua 6 tabel utama sudah aktif! Namun fungsi keamanan & validasi token server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru."
         };
       }
 
       return {
         success: true,
         health,
-        message: "Koneksi ke Supabase Cloud Berhasil! Semua 5 tabel khusus (cbt_exam_results, cbt_school_state, cbt_questions, cbt_student_sessions, cbt_question_keys) & fungsi keamanan server sudah AKTIF dan OPTIMAL untuk 250 siswa serentak."
+        message: "Koneksi ke Supabase Cloud Berhasil! Semua 6 tabel khusus (cbt_exam_results, cbt_school_state, cbt_questions, cbt_student_sessions, cbt_question_keys, cbt_exam_tokens) & fungsi keamanan server sudah AKTIF dan OPTIMAL untuk 250 siswa serentak."
       };
     } catch (err) {
       return { success: false, message: "Error: " + err.message };
@@ -411,9 +495,27 @@ class SupabaseSyncManager {
   async pushStateKey(key, value) {
     if (!this.client || !this.isConnected || !key) return { success: false };
     let payloadValue = value;
-    if (key === 'cbt_config' && payloadValue && typeof payloadValue === 'object' && 'adminPin' in payloadValue) {
+    if (key === 'cbt_config' && payloadValue && typeof payloadValue === 'object') {
       const { adminPin, ...restCfg } = payloadValue;
       payloadValue = restCfg;
+      const creds = this.getPrivilegedCredentials();
+      if (creds && restCfg.examToken && !this.tokenRpcMissing) {
+        const tokRes = await this.saveTokenVaultRpc(creds.identifier, creds.pin, restCfg.examToken, null);
+        if (tokRes && tokRes.success && !tokRes.rpcUnavailable) {
+          payloadValue = this.stripSensitiveStateFields('cbt_config', restCfg);
+        }
+      }
+    } else if (key === 'cbt_exam_schedules' && Array.isArray(payloadValue)) {
+      const creds = this.getPrivilegedCredentials();
+      if (creds && !this.tokenRpcMissing) {
+        const schedTokens = payloadValue
+          .filter(s => s && s.id && s.token)
+          .map(s => ({ id: String(s.id), token: String(s.token).trim().toUpperCase() }));
+        const tokRes = await this.saveTokenVaultRpc(creds.identifier, creds.pin, null, schedTokens);
+        if (tokRes && tokRes.success && !tokRes.rpcUnavailable) {
+          payloadValue = this.stripSensitiveStateFields('cbt_exam_schedules', payloadValue);
+        }
+      }
     }
 
     try {
@@ -1422,7 +1524,18 @@ class SupabaseSyncManager {
     try {
       await this.flushPendingQuestionOps();
 
-      if (!this.stateTableMissing) {
+      if (publicOnly && !this.tokenRpcMissing) {
+        const pubRes = await this.getPublicExamConfigRpc();
+        if (pubRes && pubRes.success && pubRes.state && typeof pubRes.state === 'object') {
+          Object.entries(pubRes.state).forEach(([k, v]) => {
+            if (v !== undefined && v !== null) {
+              stateMap[k] = this.stripSensitiveStateFields(k, v);
+            }
+          });
+        }
+      }
+
+      if (Object.keys(stateMap).length === 0 && !this.stateTableMissing) {
         let query = this.client.from('cbt_school_state').select('key, value');
         if (publicOnly) {
           query = query.in('key', this.PUBLIC_STATE_KEYS);
@@ -1432,7 +1545,7 @@ class SupabaseSyncManager {
         if (!error && Array.isArray(data)) {
           data.forEach(row => {
             if (row && row.key && row.value !== undefined && row.value !== null) {
-              stateMap[row.key] = row.value;
+              stateMap[row.key] = publicOnly ? this.stripSensitiveStateFields(row.key, row.value) : row.value;
             }
           });
         } else if (this.isMissingTableError(error)) {
@@ -1455,10 +1568,36 @@ class SupabaseSyncManager {
         if (!fbError && Array.isArray(fbData)) {
           fbData.forEach(row => {
             if (row && row.student_name && row.raw_data !== undefined && stateMap[row.student_name] === undefined) {
-              stateMap[row.student_name] = row.raw_data;
+              stateMap[row.student_name] = publicOnly
+                ? this.stripSensitiveStateFields(row.student_name, row.raw_data)
+                : row.raw_data;
             }
           });
         }
+      }
+
+      // Jika Admin/Guru/Pengawas terautentikasi (publicOnly = false), isi token dari Brankas Server
+      if (!publicOnly) {
+        const creds = this.getPrivilegedCredentials();
+        if (creds && !this.tokenRpcMissing) {
+          const vaultTok = await this.fetchTokenVaultRpc(creds.identifier, creds.pin);
+          if (vaultTok && vaultTok.success && !vaultTok.rpcUnavailable) {
+            if (vaultTok.configToken && stateMap.cbt_config && typeof stateMap.cbt_config === 'object') {
+              stateMap.cbt_config = { ...stateMap.cbt_config, examToken: vaultTok.configToken };
+            }
+            if (vaultTok.scheduleTokens && typeof vaultTok.scheduleTokens === 'object' && Array.isArray(stateMap.cbt_exam_schedules)) {
+              stateMap.cbt_exam_schedules = stateMap.cbt_exam_schedules.map(sch => {
+                if (!sch || typeof sch !== 'object') return sch;
+                const serverTok = vaultTok.scheduleTokens[String(sch.id || '')];
+                return serverTok ? { ...sch, token: serverTok } : sch;
+              });
+            }
+          }
+        }
+      } else {
+        // Sabuk pengaman ekstra: pastikan mode publik/siswa tidak pernah membawa token ke browser
+        if (stateMap.cbt_config) stateMap.cbt_config = this.stripSensitiveStateFields('cbt_config', stateMap.cbt_config);
+        if (stateMap.cbt_exam_schedules) stateMap.cbt_exam_schedules = this.stripSensitiveStateFields('cbt_exam_schedules', stateMap.cbt_exam_schedules);
       }
 
       // Ambil soal per-baris dari cbt_questions / brankas soal guru
