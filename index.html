@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.47">
+  <link rel="stylesheet" href="css/styles.css?v=3.48">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -1282,8 +1282,8 @@
               <button id="btnOpenPrintQuestions" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer flex items-center gap-1">
                 <span>📄 Download Naskah Soal</span>
               </button>
-              <button id="btnSeedTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer" title="Tambahkan otomatis 3 soal uji coba aplikasi ke setiap bank soal guru yang masih kosong (tanpa menghapus soal yang sudah ada)">
-                🧪 Isi Soal Uji Coba Guru
+              <button id="btnSeedTrialQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition cursor-pointer" title="Tambahkan 3 soal uji coba aplikasi ke bank soal yang masih kosong (atau ke mapel aktif)">
+                🧪 Soal Uji Coba
               </button>
               <button id="btnResetDefaultQuestions" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition cursor-pointer">
                 ↺ Reset Soal
@@ -2643,13 +2643,13 @@
   <div id="cbtRealtimeToastStack" class="fixed bottom-4 right-4 z-[75] flex flex-col-reverse gap-2.5 max-w-sm w-[calc(100vw-2rem)] pointer-events-none no-print"></div>
 
   <!-- ======================== SCRIPTS ======================== -->
-  <script src="js/default-questions.js?v=3.47"></script>
+  <script src="js/default-questions.js?v=3.48"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.39"></script>
   <script src="js/supabase-config.js?v=3.39"></script>
   <script src="js/exam-engine.js?v=3.39"></script>
-  <script src="js/admin.js?v=3.47"></script>
-  <script src="js/app.js?v=3.47"></script>
+  <script src="js/admin.js?v=3.48"></script>
+  <script src="js/app.js?v=3.48"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

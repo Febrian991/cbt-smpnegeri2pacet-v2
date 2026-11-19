@@ -2119,8 +2119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnSeedTrialQs = document.getElementById('btnSeedTrialQuestions');
     if (btnSeedTrialQs) {
-      if (isAdmin) btnSeedTrialQs.classList.remove('hidden');
-      else btnSeedTrialQs.classList.add('hidden');
+      btnSeedTrialQs.classList.remove('hidden');
     }
 
     const btnImportQs = document.getElementById('btnImportQuestions');
@@ -5614,15 +5613,38 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnSeedTrialQuestions) {
     btnSeedTrialQuestions.addEventListener('click', () => {
       if (!window.cbtAdmin || typeof window.cbtAdmin.seedTrialQuestionsForTeachers !== 'function') return;
-      const res = window.cbtAdmin.seedTrialQuestionsForTeachers({ onlyMissingSubjects: true });
+      const cur = window.cbtAdmin.getCurrentTeacher();
+      const isAdminUser = Boolean(cur && (cur.role === 'admin' || cur.id === 'admin'));
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const targetSubjArg = subjFilter && subjFilter !== 'ALL' && subjFilter !== 'UMUM' ? subjFilter : null;
+
+      let res = window.cbtAdmin.seedTrialQuestionsForTeachers({
+        onlyForCurrentTeacher: !isAdminUser,
+        onlyMissingSubjects: true,
+        targetSubject: targetSubjArg
+      });
+
+      if (res && res.addedCount === 0) {
+        const scopeLabel = targetSubjArg
+          ? `mata pelajaran "${targetSubjArg}"`
+          : (isAdminUser ? 'seluruh mata pelajaran guru' : 'mata pelajaran yang Anda ampu');
+        if (confirm(`Semua bank soal untuk ${scopeLabel} sudah memiliki soal.\n\nApakah Anda tetap ingin menambahkan 3 soal uji coba aplikasi per mapel ke dalamnya?`)) {
+          res = window.cbtAdmin.seedTrialQuestionsForTeachers({
+            onlyForCurrentTeacher: !isAdminUser,
+            onlyMissingSubjects: false,
+            targetSubject: targetSubjArg
+          });
+        } else {
+          return;
+        }
+      }
+
       setupQuestionBankFilters();
       renderAdminQuestionList();
       renderAdminTeacherQuestionProgress();
       renderAdminSchedulesList();
       if (res && res.addedCount > 0) {
-        alert(`Berhasil mengisi ${res.addedCount} soal uji coba aplikasi ke ${res.affectedSubjects.length} bank soal guru yang masih kosong:\n• ${res.affectedSubjects.join('\n• ')}`);
-      } else {
-        alert("Semua bank soal guru sudah terisi minimal 1 soal! Jika ingin mengatur ulang seluruh bank soal ke set uji coba standar, gunakan tombol '↺ Reset Soal'.");
+        alert(`Berhasil menambahkan ${res.addedCount} soal uji coba aplikasi (${res.affectedSubjects.length} mapel):\n• ${res.affectedSubjects.join('\n• ')}`);
       }
     });
   }
