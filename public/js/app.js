@@ -4252,35 +4252,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (modalSubjEl && !isQuestionModalOpen) {
       const prevModalVal = modalSubjEl.value;
-      modalSubjEl.innerHTML = '';
-
-      if (isAdmin) {
-        const optUmum = document.createElement('option');
-        optUmum.value = 'Umum';
-        optUmum.innerText = 'Umum (Semua Mapel)';
-        modalSubjEl.appendChild(optUmum);
-
-        allSubjects.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s;
-          opt.innerText = s;
-          modalSubjEl.appendChild(opt);
-        });
-      } else {
-        const ownedList = teacherSubjects.length > 0 ? teacherSubjects : ['Umum'];
-
-        ownedList.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s;
-          opt.innerText = s;
-          modalSubjEl.appendChild(opt);
-        });
-      }
-
-      const modalValues = Array.from(modalSubjEl.options).map(o => o.value);
-      if (prevModalVal && modalValues.includes(prevModalVal)) {
-        modalSubjEl.value = prevModalVal;
-      }
+      syncQuestionSubjectInputDefault(prevModalVal);
     }
 
     if (modalClassEl && !isQuestionModalOpen) {
@@ -5430,10 +5402,324 @@ document.addEventListener('DOMContentLoaded', () => {
     qInputCategory.addEventListener('change', syncQuestionCategoryHelper);
   }
 
+  let qSubjectActiveIndex = -1;
+  let qSubjectFilteredItems = [];
+  let qSubjectEditingExtraValue = '';
+
+  function getQuestionSubjectOptionsList() {
+    if (!window.cbtAdmin) return [{ value: 'Umum', label: 'Umum (Semua Mapel)', badge: 'Default' }];
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin');
+    const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(currentTeacher);
+    const allSubjects = window.cbtAdmin.getAllSubjects();
+
+    const items = [];
+    const seen = new Set();
+    const pushItem = (value, label, badge, isOwned = false) => {
+      const cleanVal = String(value || '').trim();
+      if (!cleanVal) return;
+      const key = cleanVal.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({ value: cleanVal, label: label || cleanVal, badge: badge || 'Terdaftar', isOwned });
+    };
+
+    if (isAdmin) {
+      pushItem('Umum', 'Umum (Semua Mapel)', 'Default', false);
+      allSubjects.forEach(s => pushItem(s, s, 'Terdaftar', false));
+    } else if (teacherSubjects.length > 0) {
+      teacherSubjects.forEach(s => pushItem(s, s, 'Mapel Diampu', true));
+    } else {
+      pushItem('Umum', 'Umum (Semua Mapel)', 'Default', false);
+      allSubjects.forEach(s => pushItem(s, s, 'Terdaftar', false));
+    }
+
+    if (qSubjectEditingExtraValue) {
+      pushItem(qSubjectEditingExtraValue, qSubjectEditingExtraValue, 'Mapel Soal', false);
+    }
+
+    return items;
+  }
+
+  function resolveRegisteredQuestionSubject(rawInput) {
+    const clean = String(rawInput || '').trim().toLowerCase();
+    if (!clean) return null;
+    const list = getQuestionSubjectOptionsList();
+    return list.find(it =>
+      it.value.toLowerCase() === clean ||
+      it.label.toLowerCase() === clean
+    ) || null;
+  }
+
+  function updateQuestionSubjectControlsUi() {
+    const inputEl = document.getElementById('qInputSubject');
+    const clearBtn = document.getElementById('btnClearQSubject');
+    const hintEl = document.getElementById('qSubjectMatchHint');
+    if (!inputEl) return;
+
+    const val = String(inputEl.value || '').trim();
+    if (clearBtn) {
+      if (val.length > 0) clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    if (hintEl) {
+      if (!val) {
+        hintEl.innerText = 'Ketik untuk mencari atau pilih mapel terdaftar di sistem.';
+        hintEl.className = 'text-[10px] text-slate-500 mt-1 leading-snug';
+      } else {
+        const matched = resolveRegisteredQuestionSubject(val);
+        if (matched) {
+          hintEl.innerText = `✓ Mapel terdaftar: ${matched.value}`;
+          hintEl.className = 'text-[10px] text-emerald-700 font-semibold mt-1 leading-snug';
+        } else {
+          hintEl.innerText = '⚠️ Pilih mata pelajaran dari daftar saran agar sesuai data sistem.';
+          hintEl.className = 'text-[10px] text-amber-700 font-semibold mt-1 leading-snug';
+        }
+      }
+    }
+  }
+
+  function syncQuestionSubjectInputDefault(preferredVal = '') {
+    const inputEl = document.getElementById('qInputSubject');
+    if (!inputEl) return;
+    const list = getQuestionSubjectOptionsList();
+    const matched = resolveRegisteredQuestionSubject(preferredVal);
+    if (matched) {
+      inputEl.value = matched.value;
+    } else if (list.length > 0) {
+      inputEl.value = list[0].value;
+    } else {
+      inputEl.value = '';
+    }
+    updateQuestionSubjectControlsUi();
+  }
+
+  function highlightAutocompleteMatch(text, query) {
+    const safeText = escapeHtmlSafe(text);
+    const cleanQ = String(query || '').trim();
+    if (!cleanQ) return safeText;
+    const lowerText = String(text);
+    const idx = lowerText.toLowerCase().indexOf(cleanQ.toLowerCase());
+    if (idx === -1) return safeText;
+    const before = escapeHtmlSafe(lowerText.slice(0, idx));
+    const match = escapeHtmlSafe(lowerText.slice(idx, idx + cleanQ.length));
+    const after = escapeHtmlSafe(lowerText.slice(idx + cleanQ.length));
+    return `${before}<mark class="bg-blue-100 text-blue-900 rounded px-0.5 font-extrabold">${match}</mark>${after}`;
+  }
+
+  function closeQuestionSubjectDropdown() {
+    const dropdownEl = document.getElementById('qInputSubjectDropdown');
+    const inputEl = document.getElementById('qInputSubject');
+    if (dropdownEl) dropdownEl.classList.add('hidden');
+    if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
+    qSubjectActiveIndex = -1;
+  }
+
+  function selectQuestionSubjectOption(value) {
+    const inputEl = document.getElementById('qInputSubject');
+    if (inputEl) {
+      inputEl.value = value;
+    }
+    updateQuestionSubjectControlsUi();
+    closeQuestionSubjectDropdown();
+  }
+
+  function renderQuestionSubjectDropdown({ showAll = false } = {}) {
+    const inputEl = document.getElementById('qInputSubject');
+    const dropdownEl = document.getElementById('qInputSubjectDropdown');
+    if (!inputEl || !dropdownEl) return;
+
+    const allItems = getQuestionSubjectOptionsList();
+    const rawQuery = showAll ? '' : String(inputEl.value || '').trim();
+    const queryLower = rawQuery.toLowerCase();
+
+    let filtered = allItems;
+    if (queryLower) {
+      const prefixMatches = [];
+      const substrMatches = [];
+      allItems.forEach(item => {
+        const vLow = item.value.toLowerCase();
+        const lLow = item.label.toLowerCase();
+        if (vLow.startsWith(queryLower) || lLow.startsWith(queryLower)) {
+          prefixMatches.push(item);
+        } else if (vLow.includes(queryLower) || lLow.includes(queryLower)) {
+          substrMatches.push(item);
+        }
+      });
+      filtered = [...prefixMatches, ...substrMatches];
+    }
+
+    qSubjectFilteredItems = filtered;
+    const currentNorm = String(inputEl.value || '').trim().toLowerCase();
+
+    if (filtered.length === 0) {
+      qSubjectActiveIndex = -1;
+      dropdownEl.innerHTML = `
+        <div class="px-3 py-2.5 text-[11px] text-amber-700 bg-amber-50/70 font-medium leading-snug">
+          Tidak ada mapel terdaftar yang cocok dengan "<strong>${escapeHtmlSafe(rawQuery)}</strong>".
+          Klik tombol <strong>✕</strong> untuk melihat semua mapel terdaftar.
+        </div>
+      `;
+    } else {
+      if (qSubjectActiveIndex >= filtered.length) qSubjectActiveIndex = filtered.length - 1;
+      dropdownEl.innerHTML = filtered.map((item, idx) => {
+        const isSelected = item.value.toLowerCase() === currentNorm;
+        const isActive = idx === qSubjectActiveIndex;
+        const badgeCls = item.isOwned
+          ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+          : (item.badge === 'Default'
+              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+              : 'bg-blue-50 text-blue-700 border border-blue-200');
+        const rowStateCls = isActive
+          ? 'bg-blue-50 dark:bg-slate-800'
+          : (isSelected ? 'bg-blue-50/60 dark:bg-slate-800/60' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60');
+
+        return `
+          <button
+            type="button"
+            role="option"
+            aria-selected="${isSelected ? 'true' : 'false'}"
+            data-qsubj-idx="${idx}"
+            data-qsubj-val="${escapeHtmlSafe(item.value)}"
+            class="qsubj-option-btn w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition cursor-pointer ${rowStateCls}"
+          >
+            <span class="font-bold text-slate-800 dark:text-slate-100 truncate">${highlightAutocompleteMatch(item.label, rawQuery)}</span>
+            <span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${badgeCls}">
+              ${isSelected ? '✓ ' : ''}${escapeHtmlSafe(item.badge)}
+            </span>
+          </button>
+        `;
+      }).join('');
+
+      dropdownEl.querySelectorAll('.qsubj-option-btn').forEach(btn => {
+        btn.addEventListener('mousedown', (ev) => {
+          ev.preventDefault();
+          const val = btn.getAttribute('data-qsubj-val') || '';
+          selectQuestionSubjectOption(val);
+        });
+      });
+    }
+
+    dropdownEl.classList.remove('hidden');
+    inputEl.setAttribute('aria-expanded', 'true');
+  }
+
+  function setupQuestionSubjectAutocomplete() {
+    const wrapEl = document.getElementById('qSubjectAutocompleteWrap');
+    const inputEl = document.getElementById('qInputSubject');
+    const dropdownEl = document.getElementById('qInputSubjectDropdown');
+    const toggleBtn = document.getElementById('btnToggleQSubjectDropdown');
+    const clearBtn = document.getElementById('btnClearQSubject');
+    if (!wrapEl || !inputEl || !dropdownEl || inputEl.dataset.autocompleteBound === '1') return;
+    inputEl.dataset.autocompleteBound = '1';
+
+    inputEl.addEventListener('focus', () => {
+      qSubjectActiveIndex = -1;
+      const matched = resolveRegisteredQuestionSubject(inputEl.value);
+      renderQuestionSubjectDropdown({ showAll: Boolean(matched || !inputEl.value.trim()) });
+    });
+
+    inputEl.addEventListener('click', () => {
+      if (dropdownEl.classList.contains('hidden')) {
+        const matched = resolveRegisteredQuestionSubject(inputEl.value);
+        renderQuestionSubjectDropdown({ showAll: Boolean(matched || !inputEl.value.trim()) });
+      }
+    });
+
+    inputEl.addEventListener('input', () => {
+      qSubjectActiveIndex = 0;
+      updateQuestionSubjectControlsUi();
+      renderQuestionSubjectDropdown({ showAll: false });
+    });
+
+    inputEl.addEventListener('keydown', (e) => {
+      const isOpen = !dropdownEl.classList.contains('hidden');
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!isOpen) {
+          qSubjectActiveIndex = 0;
+          renderQuestionSubjectDropdown({ showAll: true });
+          return;
+        }
+        if (qSubjectFilteredItems.length > 0) {
+          qSubjectActiveIndex = (qSubjectActiveIndex + 1) % qSubjectFilteredItems.length;
+          renderQuestionSubjectDropdown({ showAll: !String(inputEl.value || '').trim() });
+          const activeBtn = dropdownEl.querySelector(`[data-qsubj-idx="${qSubjectActiveIndex}"]`);
+          if (activeBtn && typeof activeBtn.scrollIntoView === 'function') activeBtn.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!isOpen) {
+          renderQuestionSubjectDropdown({ showAll: true });
+          return;
+        }
+        if (qSubjectFilteredItems.length > 0) {
+          qSubjectActiveIndex = qSubjectActiveIndex <= 0 ? qSubjectFilteredItems.length - 1 : qSubjectActiveIndex - 1;
+          renderQuestionSubjectDropdown({ showAll: !String(inputEl.value || '').trim() });
+          const activeBtn = dropdownEl.querySelector(`[data-qsubj-idx="${qSubjectActiveIndex}"]`);
+          if (activeBtn && typeof activeBtn.scrollIntoView === 'function') activeBtn.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter' && isOpen) {
+        if (qSubjectFilteredItems.length > 0) {
+          e.preventDefault();
+          const pickIdx = qSubjectActiveIndex >= 0 && qSubjectActiveIndex < qSubjectFilteredItems.length ? qSubjectActiveIndex : 0;
+          selectQuestionSubjectOption(qSubjectFilteredItems[pickIdx].value);
+        }
+      } else if (e.key === 'Escape' && isOpen) {
+        e.preventDefault();
+        closeQuestionSubjectDropdown();
+      }
+    });
+
+    inputEl.addEventListener('blur', () => {
+      setTimeout(() => {
+        const matched = resolveRegisteredQuestionSubject(inputEl.value);
+        if (matched) inputEl.value = matched.value;
+        updateQuestionSubjectControlsUi();
+        closeQuestionSubjectDropdown();
+      }, 150);
+    });
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      toggleBtn.addEventListener('click', () => {
+        const isOpen = !dropdownEl.classList.contains('hidden');
+        if (isOpen) {
+          closeQuestionSubjectDropdown();
+        } else {
+          inputEl.focus();
+          renderQuestionSubjectDropdown({ showAll: true });
+        }
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      clearBtn.addEventListener('click', () => {
+        inputEl.value = '';
+        qSubjectActiveIndex = 0;
+        updateQuestionSubjectControlsUi();
+        inputEl.focus();
+        renderQuestionSubjectDropdown({ showAll: true });
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!wrapEl.contains(e.target)) {
+        closeQuestionSubjectDropdown();
+      }
+    });
+  }
+
+  setupQuestionSubjectAutocomplete();
+
   function closeQuestionModal() {
     if (modalQuestionForm) modalQuestionForm.classList.add('hidden');
     const editIdEl = document.getElementById('editQuestionId');
     if (editIdEl) editIdEl.value = '';
+    qSubjectEditingExtraValue = '';
+    closeQuestionSubjectDropdown();
     resetImageUploader();
   }
 
@@ -5441,7 +5727,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const formEl = document.getElementById('formQuestionItem');
     if (formEl) formEl.reset();
     resetImageUploader();
+    qSubjectEditingExtraValue = question && question.subject ? String(question.subject).trim() : '';
+    setupQuestionSubjectAutocomplete();
     setupQuestionBankFilters();
+    closeQuestionSubjectDropdown();
 
     const titleEl = document.getElementById('questionFormTitle');
     const submitBtnEl = document.getElementById('btnSubmitQuestionForm');
@@ -5463,14 +5752,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const rawSubj = (question.subject && String(question.subject).trim()) ? String(question.subject).trim() : 'Umum';
+      qSubjectEditingExtraValue = rawSubj;
       if (modalSubjEl) {
-        if (!Array.from(modalSubjEl.options).some(o => o.value === rawSubj)) {
-          const extraOpt = document.createElement('option');
-          extraOpt.value = rawSubj;
-          extraOpt.innerText = rawSubj;
-          modalSubjEl.appendChild(extraOpt);
-        }
-        modalSubjEl.value = rawSubj;
+        const matchedSubj = resolveRegisteredQuestionSubject(rawSubj);
+        modalSubjEl.value = matchedSubj ? matchedSubj.value : rawSubj;
+        updateQuestionSubjectControlsUi();
       }
 
       const rawCls = (question.classLevel && String(question.classLevel).trim()) ? String(question.classLevel).trim() : 'Semua Kelas';
@@ -5535,15 +5821,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (titleEl) titleEl.innerText = "Tambah Soal Ujian Baru";
       if (submitBtnEl) submitBtnEl.innerText = "Simpan Soal Ujian";
       if (editIdEl) editIdEl.value = "";
+      qSubjectEditingExtraValue = "";
 
       const subjFilterVal = document.getElementById('filterQuestionsSubject')?.value;
       const classFilterVal = document.getElementById('filterQuestionsClass')?.value;
 
-      if (modalSubjEl && subjFilterVal && subjFilterVal !== 'ALL') {
-        const targetVal = subjFilterVal === 'UMUM' ? 'Umum' : subjFilterVal;
-        if (Array.from(modalSubjEl.options).some(o => o.value === targetVal)) {
-          modalSubjEl.value = targetVal;
-        }
+      if (modalSubjEl) {
+        const preferred = (subjFilterVal && subjFilterVal !== 'ALL')
+          ? (subjFilterVal === 'UMUM' ? 'Umum' : subjFilterVal)
+          : '';
+        syncQuestionSubjectInputDefault(preferred);
       }
       if (modalClassEl) {
         const curT = window.cbtAdmin.getCurrentTeacher();
@@ -5586,7 +5873,22 @@ document.addEventListener('DOMContentLoaded', () => {
     formQuestionItem.addEventListener('submit', (e) => {
       e.preventDefault();
       const editId = document.getElementById('editQuestionId')?.value.trim() || '';
-      const subject = document.getElementById('qInputSubject')?.value || 'Umum';
+      const rawSubjectInput = document.getElementById('qInputSubject')?.value.trim() || '';
+      const matchedSubject = resolveRegisteredQuestionSubject(rawSubjectInput);
+      if (!matchedSubject) {
+        const subjInputEl = document.getElementById('qInputSubject');
+        if (subjInputEl) {
+          subjInputEl.focus();
+          renderQuestionSubjectDropdown({ showAll: false });
+        }
+        alert(
+          rawSubjectInput
+            ? `Mata pelajaran "${rawSubjectInput}" tidak terdaftar di daftar mapel sistem.\n\nSilakan pilih salah satu mata pelajaran dari daftar saran autocompletion untuk menghindari salah ketik.`
+            : "Silakan pilih Mata Pelajaran yang terdaftar terlebih dahulu."
+        );
+        return;
+      }
+      const subject = matchedSubject.value;
       const classLevel = document.getElementById('qInputClassLevel')?.value || 'Semua Kelas';
       const isTrial = (document.getElementById('qInputCategory')?.value || 'exam') === 'trial';
       const type = qInputType.value;
@@ -6575,11 +6877,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ===================== TAB 4: MANAJEMEN GURU + EXCEL TEMPLATE & IMPORT =====================
+  // ===================== TAB 4: MANAJEMEN GURU & PENGAWAS + EXCEL TEMPLATE & IMPORT =====================
   const btnDownloadTeacherTemplate = document.getElementById('btnDownloadTeacherTemplate');
   if (btnDownloadTeacherTemplate) {
     btnDownloadTeacherTemplate.addEventListener('click', () => {
       window.cbtAdmin.downloadTeacherExcelTemplate();
+    });
+  }
+
+  const btnDownloadPengawasTemplate = document.getElementById('btnDownloadPengawasTemplate');
+  if (btnDownloadPengawasTemplate) {
+    btnDownloadPengawasTemplate.addEventListener('click', () => {
+      window.cbtAdmin.downloadPengawasExcelTemplate();
     });
   }
 
@@ -6594,11 +6903,15 @@ document.addEventListener('DOMContentLoaded', () => {
       reader.onload = (evt) => {
         const result = window.cbtAdmin.importTeachersFromExcel(evt.target.result);
         if (result.success) {
-          alert(`Sukses! Berhasil mengimpor / memperbarui ${result.count} akun guru dari file Excel.`);
+          const parts = [];
+          if (result.guruCount > 0) parts.push(`${result.guruCount} Guru Mapel`);
+          if (result.pengawasCount > 0) parts.push(`${result.pengawasCount} Pengawas Ruang`);
+          const detailStr = parts.length > 0 ? ` (${parts.join(' • ')})` : '';
+          alert(`Sukses! Berhasil mengimpor / memperbarui ${result.count} akun${detailStr} dari file Excel.`);
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
         } else {
-          alert(`Gagal impor Excel guru: ${result.message}`);
+          alert(`Gagal impor Excel guru/pengawas: ${result.message}`);
         }
       };
       reader.readAsArrayBuffer(file);

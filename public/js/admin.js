@@ -1972,7 +1972,7 @@ class CBTAdmin {
         { key: 'admin_btn_add_teacher', group: 'Data Guru Admin', label: 'Tombol: + Tambah Guru Baru', selector: '#btnOpenAddTeacher' },
         { key: 'admin_btn_edit_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: ✏️ Edit Guru', selector: '.btn-edit-teacher' },
         { key: 'admin_btn_delete_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: 🗑️ Hapus Guru', selector: '.btn-delete-teacher' },
-        { key: 'admin_btn_import_export_teachers', group: 'Data Guru Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Guru', selector: '#btnDownloadTeacherTemplate, #btnTriggerImportTeachers' },
+        { key: 'admin_btn_import_export_teachers', group: 'Data Guru Admin', label: 'Tombol: 📄 Template Guru/Pengawas & 📥 Impor Excel', selector: '#btnDownloadTeacherTemplate, #btnDownloadPengawasTemplate, #btnTriggerImportTeachers' },
         { key: 'admin_btn_print_teacher_cards', group: 'Data Guru Admin', label: 'Tombol: 🪪 Kartu Login Guru', selector: '#btnPrintTeacherCards' },
         { key: 'admin_btn_reset_teacher_passwords', group: 'Data Guru Admin', label: 'Tombol: 🔄 Reset Password Guru (guru123)', selector: '#btnResetAllTeacherPasswords' },
         { key: 'admin_btn_pull_cloud', group: 'Database & Backup Admin', label: 'Tombol: ⬇️ Ambil Data dari Cloud', selector: '#btnPullFromCloud' },
@@ -2058,7 +2058,7 @@ class CBTAdmin {
     }
   }
 
-  // ===================== IMPORT/EXPORT TEMPLATE GURU EXCEL =====================
+  // ===================== IMPORT/EXPORT TEMPLATE GURU & PENGAWAS EXCEL =====================
   downloadTeacherExcelTemplate() {
     if (typeof XLSX === 'undefined') {
       alert("Pustaka SheetJS belum termuat. Pastikan ada koneksi internet.");
@@ -2088,6 +2088,56 @@ class CBTAdmin {
     XLSX.writeFile(wb, "Template_Daftar_Guru_CBT_SMPN2Pacet.xlsx");
   }
 
+  downloadPengawasExcelTemplate() {
+    if (typeof XLSX === 'undefined') {
+      alert("Pustaka SheetJS belum termuat. Pastikan ada koneksi internet.");
+      return;
+    }
+    const schoolClasses = (typeof window !== 'undefined' && window.studentManager && typeof window.studentManager.getAllClasses === 'function')
+      ? window.studentManager.getAllClasses().filter(Boolean)
+      : [];
+    const sampleClasses = schoolClasses.length > 0
+      ? schoolClasses.slice(0, 12)
+      : ["7A", "7B", "7C", "8A", "8B", "9A", "9B"];
+
+    const exampleRows = sampleClasses.map((cls, idx) => {
+      const slug = String(cls).toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const roomNo = String(idx + 1).padStart(2, '0');
+      return [
+        `pengawas_${slug || roomNo}`,
+        `Pengawas Ruang ${idx + 1} (Kelas ${cls})`,
+        String(cls),
+        "pengawas123",
+        "pengawas"
+      ];
+    });
+
+    const headers = [
+      ["TEMPLATE DATA PENGAWAS RUANG UJIAN CBT - SMP NEGERI 2 PACET"],
+      ["Petunjuk: Jangan ubah judul kolom di baris ke-3. Isi daftar Pengawas mulai baris ke-4. Kolom Peran Akun otomatis 'pengawas' (dapat memantau semua mapel aktif di ruang/kelasnya tanpa akses soal & nilai)."],
+      [
+        "ID / NIP Login Pengawas (Wajib)",
+        "Nama Lengkap Pengawas / Ruang (Wajib)",
+        "Kelas / Ruang yang Diawasi (contoh: 7A atau 7A, 7B)",
+        "Password / PIN Login (Default: pengawas123)",
+        "Peran Akun (Otomatis: pengawas)"
+      ],
+      ...exampleRows
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(headers);
+    ws['!cols'] = [
+      { wch: 30 },
+      { wch: 36 },
+      { wch: 38 },
+      { wch: 30 },
+      { wch: 24 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Daftar Pengawas");
+    XLSX.writeFile(wb, "Template_Daftar_Pengawas_CBT_SMPN2Pacet.xlsx");
+  }
+
   importTeachersFromExcel(arrayBuffer) {
     if (typeof XLSX === 'undefined') {
       return { success: false, message: "Pustaka SheetJS tidak tersedia." };
@@ -2106,34 +2156,62 @@ class CBTAdmin {
       let headerRowIndex = -1;
       for (let i = 0; i < Math.min(10, rows.length); i++) {
         const rowStr = (rows[i] || []).join(' ').toLowerCase();
-        if (rowStr.includes('nip') || rowStr.includes('nama')) {
+        if (rowStr.includes('nip') || rowStr.includes('nama') || rowStr.includes('id login')) {
           headerRowIndex = i;
           break;
         }
       }
 
       if (headerRowIndex === -1) {
-        return { success: false, message: "Kolom 'NIP' atau 'Nama' tidak ditemukan pada file Excel!" };
+        return { success: false, message: "Kolom 'NIP / ID' atau 'Nama' tidak ditemukan pada file Excel!" };
       }
+
+      const headerCells = (rows[headerRowIndex] || []).map(c => String(c || '').trim().toLowerCase());
+      const findColIdx = (patterns, fallbackIdx, excludedIndices = []) => {
+        for (const p of patterns) {
+          const found = headerCells.findIndex((h, idx) => !excludedIndices.includes(idx) && h.includes(p));
+          if (found !== -1) return found;
+        }
+        return fallbackIdx;
+      };
+
+      const isPengawasSheet =
+        String(firstSheetName || '').toLowerCase().includes('pengawas') ||
+        String((rows[0] || []).join(' ')).toLowerCase().includes('pengawas ruang') ||
+        (!headerCells.some(h => h.includes('mapel') || h.includes('pelajaran')) &&
+          headerCells.some(h => h.includes('kelas') || h.includes('pengawas')));
+
+      const nipIdx = findColIdx(['nip', 'id login', 'id pengguna', 'username'], 0);
+      const nameIdx = findColIdx(['nama'], 1, [nipIdx]);
+      const subjectIdx = isPengawasSheet ? -1 : findColIdx(['mapel', 'pelajaran'], 2, [nipIdx, nameIdx]);
+      const pinIdx = findColIdx(['password', 'pin'], isPengawasSheet ? 3 : 3, [nipIdx, nameIdx]);
+      const classIdx = findColIdx(['kelas / ruang', 'kelas', 'ruang'], isPengawasSheet ? 2 : 4, [nipIdx, nameIdx, pinIdx]);
+      const roleIdx = findColIdx(['peran', 'role'], isPengawasSheet ? 4 : 5, [nipIdx, nameIdx, pinIdx, classIdx]);
 
       const dataRows = rows.slice(headerRowIndex + 1);
       let importedCount = 0;
+      let guruCount = 0;
+      let pengawasCount = 0;
 
       dataRows.forEach(row => {
         if (!row || row.length === 0) return;
-        const rawNip = row[0];
-        const rawName = row[1];
-        const rawSubject = row[2];
-        const rawPin = row[3];
-        const rawClasses = row[4];
-        const rawRole = row[5];
+        const rawNip = row[nipIdx];
+        const rawName = row[nameIdx];
+        const rawSubject = subjectIdx >= 0 ? row[subjectIdx] : undefined;
+        const rawPin = pinIdx >= 0 ? row[pinIdx] : undefined;
+        const rawClasses = classIdx >= 0 ? row[classIdx] : undefined;
+        const rawRole = roleIdx >= 0 ? row[roleIdx] : undefined;
 
-        const cleanRole = String(rawRole || '').trim().toLowerCase().includes('pengawas') ? 'pengawas' : 'guru';
+        const cleanRole = isPengawasSheet
+          ? (String(rawRole || '').trim().toLowerCase() === 'guru' ? 'guru' : 'pengawas')
+          : (String(rawRole || '').trim().toLowerCase().includes('pengawas') ? 'pengawas' : 'guru');
 
         if (rawNip && rawName && (rawSubject || cleanRole === 'pengawas')) {
           const cleanNip = String(rawNip).trim();
           const cleanName = String(rawName).trim();
-          const cleanSubject = rawSubject ? String(rawSubject).trim() : "Semua Mapel Aktif (Pengawas Ruang)";
+          const cleanSubject = rawSubject && cleanRole !== 'pengawas'
+            ? String(rawSubject).trim()
+            : "Semua Mapel Aktif (Pengawas Ruang)";
           const cleanPin = rawPin ? String(rawPin).trim() : (cleanRole === 'pengawas' ? "pengawas123" : "guru123");
           const cleanClasses = rawClasses ? String(rawClasses).trim().toUpperCase() : "";
 
@@ -2145,6 +2223,8 @@ class CBTAdmin {
             dupNip.role = cleanRole;
             if (rawClasses !== undefined) dupNip.classes = cleanClasses;
             importedCount++;
+            if (cleanRole === 'pengawas') pengawasCount++;
+            else guruCount++;
           } else if (cleanNip !== 'admin' && cleanNip !== '198501012010011001') {
             this.teachers.push({
               id: (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
@@ -2156,15 +2236,17 @@ class CBTAdmin {
               pin: cleanPin
             });
             importedCount++;
+            if (cleanRole === 'pengawas') pengawasCount++;
+            else guruCount++;
           }
         }
       });
 
       this.saveTeachers(this.teachers);
-      return { success: true, count: importedCount };
+      return { success: true, count: importedCount, guruCount, pengawasCount };
 
     } catch (err) {
-      console.error("Gagal parse Excel guru:", err);
+      console.error("Gagal parse Excel guru/pengawas:", err);
       return { success: false, message: "Format Excel tidak dapat dibaca: " + err.message };
     }
   }
