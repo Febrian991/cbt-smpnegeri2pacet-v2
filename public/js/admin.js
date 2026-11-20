@@ -116,36 +116,72 @@ class CBTAdmin {
 
   _normalizeTeachersArray(list) {
     if (!Array.isArray(list) || list.length === 0) return [];
-    let hasAdmin = false;
-    const normalized = list.map(t => {
-      if (t && (t.id === 'admin' || t.role === 'admin')) {
-        hasAdmin = true;
-        return {
+    let adminObj = null;
+    const dedupMap = new Map();
+
+    list.forEach(t => {
+      if (!t || typeof t !== 'object') return;
+      const isAdm = t.id === 'admin' || String(t.role || '').toLowerCase() === 'admin';
+      if (isAdm) {
+        adminObj = {
+          ...(adminObj || {}),
           ...t,
           id: "admin",
-          name: t.name || "Proktor Utama / Admin",
+          nip: t.nip ? String(t.nip).trim() : (adminObj?.nip || "198501012010011001"),
+          name: t.name || adminObj?.name || "Proktor Utama / Admin",
+          subject: t.subject || adminObj?.subject || "Semua Mata Pelajaran (Super Admin)",
           role: "admin",
-          pin: t.pin ? String(t.pin).trim() : "admin123"
+          pin: t.pin ? String(t.pin).trim() : (adminObj?.pin || "admin123")
         };
+        return;
       }
-      if (t) {
-        const cleanRole = String(t.role || '').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru';
-        return { ...t, role: cleanRole };
-      }
-      return t;
-    }).filter(Boolean);
 
-    if (!hasAdmin) {
-      normalized.unshift({
+      const cleanNip = String(t.nip || '').trim();
+      const cleanId = String(t.id || '').trim();
+      const cleanName = String(t.name || '').trim();
+      const cleanRole = String(t.role || '').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru';
+      const dedupKey = cleanNip
+        ? `NIP:${cleanNip.toLowerCase()}`
+        : (cleanId ? `ID:${cleanId.toLowerCase()}` : `NAME:${cleanName.toLowerCase()}__${cleanRole}`);
+
+      const prev = dedupMap.get(dedupKey);
+      if (prev) {
+        dedupMap.set(dedupKey, {
+          ...prev,
+          ...t,
+          id: t.id || prev.id,
+          nip: cleanNip || prev.nip,
+          name: cleanName || prev.name,
+          subject: (cleanRole === 'pengawas' && (!t.subject || String(t.subject).trim() === ''))
+            ? (prev.subject || "Semua Mapel Aktif (Pengawas Ruang)")
+            : (String(t.subject || '').trim() || prev.subject || ''),
+          classes: t.classes !== undefined && String(t.classes).trim() !== '' ? String(t.classes).trim().toUpperCase() : (prev.classes || ''),
+          role: cleanRole,
+          pin: t.pin ? String(t.pin).trim() : (prev.pin || (cleanRole === 'pengawas' ? 'pengawas123' : 'guru123'))
+        });
+      } else {
+        dedupMap.set(dedupKey, {
+          ...t,
+          nip: cleanNip,
+          name: cleanName,
+          classes: t.classes ? String(t.classes).trim().toUpperCase() : '',
+          role: cleanRole
+        });
+      }
+    });
+
+    if (!adminObj) {
+      adminObj = {
         id: "admin",
         nip: "198501012010011001",
         name: "Proktor Utama / Admin",
         subject: "Semua Mata Pelajaran (Super Admin)",
         role: "admin",
         pin: "admin123"
-      });
+      };
     }
-    return normalized;
+
+    return [adminObj, ...Array.from(dedupMap.values())];
   }
 
   _getOfflineCandidateTeachers() {
@@ -339,15 +375,20 @@ class CBTAdmin {
     return [...new Set(result)];
   }
 
-  searchTeachers(query = "") {
+  searchTeachers(query = "", roleFilter = "ALL") {
     const q = String(query || "").trim().toLowerCase();
-    if (!q) return this.teachers;
-    return this.teachers.filter(t =>
-      (t.name && t.name.toLowerCase().includes(q)) ||
-      (t.nip && String(t.nip).toLowerCase().includes(q)) ||
-      (t.subject && t.subject.toLowerCase().includes(q)) ||
-      (t.classes && String(t.classes).toLowerCase().includes(q))
-    );
+    const rf = String(roleFilter || "ALL").trim().toLowerCase();
+    return this.teachers.filter(t => {
+      if (!t) return false;
+      const isAdm = t.role === 'admin' || t.id === 'admin';
+      const roleVal = isAdm ? 'admin' : (String(t.role || '').toLowerCase() === 'pengawas' ? 'pengawas' : 'guru');
+      if (rf !== 'all' && roleVal !== rf) return false;
+      if (!q) return true;
+      return (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.nip && String(t.nip).toLowerCase().includes(q)) ||
+        (t.subject && t.subject.toLowerCase().includes(q)) ||
+        (t.classes && String(t.classes).toLowerCase().includes(q));
+    });
   }
 
   addTeacher({ name, nip, subject, classes, pin, role = "guru" }) {
@@ -733,6 +774,102 @@ class CBTAdmin {
     return /^\[Soal\s+(?:Simulasi|Uji Coba)/i.test(String(q.question || '').trim());
   }
 
+  _isQuestionOwnedByTeacher(q, teacher) {
+    if (!q || !teacher) return false;
+    if (teacher.role === 'admin' || teacher.id === 'admin') return true;
+    const tId = String(teacher.id || '').trim();
+    const tNip = String(teacher.nip || '').trim().toLowerCase();
+    const tName = String(teacher.name || '').trim().toLowerCase();
+
+    if (q.createdById && tId && String(q.createdById).trim() === tId) return true;
+    if (q.createdByNip && tNip && String(q.createdByNip).trim().toLowerCase() === tNip) return true;
+    if (q.createdBy && tName && String(q.createdBy).trim().toLowerCase() === tName) return true;
+
+    // Jika soal eksplisit milik guru lain, tolak visibilitasnya di bank soal guru lain
+    if (q.createdById || q.createdByNip) return false;
+    const qCreator = String(q.createdBy || '').trim().toLowerCase();
+    if (qCreator && qCreator !== 'proktor utama / admin' && !qCreator.includes('admin') && tName && qCreator !== tName) {
+      return false;
+    }
+
+    // Soal simulasi/bawaan yang dibuat Admin/default (tanpa createdBy guru) tetap bisa dilihat jika mapel & kelas cocok
+    const qCls = String(q.classLevel || '').trim().toLowerCase();
+    const isAllClassQ = !qCls || qCls === 'semua' || qCls === 'semua kelas' || qCls === 'all';
+    // Untuk soal ujian asli "Semua Kelas" yang dibuat admin/bawaan tanpa pemilik spesifik, tetap hanya jika bukan soal buatan guru lain
+    if (isAllClassQ && qCreator && !qCreator.includes('admin')) return false;
+    return true;
+  }
+
+  _normalizeRichQuestionFields(source = {}) {
+    const cleanTable = (tbl) => {
+      if (!tbl || typeof tbl !== 'object') return null;
+      const headers = Array.isArray(tbl.headers) ? tbl.headers.map(h => String(h || '').trim()) : [];
+      const rows = Array.isArray(tbl.rows)
+        ? tbl.rows.map(r => Array.isArray(r) ? r.map(c => String(c || '').trim()) : [])
+        : [];
+      if (headers.length === 0 && rows.length === 0) return null;
+      const hasContent = headers.some(Boolean) || rows.some(r => r.some(Boolean));
+      return hasContent ? { headers, rows } : null;
+    };
+
+    const cleanChart = (ch) => {
+      if (!ch || typeof ch !== 'object') return null;
+      const layout = ['vertical', 'horizontal', 'hierarchy'].includes(String(ch.layout || '').toLowerCase())
+        ? String(ch.layout).toLowerCase()
+        : 'vertical';
+      const nodes = Array.isArray(ch.nodes)
+        ? ch.nodes
+            .map((n, idx) => ({
+              id: String(n?.id || `n${idx + 1}`).trim(),
+              label: String(n?.label || '').trim(),
+              sublabel: String(n?.sublabel || '').trim(),
+              parentId: String(n?.parentId || '').trim(),
+              tone: ['blue', 'emerald', 'amber', 'rose', 'violet', 'slate'].includes(String(n?.tone || '').toLowerCase())
+                ? String(n.tone).toLowerCase()
+                : 'blue'
+            }))
+            .filter(n => n.label || n.sublabel)
+        : [];
+      if (nodes.length === 0) return null;
+      return {
+        title: String(ch.title || '').trim(),
+        layout,
+        nodes
+      };
+    };
+
+    let optionTables = null;
+    if (source.optionTables && typeof source.optionTables === 'object') {
+      const cleaned = {};
+      ['A', 'B', 'C', 'D'].forEach(k => {
+        const tbl = cleanTable(source.optionTables[k]);
+        if (tbl) cleaned[k] = tbl;
+      });
+      if (Object.keys(cleaned).length > 0) optionTables = cleaned;
+    }
+
+    const passageGroupId = source.passageGroupId ? String(source.passageGroupId).trim() : '';
+    const passageTitle = source.passageTitle ? String(source.passageTitle).trim() : '';
+    const passageText = source.passageText ? String(source.passageText).trim() : '';
+    const passageTable = cleanTable(source.passageTable);
+    const passageChart = cleanChart(source.passageChart);
+    const passageOrder = source.passageOrder ? Math.max(1, parseInt(source.passageOrder, 10) || 1) : undefined;
+    const passageGroupSize = source.passageGroupSize ? Math.max(1, parseInt(source.passageGroupSize, 10) || 1) : undefined;
+
+    return {
+      tableData: cleanTable(source.tableData),
+      optionTables,
+      chartData: cleanChart(source.chartData),
+      ...(passageGroupId ? { passageGroupId } : {}),
+      ...(passageTitle ? { passageTitle } : {}),
+      ...(passageText ? { passageText } : {}),
+      ...(passageTable ? { passageTable } : {}),
+      ...(passageChart ? { passageChart } : {}),
+      ...(passageOrder ? { passageOrder } : {}),
+      ...(passageGroupSize ? { passageGroupSize } : {})
+    };
+  }
+
   getQuestionsFiltered(subjectFilter = 'ALL', classFilter = 'ALL', categoryFilter = 'ALL') {
     const all = window.examEngine ? window.examEngine.questions : [];
     const cur = this.getCurrentTeacher();
@@ -748,16 +885,20 @@ class CBTAdmin {
       ? window.examEngine.matchesClassLevel(qCls, target)
       : true;
 
-    return all.filter(q => {
+    const filtered = all.filter(q => {
       const qSub = String(q.subject || 'Umum').trim();
       const qCls = String(q.classLevel || 'Semua Kelas').trim();
 
-      if (!isAdmin && teacherSubjects.length > 0) {
-        if (!q.subject || qSub.toLowerCase() === 'umum') return false;
-        const ownsSubject = teacherSubjects.some(ts => matchesSub(qSub, ts));
-        if (!ownsSubject) return false;
+      if (!isAdmin && cur) {
+        if (teacherSubjects.length > 0) {
+          if (!q.subject || qSub.toLowerCase() === 'umum') return false;
+          const ownsSubject = teacherSubjects.some(ts => matchesSub(qSub, ts));
+          if (!ownsSubject) return false;
+        }
+        // Enforsir kepemilikan pembuat soal: soal dari guru lain (termasuk yang memilih "Semua Kelas") tidak tampil di akun guru lain
+        if (!this._isQuestionOwnedByTeacher(q, cur)) return false;
 
-        const teacherClasses = cur && cur.classes ? this.parseTeacherClasses(cur.classes) : [];
+        const teacherClasses = cur.classes ? this.parseTeacherClasses(cur.classes) : [];
         if (teacherClasses.length > 0) {
           const matchesAssignedClass = matchesCls(qCls, teacherClasses.join(', '));
           if (!matchesAssignedClass) return false;
@@ -785,6 +926,62 @@ class CBTAdmin {
 
       return true;
     });
+
+    return (window.examEngine && typeof window.examEngine.groupPassageQuestionsOrder === 'function')
+      ? window.examEngine.groupPassageQuestionsOrder(filtered)
+      : filtered;
+  }
+
+  _buildQuestionEntity(questionData, id, cur, nowIso, existingQuestion = null) {
+    const type = questionData.type || existingQuestion?.type || 'single';
+    const richFields = this._normalizeRichQuestionFields(questionData);
+    const createdBy = existingQuestion?.createdBy || questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin");
+    const createdById = existingQuestion?.createdById || questionData.createdById || (cur ? cur.id : "admin");
+    const createdByNip = existingQuestion?.createdByNip || questionData.createdByNip || (cur ? cur.nip : "");
+
+    const qObj = {
+      id,
+      subject: String(questionData.subject || existingQuestion?.subject || "Umum").trim(),
+      classLevel: String(questionData.classLevel || existingQuestion?.classLevel || "Semua Kelas").trim(),
+      createdBy,
+      createdById,
+      createdByNip,
+      type,
+      isTrial: questionData.isTrial !== undefined
+        ? Boolean(questionData.isTrial)
+        : (existingQuestion ? this.isTrialQuestion(existingQuestion) : false),
+      question: questionData.question !== undefined ? String(questionData.question) : (existingQuestion?.question || ''),
+      image: questionData.image !== undefined ? questionData.image : (existingQuestion?.image || ""),
+      weight: Math.max(1, parseInt(questionData.weight, 10) || existingQuestion?.weight || 10),
+      updatedAt: nowIso
+    };
+
+    if (richFields.tableData) qObj.tableData = richFields.tableData;
+    if (richFields.optionTables) qObj.optionTables = richFields.optionTables;
+    if (richFields.chartData) qObj.chartData = richFields.chartData;
+    if (richFields.passageGroupId) {
+      qObj.passageGroupId = richFields.passageGroupId;
+      if (richFields.passageTitle) qObj.passageTitle = richFields.passageTitle;
+      if (richFields.passageText) qObj.passageText = richFields.passageText;
+      if (richFields.passageTable) qObj.passageTable = richFields.passageTable;
+      if (richFields.passageChart) qObj.passageChart = richFields.passageChart;
+      if (richFields.passageOrder) qObj.passageOrder = richFields.passageOrder;
+      if (richFields.passageGroupSize) qObj.passageGroupSize = richFields.passageGroupSize;
+    }
+
+    if (type === 'single') {
+      qObj.options = questionData.options;
+      qObj.correctAnswer = questionData.correctAnswer;
+    } else if (type === 'multiple') {
+      qObj.options = questionData.options;
+      qObj.correctAnswer = Array.isArray(questionData.correctAnswer)
+        ? questionData.correctAnswer
+        : [questionData.correctAnswer];
+    } else if (type === 'true_false') {
+      qObj.statements = questionData.statements;
+    }
+
+    return qObj;
   }
 
   addQuestion(questionData) {
@@ -795,29 +992,7 @@ class CBTAdmin {
     const cur = this.getCurrentTeacher();
     const nowIso = new Date().toISOString();
 
-    let newQ = {
-      id: newId,
-      subject: String(questionData.subject || "Umum").trim(),
-      classLevel: String(questionData.classLevel || "Semua Kelas").trim(),
-      createdBy: questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
-      type: questionData.type || 'single',
-      isTrial: Boolean(questionData.isTrial),
-      question: questionData.question,
-      image: questionData.image || "",
-      weight: parseInt(questionData.weight) || 10,
-      updatedAt: nowIso
-    };
-
-    if (newQ.type === 'single') {
-      newQ.options = questionData.options;
-      newQ.correctAnswer = questionData.correctAnswer;
-    } else if (newQ.type === 'multiple') {
-      newQ.options = questionData.options;
-      newQ.correctAnswer = Array.isArray(questionData.correctAnswer) ? questionData.correctAnswer : [questionData.correctAnswer];
-    } else if (newQ.type === 'true_false') {
-      newQ.statements = questionData.statements;
-    }
-
+    const newQ = this._buildQuestionEntity(questionData, newId, cur, nowIso, null);
     const questions = [...existing, newQ];
     window.examEngine.saveQuestions(questions, true);
 
@@ -825,6 +1000,97 @@ class CBTAdmin {
       window.supabaseSync.upsertQuestionRow(newQ, existing);
     }
     return newQ;
+  }
+
+  addQuestionsBatch(questionsDataList = []) {
+    if (!Array.isArray(questionsDataList) || questionsDataList.length === 0) {
+      return { success: false, count: 0, questions: [], message: 'Daftar soal masih kosong.' };
+    }
+    const existing = [...window.examEngine.questions];
+    const usedIds = new Set(existing.map(q => (q && q.id !== undefined && q.id !== null ? String(q.id) : '')));
+    let nextId = Date.now() * 1000 + Math.floor(Math.random() * 500);
+    const allocId = () => {
+      while (usedIds.has(String(nextId))) nextId += 1;
+      const assigned = nextId;
+      usedIds.add(String(assigned));
+      nextId += 1;
+      return assigned;
+    };
+    const cur = this.getCurrentTeacher();
+    const nowIso = new Date().toISOString();
+
+    const createdList = questionsDataList.map(qd => this._buildQuestionEntity(qd, allocId(), cur, nowIso, null));
+    const merged = [...existing, ...createdList];
+    window.examEngine.saveQuestions(merged, true);
+
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.upsertQuestionRows === 'function') {
+        window.supabaseSync.upsertQuestionRows(createdList, { seedFallback: merged });
+      } else if (typeof window.supabaseSync.upsertQuestionRow === 'function') {
+        createdList.forEach(q => window.supabaseSync.upsertQuestionRow(q, merged));
+      }
+    }
+    return { success: true, count: createdList.length, questions: createdList };
+  }
+
+  updateQuestionsWeightBatch(questionIds = [], newWeight = 25) {
+    const idSet = new Set((Array.isArray(questionIds) ? questionIds : []).map(String));
+    const w = Math.max(1, Math.min(100, parseInt(newWeight, 10) || 25));
+    if (idSet.size === 0) return { success: false, count: 0 };
+
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const nowIso = new Date().toISOString();
+    const updatedRows = [];
+    const nextList = [...window.examEngine.questions].map(q => {
+      if (!q || !idSet.has(String(q.id))) return q;
+      if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(q, cur)) return q;
+      const u = { ...q, weight: w, updatedAt: nowIso };
+      updatedRows.push(u);
+      return u;
+    });
+
+    if (updatedRows.length === 0) return { success: false, count: 0 };
+    window.examEngine.saveQuestions(nextList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.upsertQuestionRows === 'function') {
+      window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: nextList });
+    }
+    return { success: true, count: updatedRows.length, weight: w };
+  }
+
+  rebalanceQuestionsWeightTo100(questionIds = []) {
+    const idList = (Array.isArray(questionIds) ? questionIds : []).map(String);
+    if (idList.length === 0) return { success: false, count: 0 };
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+
+    const editableIds = window.examEngine.questions
+      .filter(q => q && idList.includes(String(q.id)) && (isAdmin || !cur || this._isQuestionOwnedByTeacher(q, cur)))
+      .map(q => String(q.id));
+    if (editableIds.length === 0) return { success: false, count: 0 };
+
+    const n = editableIds.length;
+    const baseWeight = Math.floor(100 / n);
+    const remainder = 100 - (baseWeight * n);
+    const weightById = new Map();
+    editableIds.forEach((id, idx) => {
+      weightById.set(id, baseWeight + (idx < remainder ? 1 : 0));
+    });
+
+    const nowIso = new Date().toISOString();
+    const updatedRows = [];
+    const nextList = [...window.examEngine.questions].map(q => {
+      if (!q || !weightById.has(String(q.id))) return q;
+      const u = { ...q, weight: weightById.get(String(q.id)), updatedAt: nowIso };
+      updatedRows.push(u);
+      return u;
+    });
+
+    window.examEngine.saveQuestions(nextList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.upsertQuestionRows === 'function') {
+      window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: nextList });
+    }
+    return { success: true, count: updatedRows.length, baseWeight };
   }
 
   updateQuestion(id, questionData) {
@@ -836,36 +1102,12 @@ class CBTAdmin {
 
     const existing = existingList[targetIdx];
     const cur = this.getCurrentTeacher();
-    const nextType = questionData.type || existing.type || 'single';
-    const nowIso = new Date().toISOString();
-    const nextIsTrial = questionData.isTrial !== undefined
-      ? Boolean(questionData.isTrial)
-      : this.isTrialQuestion(existing);
-
-    const updatedQ = {
-      id: existing.id,
-      subject: String(questionData.subject || existing.subject || "Umum").trim(),
-      classLevel: String(questionData.classLevel || existing.classLevel || "Semua Kelas").trim(),
-      createdBy: existing.createdBy || questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
-      type: nextType,
-      isTrial: nextIsTrial,
-      question: questionData.question,
-      image: questionData.image !== undefined ? questionData.image : (existing.image || ""),
-      weight: parseInt(questionData.weight, 10) || existing.weight || 10,
-      updatedAt: nowIso
-    };
-
-    if (nextType === 'single') {
-      updatedQ.options = questionData.options;
-      updatedQ.correctAnswer = questionData.correctAnswer;
-    } else if (nextType === 'multiple') {
-      updatedQ.options = questionData.options;
-      updatedQ.correctAnswer = Array.isArray(questionData.correctAnswer)
-        ? questionData.correctAnswer
-        : [questionData.correctAnswer];
-    } else if (nextType === 'true_false') {
-      updatedQ.statements = questionData.statements;
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(existing, cur)) {
+      return { success: false, message: "Anda tidak memiliki izin mengubah soal milik guru lain." };
     }
+    const nowIso = new Date().toISOString();
+    const updatedQ = this._buildQuestionEntity(questionData, existing.id, cur, nowIso, existing);
 
     existingList[targetIdx] = updatedQ;
     window.examEngine.saveQuestions(existingList, true);
@@ -878,12 +1120,19 @@ class CBTAdmin {
 
   deleteQuestion(id) {
     const prevQuestions = [...window.examEngine.questions];
+    const target = prevQuestions.find(q => String(q.id) === String(id));
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    if (target && !isAdmin && cur && !this._isQuestionOwnedByTeacher(target, cur)) {
+      return { success: false, message: "Anda tidak dapat menghapus soal milik guru lain." };
+    }
     const questions = prevQuestions.filter(q => String(q.id) !== String(id));
     window.examEngine.saveQuestions(questions, true);
 
     if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.deleteQuestionRow === 'function') {
       window.supabaseSync.deleteQuestionRow(id, prevQuestions);
     }
+    return { success: true };
   }
 
   resetToDefaultQuestions() {
@@ -1020,6 +1269,8 @@ class CBTAdmin {
             subject: subj,
             classLevel,
             createdBy: creatorName,
+            createdById: t.id || '',
+            createdByNip: t.nip || '',
             type: tpl.type || 'single',
             isTrial: true,
             question: tpl.question,
@@ -1136,6 +1387,8 @@ class CBTAdmin {
             subject: item.subject ? String(item.subject).trim() : fallbackSub,
             classLevel: item.classLevel ? String(item.classLevel).trim() : fallbackCls,
             createdBy: item.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
+            createdById: item.createdById || (cur ? cur.id : "admin"),
+            createdByNip: item.createdByNip || (cur ? cur.nip : ""),
             updatedAt: nowIso
           };
         });
@@ -1310,8 +1563,102 @@ class CBTAdmin {
     };
   }
 
-  clearAllResults() {
-    localStorage.removeItem('cbt_exam_results');
+  _removeResultsFromOfflineVault(predicateFn) {
+    try {
+      const vault = decodeCbtOfflineVault();
+      if (!vault || !Array.isArray(vault.results)) return;
+      vault.results = vault.results.filter(r => !predicateFn(r));
+      const sealed = encodeCbtOfflineVault(vault);
+      if (sealed) localStorage.setItem(CBT_OFFLINE_VAULT_STORAGE_KEY, sealed);
+    } catch (e) {}
+  }
+
+  async deleteSingleResult(resultRecord) {
+    if (!resultRecord) return { success: false };
+    const targetId = String(resultRecord.id || '');
+    const targetCloudId = resultRecord._cloudRowId !== undefined && resultRecord._cloudRowId !== null
+      ? String(resultRecord._cloudRowId)
+      : '';
+    const targetNisn = String(resultRecord.student?.nisn || resultRecord.student_nisn || '').trim().toUpperCase();
+    const targetSub = String(resultRecord.subject || '').trim().toLowerCase();
+    const targetComp = String(resultRecord.completedAt || resultRecord.completed_at || '').trim();
+
+    const isMatch = (r) => {
+      if (!r) return false;
+      if (targetCloudId && r._cloudRowId !== undefined && String(r._cloudRowId) === targetCloudId) return true;
+      if (targetId && String(r.id || '') === targetId) {
+        const rn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
+        if (!targetNisn || !rn || rn === targetNisn) return true;
+      }
+      const rn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
+      const rs = String(r.subject || '').trim().toLowerCase();
+      const rc = String(r.completedAt || r.completed_at || '').trim();
+      return Boolean(targetNisn && rn === targetNisn && rs === targetSub && rc === targetComp);
+    };
+
+    try {
+      const localResults = JSON.parse(localStorage.getItem('cbt_exam_results') || '[]');
+      const remaining = (Array.isArray(localResults) ? localResults : []).filter(r => !isMatch(r));
+      localStorage.setItem('cbt_exam_results', JSON.stringify(remaining));
+    } catch (e) {}
+
+    this._removeResultsFromOfflineVault(isMatch);
+
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.deleteSingleResultFromCloud === 'function') {
+        await window.supabaseSync.deleteSingleResultFromCloud(resultRecord);
+      } else {
+        await window.supabaseSync.deleteStudentResultsFromCloud(targetNisn, resultRecord.subject || null);
+      }
+      if (targetNisn && resultRecord.subject && typeof window.supabaseSync.removeStudentSession === 'function') {
+        await window.supabaseSync.removeStudentSession(resultRecord.student?.nisn || targetNisn, resultRecord.subject);
+      }
+    }
+    return { success: true };
+  }
+
+  async clearAllResults(options = {}) {
+    const scopeOnlyFiltered = Boolean(options.scopeOnlyFiltered);
+    const cur = this.getCurrentTeacher();
+    const isSuperAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const targetRecords = scopeOnlyFiltered || !isSuperAdmin
+      ? this.getAllResultsSorted(options.subjectFilter || null, options.classFilter || null)
+      : null;
+
+    if (Array.isArray(targetRecords)) {
+      const matchSet = new Set(targetRecords.map(r => {
+        const cid = r._cloudRowId !== undefined && r._cloudRowId !== null ? `ROW:${r._cloudRowId}` : '';
+        const nisn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
+        const sub = String(r.subject || '').trim().toLowerCase();
+        const comp = String(r.completedAt || r.completed_at || '').trim();
+        return cid || `${r.id || ''}__${nisn}__${sub}__${comp}`;
+      }));
+      const isInTarget = (r) => {
+        if (!r) return false;
+        const cid = r._cloudRowId !== undefined && r._cloudRowId !== null ? `ROW:${r._cloudRowId}` : '';
+        const nisn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
+        const sub = String(r.subject || '').trim().toLowerCase();
+        const comp = String(r.completedAt || r.completed_at || '').trim();
+        return (cid && matchSet.has(cid)) || matchSet.has(`${r.id || ''}__${nisn}__${sub}__${comp}`);
+      };
+      try {
+        const localResults = JSON.parse(localStorage.getItem('cbt_exam_results') || '[]');
+        const remaining = (Array.isArray(localResults) ? localResults : []).filter(r => !isInTarget(r));
+        localStorage.setItem('cbt_exam_results', JSON.stringify(remaining));
+      } catch (e) {}
+      this._removeResultsFromOfflineVault(isInTarget);
+      if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.deleteAllResultsFromCloud === 'function') {
+        await window.supabaseSync.deleteAllResultsFromCloud(targetRecords);
+      }
+      return { success: true, deletedCount: targetRecords.length };
+    }
+
+    localStorage.setItem('cbt_exam_results', '[]');
+    this._removeResultsFromOfflineVault(() => true);
+    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.deleteAllResultsFromCloud === 'function') {
+      await window.supabaseSync.deleteAllResultsFromCloud(null);
+    }
+    return { success: true };
   }
 
   async resetStudentAttempts(nisn, subject) {
@@ -1319,15 +1666,18 @@ class CBTAdmin {
     const cleanSub = String(subject || '').trim().toLowerCase();
     if (!cleanNisn) return { success: false };
 
+    const isMatch = (r) => {
+      const rNisn = String(r?.student?.nisn || r?.student_nisn || '').trim().toUpperCase();
+      const rSub = String(r?.subject || '').trim().toLowerCase();
+      return rNisn === cleanNisn && (!cleanSub || rSub === cleanSub);
+    };
+
     try {
       const localResults = JSON.parse(localStorage.getItem('cbt_exam_results') || '[]');
-      const filtered = (Array.isArray(localResults) ? localResults : []).filter(r => {
-        const rNisn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
-        const rSub = String(r.subject || '').trim().toLowerCase();
-        return !(rNisn === cleanNisn && (!cleanSub || rSub === cleanSub));
-      });
+      const filtered = (Array.isArray(localResults) ? localResults : []).filter(r => !isMatch(r));
       localStorage.setItem('cbt_exam_results', JSON.stringify(filtered));
     } catch (e) {}
+    this._removeResultsFromOfflineVault(isMatch);
 
     if (typeof window !== 'undefined' && window.supabaseSync) {
       await window.supabaseSync.deleteStudentResultsFromCloud(nisn, subject);
@@ -2215,7 +2565,7 @@ class CBTAdmin {
           const cleanPin = rawPin ? String(rawPin).trim() : (cleanRole === 'pengawas' ? "pengawas123" : "guru123");
           const cleanClasses = rawClasses ? String(rawClasses).trim().toUpperCase() : "";
 
-          const dupNip = this.teachers.find(t => String(t.nip).trim() === cleanNip && t.role !== 'admin');
+          const dupNip = this.teachers.find(t => String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() && t.role !== 'admin');
           if (dupNip) {
             dupNip.name = cleanName;
             dupNip.subject = cleanSubject;
@@ -2225,7 +2575,7 @@ class CBTAdmin {
             importedCount++;
             if (cleanRole === 'pengawas') pengawasCount++;
             else guruCount++;
-          } else if (cleanNip !== 'admin' && cleanNip !== '198501012010011001') {
+          } else if (cleanNip.toLowerCase() !== 'admin' && cleanNip !== '198501012010011001') {
             this.teachers.push({
               id: (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
               nip: cleanNip,
@@ -2642,6 +2992,286 @@ class CBTAdmin {
       .replace(/"/g, '&quot;');
   }
 
+  renderQuestionTableHtml(tableData, isPrint = false, extraClass = '') {
+    if (!tableData || typeof tableData !== 'object') return '';
+    const headers = Array.isArray(tableData.headers) ? tableData.headers : [];
+    const rows = Array.isArray(tableData.rows) ? tableData.rows : [];
+    if (headers.length === 0 && rows.length === 0) return '';
+
+    const colCount = Math.max(headers.length, ...rows.map(r => (Array.isArray(r) ? r.length : 0)), 1);
+    const padRow = (arr) => Array.from({ length: colCount }, (_, idx) => (arr && arr[idx] !== undefined ? String(arr[idx]) : ''));
+
+    if (isPrint) {
+      const theadHtml = headers.some(h => String(h || '').trim() !== '')
+        ? `<thead class="cbt-rich-table-print"><tr>${padRow(headers).map(h => `<th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; font-weight:bold; text-align:left; background:#f1f5f9;">${this.escapePrintHtml(h)}</th>`).join('')}</tr></thead>`
+        : '';
+      const tbodyHtml = rows.map(r => `<tr>${padRow(r).map(c => `<td style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; line-height:1.3; vertical-align:top; background:#ffffff;">${this.escapePrintHtml(c)}</td>`).join('')}</tr>`).join('');
+      return `
+        <div style="margin:4px 0 6px 0;">
+          <table class="cbt-question-table cbt-rich-table-print" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff;">
+            ${theadHtml}
+            <tbody>${tbodyHtml}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    const theadHtml = headers.some(h => String(h || '').trim() !== '')
+      ? `<thead><tr>${padRow(headers).map(h => `<th>${this.escapePrintHtml(h)}</th>`).join('')}</tr></thead>`
+      : '';
+    const tbodyHtml = rows.map(r => `<tr>${padRow(r).map(c => `<td>${this.escapePrintHtml(c)}</td>`).join('')}</tr>`).join('');
+    return `
+      <div class="cbt-rich-table-wrap ${extraClass}">
+        <table class="cbt-rich-table cbt-question-table">
+          ${theadHtml}
+          <tbody>${tbodyHtml}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  renderChartSvgHtml(chartData, opts = {}) {
+    if (!chartData || typeof chartData !== 'object' || !Array.isArray(chartData.nodes) || chartData.nodes.length === 0) return '';
+    const isPrint = Boolean(opts.isPrint);
+    const compact = Boolean(opts.compact);
+    const layout = ['vertical', 'horizontal', 'hierarchy'].includes(String(chartData.layout || '').toLowerCase())
+      ? String(chartData.layout).toLowerCase()
+      : 'vertical';
+    const title = String(chartData.title || '').trim();
+    const nodes = chartData.nodes.filter(n => n && (String(n.label || '').trim() || String(n.sublabel || '').trim()));
+    if (nodes.length === 0) return '';
+
+    const tonePalette = {
+      blue: { fill: '#eff6ff', stroke: '#2563eb', text: '#1e3a8a', sub: '#3b82f6' },
+      emerald: { fill: '#ecfdf5', stroke: '#059669', text: '#065f46', sub: '#10b981' },
+      amber: { fill: '#fffbeb', stroke: '#d97706', text: '#92400e', sub: '#b45309' },
+      rose: { fill: '#fff1f2', stroke: '#e11d48', text: '#881337', sub: '#be123c' },
+      violet: { fill: '#f5f3ff', stroke: '#7c3aed', text: '#4c1d95', sub: '#6d28d9' },
+      slate: { fill: '#f8fafc', stroke: '#475569', text: '#0f172a', sub: '#475569' }
+    };
+
+    const wrapLines = (txt, maxChars = 22) => {
+      const words = String(txt || '').trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) return [];
+      const lines = [];
+      let cur = '';
+      words.forEach(w => {
+        if ((cur + ' ' + w).trim().length <= maxChars) {
+          cur = (cur + ' ' + w).trim();
+        } else {
+          if (cur) lines.push(cur);
+          cur = w;
+        }
+      });
+      if (cur) lines.push(cur);
+      return lines.slice(0, 3);
+    };
+
+    const titleOffsetY = title ? 26 : 8;
+    let svgW = 460;
+    let svgH = 220;
+    const boxes = [];
+    const edges = [];
+
+    if (layout === 'vertical') {
+      const boxW = compact ? 220 : 280;
+      const boxH = compact ? 46 : 54;
+      const gapY = compact ? 22 : 28;
+      svgW = boxW + 40;
+      const centerX = svgW / 2;
+      nodes.forEach((n, idx) => {
+        const x = centerX - boxW / 2;
+        const y = titleOffsetY + idx * (boxH + gapY);
+        boxes.push({ node: n, x, y, w: boxW, h: boxH });
+        if (idx > 0) {
+          edges.push({ x1: centerX, y1: y - gapY, x2: centerX, y2: y });
+        }
+      });
+      svgH = titleOffsetY + nodes.length * boxH + Math.max(0, nodes.length - 1) * gapY + 14;
+    } else if (layout === 'horizontal') {
+      const boxW = compact ? 115 : Math.max(115, Math.min(155, Math.floor(540 / Math.max(1, nodes.length))));
+      const boxH = compact ? 54 : 62;
+      const gapX = compact ? 22 : 28;
+      svgW = 24 + nodes.length * boxW + Math.max(0, nodes.length - 1) * gapX;
+      svgH = titleOffsetY + boxH + 20;
+      nodes.forEach((n, idx) => {
+        const x = 12 + idx * (boxW + gapX);
+        const y = titleOffsetY + 6;
+        boxes.push({ node: n, x, y, w: boxW, h: boxH });
+        if (idx > 0) {
+          edges.push({ x1: x - gapX, y1: y + boxH / 2, x2: x, y2: y + boxH / 2 });
+        }
+      });
+    } else {
+      // Hierarchy / Pohon
+      const idSet = new Set(nodes.map(n => String(n.id)));
+      const roots = nodes.filter((n, idx) => idx === 0 || !n.parentId || !idSet.has(String(n.parentId)));
+      const rootNode = roots[0] || nodes[0];
+      const depthMap = new Map([[String(rootNode.id), 0]]);
+      let changed = true;
+      let guard = 0;
+      while (changed && guard < nodes.length + 2) {
+        changed = false;
+        guard += 1;
+        nodes.forEach(n => {
+          const nid = String(n.id);
+          if (depthMap.has(nid)) return;
+          const pid = String(n.parentId || '');
+          if (pid && depthMap.has(pid)) {
+            depthMap.set(nid, depthMap.get(pid) + 1);
+            changed = true;
+          }
+        });
+      }
+      nodes.forEach(n => {
+        if (!depthMap.has(String(n.id))) depthMap.set(String(n.id), n === rootNode ? 0 : 1);
+      });
+
+      const levels = new Map();
+      nodes.forEach(n => {
+        const lv = depthMap.get(String(n.id)) || 0;
+        if (!levels.has(lv)) levels.set(lv, []);
+        levels.get(lv).push(n);
+      });
+      const sortedLvKeys = Array.from(levels.keys()).sort((a, b) => a - b);
+      const maxCols = Math.max(...sortedLvKeys.map(k => levels.get(k).length), 1);
+      const boxW = compact ? 124 : 150;
+      const boxH = compact ? 48 : 56;
+      const gapX = 18;
+      const gapY = 30;
+      svgW = Math.max(340, 24 + maxCols * boxW + Math.max(0, maxCols - 1) * gapX);
+      svgH = titleOffsetY + sortedLvKeys.length * boxH + Math.max(0, sortedLvKeys.length - 1) * gapY + 18;
+
+      const posById = new Map();
+      sortedLvKeys.forEach((lvKey, rowIdx) => {
+        const lvNodes = levels.get(lvKey);
+        const totalRowW = lvNodes.length * boxW + Math.max(0, lvNodes.length - 1) * gapX;
+        const startX = (svgW - totalRowW) / 2;
+        const y = titleOffsetY + rowIdx * (boxH + gapY);
+        lvNodes.forEach((n, colIdx) => {
+          const x = startX + colIdx * (boxW + gapX);
+          const box = { node: n, x, y, w: boxW, h: boxH };
+          boxes.push(box);
+          posById.set(String(n.id), box);
+        });
+      });
+
+      nodes.forEach(n => {
+        if (String(n.id) === String(rootNode.id)) return;
+        const childBox = posById.get(String(n.id));
+        const parentBox = posById.get(String(n.parentId || '')) || posById.get(String(rootNode.id));
+        if (childBox && parentBox && childBox !== parentBox) {
+          edges.push({
+            x1: parentBox.x + parentBox.w / 2,
+            y1: parentBox.y + parentBox.h,
+            x2: childBox.x + childBox.w / 2,
+            y2: childBox.y,
+            elbow: true
+          });
+        }
+      });
+    }
+
+    const markerId = `cbtArrow_${Math.random().toString(36).slice(2, 8)}`;
+    const edgePaths = edges.map(e => {
+      if (e.elbow) {
+        const midY = (e.y1 + e.y2) / 2;
+        return `<path d="M ${e.x1} ${e.y1} L ${e.x1} ${midY} L ${e.x2} ${midY} L ${e.x2} ${e.y2 - 3}" fill="none" stroke="${isPrint ? '#1e293b' : '#64748b'}" stroke-width="1.8" marker-end="url(#${markerId})" />`;
+      }
+      return `<line x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" stroke="${isPrint ? '#1e293b' : '#64748b'}" stroke-width="1.8" marker-end="url(#${markerId})" />`;
+    }).join('');
+
+    const boxesMarkup = boxes.map(b => {
+      const pal = isPrint
+        ? { fill: '#ffffff', stroke: '#0f172a', text: '#000000', sub: '#334155' }
+        : (tonePalette[b.node.tone] || tonePalette.blue);
+      const labelLines = wrapLines(b.node.label, layout === 'horizontal' ? 16 : 24);
+      const subLines = wrapLines(b.node.sublabel, layout === 'horizontal' ? 18 : 26);
+      const allLineCount = labelLines.length + subLines.length;
+      const startTextY = b.y + (b.h / 2) - ((allLineCount - 1) * 6.5) + 3;
+      let cursorY = startTextY;
+      const labelSvg = labelLines.map(line => {
+        const el = `<text x="${b.x + b.w / 2}" y="${cursorY}" text-anchor="middle" font-family="sans-serif" font-size="${compact ? 10.5 : 11.5}" font-weight="700" fill="${pal.text}">${this.escapePrintHtml(line)}</text>`;
+        cursorY += 13;
+        return el;
+      }).join('');
+      const subSvg = subLines.map(line => {
+        const el = `<text x="${b.x + b.w / 2}" y="${cursorY}" text-anchor="middle" font-family="sans-serif" font-size="${compact ? 9 : 9.5}" font-weight="500" fill="${pal.sub}">${this.escapePrintHtml(line)}</text>`;
+        cursorY += 11.5;
+        return el;
+      }).join('');
+
+      return `
+        <g>
+          <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8" ry="8" fill="${pal.fill}" stroke="${pal.stroke}" stroke-width="1.6" />
+          ${labelSvg}
+          ${subSvg}
+        </g>
+      `;
+    }).join('');
+
+    const titleSvg = title
+      ? `<text x="${svgW / 2}" y="16" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="${isPrint ? '#000000' : '#0f172a'}">${this.escapePrintHtml(title)}</text>`
+      : '';
+
+    const svgMarkup = `
+      <svg class="cbt-chart-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" style="max-width:100%; height:auto; display:block; margin:0 auto; background:#ffffff;">
+        <defs>
+          <marker id="${markerId}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,1 L7,4 L0,7 Z" fill="${isPrint ? '#1e293b' : '#64748b'}" />
+          </marker>
+        </defs>
+        ${titleSvg}
+        ${edgePaths}
+        ${boxesMarkup}
+      </svg>
+    `;
+
+    if (isPrint) {
+      return `<div style="margin:5px 0 6px 0; padding:4px; border:1px solid #cbd5e1; border-radius:4px; background:#ffffff; text-align:center;">${svgMarkup}</div>`;
+    }
+    return `<div class="cbt-bagan-wrap">${svgMarkup}</div>`;
+  }
+
+  renderPassageStimulusHtml(q, rangeLabel = '', isPrint = false) {
+    if (!q || (!q.passageText && !q.passageTable && !q.passageChart && !q.passageTitle)) return '';
+    const titleStr = String(q.passageTitle || '').trim();
+    const headerNote = rangeLabel
+      ? `Bacalah stimulus / wacana berikut untuk menjawab soal ${rangeLabel}!`
+      : 'Wacana / Stimulus Kelompok Soal';
+    const textHtml = q.passageText
+      ? `<div style="white-space:pre-line; line-height:1.48; ${isPrint ? 'font-size:10px;' : 'font-size:13px;'}">${this.escapePrintHtml(q.passageText)}</div>`
+      : '';
+    const tblHtml = q.passageTable ? this.renderQuestionTableHtml(q.passageTable, isPrint) : '';
+    const chartHtml = q.passageChart ? this.renderChartSvgHtml(q.passageChart, { isPrint, compact: isPrint }) : '';
+
+    if (isPrint) {
+      return `
+        <div class="naskah-stimulus-box" style="margin:6px 0 8px 0; padding:6px 8px; border:1px solid #000000; background:#ffffff; break-inside:avoid; page-break-inside:avoid;">
+          <div style="font-weight:bold; font-size:10px; font-style:italic; margin-bottom:4px;">${this.escapePrintHtml(headerNote)}</div>
+          ${titleStr ? `<div style="font-weight:bold; font-size:10.5px; text-align:center; margin-bottom:4px; text-transform:uppercase;">${this.escapePrintHtml(titleStr)}</div>` : ''}
+          ${textHtml}
+          ${tblHtml}
+          ${chartHtml}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="cbt-wacana-card">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+          <span class="text-[11px] font-extrabold text-blue-700 dark:text-blue-300 uppercase tracking-wide">📖 ${this.escapePrintHtml(headerNote)}</span>
+          ${titleStr ? `<span class="text-xs font-bold text-slate-800 dark:text-slate-100">${this.escapePrintHtml(titleStr)}</span>` : ''}
+        </div>
+        <div class="text-slate-800 dark:text-slate-100 space-y-2">
+          ${textHtml}
+          ${tblHtml}
+          ${chartHtml}
+        </div>
+      </div>
+    `;
+  }
+
   estimateQuestionHeightPx(q, layoutCols = 2) {
     const charsPerLine = layoutCols === 2 ? 56 : 112;
     const text = String(q.question || '');
@@ -2651,9 +3281,15 @@ class CBTAdmin {
       stemLines += Math.max(1, Math.ceil(line.length / charsPerLine));
     });
 
-    let h = 10 + stemLines * 14.5;
+    let h = 12 + stemLines * 14.5;
     if (q.image && String(q.image).trim() !== '') {
       h += layoutCols === 2 ? 142 : 220;
+    }
+    if (q.tableData && Array.isArray(q.tableData.rows)) {
+      h += 28 + q.tableData.rows.length * 22;
+    }
+    if (q.chartData && Array.isArray(q.chartData.nodes)) {
+      h += q.chartData.layout === 'horizontal' ? 110 : Math.max(120, q.chartData.nodes.length * 64);
     }
 
     const type = q.type || 'single';
@@ -2662,12 +3298,16 @@ class CBTAdmin {
       h += 28 + stmts.length * 24;
     } else {
       const rawOpts = Array.isArray(q.options) ? q.options : [];
-      const nonEmptyOpts = rawOpts.filter(opt => String(opt && opt.text ? opt.text : '').trim() !== '');
+      const nonEmptyOpts = rawOpts.filter(opt => String(opt && opt.text ? opt.text : '').trim() !== '' || (q.optionTables && q.optionTables[opt?.key]));
       const opts = nonEmptyOpts.length > 0 ? nonEmptyOpts : rawOpts;
       const optCharsPerLine = layoutCols === 2 ? 50 : 104;
       opts.forEach(opt => {
         const oLen = String(opt.text || '').length;
         h += Math.max(1, Math.ceil(oLen / optCharsPerLine)) * 14.5 + 2;
+        const optTbl = q.optionTables && q.optionTables[String(opt.key || '').toUpperCase()];
+        if (optTbl && Array.isArray(optTbl.rows)) {
+          h += 24 + optTbl.rows.length * 20;
+        }
       });
     }
     return Math.ceil(h + 8);
@@ -2680,25 +3320,27 @@ class CBTAdmin {
     const imgHtml = (q.image && String(q.image).trim() !== '')
       ? `<div style="margin:5px 0 6px 0; text-align:left;"><img src="${q.image}" alt="Gambar Soal ${displayNumber}" style="max-width:100%; max-height:${imgMaxH}; width:auto; height:auto; object-fit:contain; display:block; border:1px solid #cbd5e1; border-radius:4px; padding:2px; background:#ffffff;"></div>`
       : '';
+    const stemTableHtml = q.tableData ? this.renderQuestionTableHtml(q.tableData, true) : '';
+    const stemChartHtml = q.chartData ? this.renderChartSvgHtml(q.chartData, { isPrint: true, compact: layoutCols === 2 }) : '';
 
     let bodyHtml = '';
     if (type === 'true_false') {
       const stmts = Array.isArray(q.statements) ? q.statements : [];
       const rows = stmts.map((st, idx) => `
         <tr>
-          <td style="border:1px solid #000000; padding:3px 5px; font-size:10px; line-height:1.35;">${idx + 1}. ${this.escapePrintHtml(st.text || '')}</td>
-          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px;"></td>
-          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px;"></td>
+          <td style="border:1px solid #000000; padding:3px 5px; font-size:10px; line-height:1.35; background:#ffffff;">${idx + 1}. ${this.escapePrintHtml(st.text || '')}</td>
+          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
+          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
         </tr>
       `).join('');
       bodyHtml = `
         <div style="padding:3px 1px 5px 1px;">
-          <table style="width:100%; border-collapse:collapse; border:1px solid #000000;">
-            <thead>
+          <table class="cbt-question-table" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff;">
+            <thead class="cbt-tf-print-thead">
               <tr style="background:#f1f5f9;">
-                <th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; text-align:left;">Pernyataan</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center;">B</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center;">S</th>
+                <th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; text-align:left; background:#f1f5f9;">Pernyataan</th>
+                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#f1f5f9;">B</th>
+                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#f1f5f9;">S</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -2707,30 +3349,37 @@ class CBTAdmin {
       `;
     } else {
       const rawOpts = (Array.isArray(q.options) ? q.options : []).filter(opt => opt && String(opt.key || '').trim().toUpperCase() !== 'E');
-      const nonEmptyOpts = rawOpts.filter(opt => String(opt.text || '').trim() !== '');
+      const nonEmptyOpts = rawOpts.filter(opt => String(opt.text || '').trim() !== '' || (q.optionTables && q.optionTables[String(opt.key || '').toUpperCase()]));
       const opts = nonEmptyOpts.length > 0 ? nonEmptyOpts : rawOpts;
       const optRows = opts.map(opt => {
-        const lowerKey = String(opt.key || 'a').toLowerCase();
+        const upKey = String(opt.key || 'A').toUpperCase();
+        const lowerKey = upKey.toLowerCase();
         const bullet = type === 'multiple' ? `☐ ${lowerKey}.` : `${lowerKey}.`;
+        const optTbl = q.optionTables && q.optionTables[upKey] ? this.renderQuestionTableHtml(q.optionTables[upKey], true) : '';
         return `
-          <tr>
-            <td style="width:${type === 'multiple' ? '26px' : '16px'}; vertical-align:top; font-size:10.5px; line-height:1.38; padding:1px 0;">${bullet}</td>
-            <td style="vertical-align:top; font-size:10.5px; line-height:1.38; padding:1px 0;">${this.escapePrintHtml(opt.text || '')}</td>
+          <tr style="background:transparent;">
+            <td style="width:${type === 'multiple' ? '26px' : '16px'}; vertical-align:top; font-size:10.5px; line-height:1.38; padding:1.5px 0; background:transparent;">${bullet}</td>
+            <td style="vertical-align:top; font-size:10.5px; line-height:1.38; padding:1.5px 0; background:transparent;">
+              ${opt.text ? `<div>${this.escapePrintHtml(opt.text || '')}</div>` : ''}
+              ${optTbl}
+            </td>
           </tr>
         `;
       }).join('');
-      bodyHtml = `<table style="width:100%; border-collapse:collapse; margin-top:2px;"><tbody>${optRows}</tbody></table>`;
+      bodyHtml = `<table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; margin-top:2px; background:transparent;"><tbody>${optRows}</tbody></table>`;
     }
 
     return `
-      <div class="naskah-soal-item" style="margin-bottom:7px; padding-bottom:3px; break-inside:avoid; page-break-inside:avoid;">
-        <table style="width:100%; border-collapse:collapse;">
+      <div class="naskah-soal-item" style="margin-bottom:7px; padding-bottom:3px; break-inside:avoid; page-break-inside:avoid; background:transparent;">
+        <table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; background:transparent;">
           <tbody>
-            <tr>
-              <td style="width:20px; vertical-align:top; font-size:10.5px; line-height:1.38; font-weight:normal;">${displayNumber}.</td>
-              <td style="vertical-align:top; font-size:10.5px; line-height:1.38;">
+            <tr style="background:transparent;">
+              <td style="width:20px; vertical-align:top; font-size:10.5px; line-height:1.38; font-weight:normal; background:transparent;">${displayNumber}.</td>
+              <td style="vertical-align:top; font-size:10.5px; line-height:1.38; background:transparent;">
                 <div>${qText}</div>
                 ${imgHtml}
+                ${stemTableHtml}
+                ${stemChartHtml}
                 <div style="margin-top:2px;">${bodyHtml}</div>
               </td>
             </tr>
@@ -2771,7 +3420,7 @@ class CBTAdmin {
       `
       : `
         <!-- KOP SURAT OTOMATIS -->
-        <table style="width:100%; border-collapse:collapse; margin:0 0 2px 0;">
+        <table class="naskah-clean-table" style="width:100%; border-collapse:collapse; margin:0 0 2px 0;">
           <tbody>
             <tr>
               <td style="width:74px; vertical-align:middle; text-align:left; padding-bottom:5px;">
@@ -2800,7 +3449,7 @@ class CBTAdmin {
 
       <!-- IDENTITAS MAPEL & PESERTA -->
       <div style="border-top:1.5px solid #000000; border-bottom:1.5px solid #000000; padding:5px 2px; margin-bottom:8px;">
-        <table style="width:100%; border-collapse:collapse; font-size:10.5px; line-height:1.45;">
+        <table class="naskah-clean-table" style="width:100%; border-collapse:collapse; font-size:10.5px; line-height:1.45;">
           <tbody>
             <tr>
               <td style="width:18%; vertical-align:top;">Mata Pelajaran</td>
@@ -2832,29 +3481,53 @@ class CBTAdmin {
       </div>
     `;
 
-    // Kelompokkan tipe soal berurutan (I. PG Tunggal, II. PG Kompleks, III. Benar/Salah)
-    const singleQs = questionsList.filter(q => (q.type || 'single') === 'single');
-    const multiQs = questionsList.filter(q => q.type === 'multiple');
-    const tfQs = questionsList.filter(q => q.type === 'true_false');
+    const groupOrder = (list) => (window.examEngine && typeof window.examEngine.groupPassageQuestionsOrder === 'function')
+      ? window.examEngine.groupPassageQuestionsOrder(list)
+      : list;
+
+    // Kelompokkan tipe soal berurutan (I. PG Tunggal, II. PG Kompleks, III. Benar/Salah) sambil menjaga kelompok wacana tetap berdekatan
+    const singleQs = groupOrder(questionsList.filter(q => (q.type || 'single') === 'single'));
+    const multiQs = groupOrder(questionsList.filter(q => q.type === 'multiple'));
+    const tfQs = groupOrder(questionsList.filter(q => q.type === 'true_false'));
 
     const blocks = [];
     let numCounter = 1;
+    const emittedPassages = new Set();
+
+    const pushSectionQuestions = (sectionQs, getKeyText) => {
+      sectionQs.forEach((q, localIdx) => {
+        const gid = q.passageGroupId ? String(q.passageGroupId).trim() : '';
+        if (gid && !emittedPassages.has(gid) && (q.passageText || q.passageTable || q.passageChart || q.passageTitle)) {
+          emittedPassages.add(gid);
+          const groupMembers = sectionQs.filter(item => String(item.passageGroupId || '').trim() === gid);
+          const endNum = numCounter + groupMembers.length - 1;
+          const rangeLabel = groupMembers.length > 1 ? `nomor ${numCounter} s.d. ${endNum}` : `nomor ${numCounter}`;
+          const stimHtml = this.renderPassageStimulusHtml(q, rangeLabel, true);
+          const estH = 60 + Math.ceil(String(q.passageText || '').length / (layoutCols === 2 ? 48 : 96)) * 13 + (q.passageTable ? 90 : 0) + (q.passageChart ? 130 : 0);
+          blocks.push({
+            isHeading: true,
+            height: estH,
+            html: stimHtml
+          });
+        }
+        blocks.push({
+          isHeading: false,
+          height: this.estimateQuestionHeightPx(q, layoutCols),
+          html: this.renderSingleQuestionPrintHtml(q, numCounter, layoutCols),
+          answerKeyNum: numCounter,
+          answerKeyText: getKeyText(q, localIdx)
+        });
+        numCounter += 1;
+      });
+    };
+
     if (singleQs.length > 0) {
       blocks.push({
         isHeading: true,
         height: 24,
         html: `<div style="font-weight:bold; font-size:11px; margin-bottom:6px;">I. Pilihlah satu jawaban yang paling tepat!</div>`
       });
-      singleQs.forEach(q => {
-        blocks.push({
-          isHeading: false,
-          height: this.estimateQuestionHeightPx(q, layoutCols),
-          html: this.renderSingleQuestionPrintHtml(q, numCounter, layoutCols),
-          answerKeyNum: numCounter,
-          answerKeyText: q.correctAnswer || '-'
-        });
-        numCounter += 1;
-      });
+      pushSectionQuestions(singleQs, (q) => q.correctAnswer || '-');
     }
 
     if (multiQs.length > 0) {
@@ -2863,19 +3536,11 @@ class CBTAdmin {
         height: 28,
         html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${singleQs.length > 0 ? 'II' : 'I'}. Pilihan Ganda Kompleks (Pilihlah lebih dari satu jawaban yang benar!)</div>`
       });
-      multiQs.forEach(q => {
+      pushSectionQuestions(multiQs, (q) => {
         const rawAns = Array.isArray(q.correctAnswer)
           ? q.correctAnswer
           : (Array.isArray(q.correctAnswers) ? q.correctAnswers : (q.correctAnswer ? [q.correctAnswer] : []));
-        const ans = rawAns.length > 0 ? rawAns.join(', ') : '-';
-        blocks.push({
-          isHeading: false,
-          height: this.estimateQuestionHeightPx(q, layoutCols),
-          html: this.renderSingleQuestionPrintHtml(q, numCounter, layoutCols),
-          answerKeyNum: numCounter,
-          answerKeyText: ans
-        });
-        numCounter += 1;
+        return rawAns.length > 0 ? rawAns.join(', ') : '-';
       });
     }
 
@@ -2886,17 +3551,7 @@ class CBTAdmin {
         height: 28,
         html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. Tentukan Benar (B) atau Salah (S) pada pernyataan berikut!</div>`
       });
-      tfQs.forEach(q => {
-        const ans = Array.isArray(q.statements) ? q.statements.map((s, idx) => `${idx + 1}:${s.correct || s.answer || '-'}`).join(', ') : '-';
-        blocks.push({
-          isHeading: false,
-          height: this.estimateQuestionHeightPx(q, layoutCols),
-          html: this.renderSingleQuestionPrintHtml(q, numCounter, layoutCols),
-          answerKeyNum: numCounter,
-          answerKeyText: ans
-        });
-        numCounter += 1;
-      });
+      pushSectionQuestions(tfQs, (q) => (Array.isArray(q.statements) ? q.statements.map((s, idx) => `${idx + 1}:${s.correct || s.answer || '-'}`).join(', ') : '-'));
     }
 
     // Ukur tinggi aktual kop & setiap blok soal di lebar kertas F4 (210mm) agar halaman terisi penuh & rapi
@@ -2959,12 +3614,12 @@ class CBTAdmin {
       const bodyLayout = layoutCols === 1
         ? `<div style="padding-bottom:4px;">${pg.leftHtml}</div>`
         : `
-          <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+          <table class="naskah-clean-table" style="width:100%; border-collapse:collapse; table-layout:fixed; background:transparent;">
             <tbody>
-              <tr>
-                <td style="width:48.5%; vertical-align:top; padding-right:10px; padding-bottom:4px;">${pg.leftHtml}</td>
-                <td style="width:3%;"></td>
-                <td style="width:48.5%; vertical-align:top; padding-left:10px; padding-bottom:4px;">${pg.rightHtml}</td>
+              <tr style="background:transparent;">
+                <td style="width:48.5%; vertical-align:top; padding-right:10px; padding-bottom:4px; background:transparent;">${pg.leftHtml}</td>
+                <td style="width:3%; background:transparent;"></td>
+                <td style="width:48.5%; vertical-align:top; padding-left:10px; padding-bottom:4px; background:transparent;">${pg.rightHtml}</td>
               </tr>
             </tbody>
           </table>
@@ -3252,6 +3907,47 @@ class CBTAdmin {
           sheet.style.breakBefore = 'page';
         }
       });
+
+      // Konversi SVG Bagan/Diagram menjadi gambar PNG agar tampil rapi di Microsoft Word (.doc)
+      const svgCharts = Array.from(tempDiv.querySelectorAll('svg.cbt-chart-svg'));
+      for (const svgEl of svgCharts) {
+        try {
+          const wAttr = parseInt(svgEl.getAttribute('width') || '420', 10) || 420;
+          const hAttr = parseInt(svgEl.getAttribute('height') || '200', 10) || 200;
+          const svgStr = new XMLSerializer().serializeToString(svgEl);
+          const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+          const blobUrl = URL.createObjectURL(svgBlob);
+          const pngDataUrl = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = wAttr * 2;
+                canvas.height = hAttr * 2;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/png'));
+              } catch (err) {
+                resolve('');
+              }
+            };
+            img.onerror = () => resolve('');
+            img.src = blobUrl;
+          });
+          URL.revokeObjectURL(blobUrl);
+          if (pngDataUrl) {
+            const imgNode = document.createElement('img');
+            imgNode.setAttribute('src', pngDataUrl);
+            imgNode.setAttribute('alt', 'Bagan Soal');
+            imgNode.setAttribute('width', String(Math.min(wAttr, layoutCols === 2 ? 265 : 540)));
+            const ratio = Math.min((layoutCols === 2 ? 265 : 540) / wAttr, 1);
+            imgNode.setAttribute('height', String(Math.round(hAttr * ratio)));
+            svgEl.replaceWith(imgNode);
+          }
+        } catch (err) {}
+      }
 
       // Microsoft Word membutuhkan atribut HTML width & height eksplisit pada <img>
       // agar gambar tidak dirender dalam ukuran pixel aslinya yang meluber keluar margin kanan.
@@ -3636,10 +4332,13 @@ class CBTAdmin {
       const type = q.type || 'single';
       const qText = String(q.question || '').trim();
       const hasImage = Boolean(q.image && String(q.image).trim() !== '');
+      const hasTable = Boolean(q.tableData && Array.isArray(q.tableData.rows) && q.tableData.rows.length > 0);
+      const hasChart = Boolean(q.chartData && Array.isArray(q.chartData.nodes) && q.chartData.nodes.length > 0);
+      const hasStimulus = Boolean(q.passageText || q.passageTable || q.passageChart);
 
-      if (!qText && !hasImage) {
-        errors.push('Teks pertanyaan dan gambar sama-sama kosong.');
-      } else if (qText && qText.length < 8 && !hasImage) {
+      if (!qText && !hasImage && !hasTable && !hasChart && !hasStimulus) {
+        errors.push('Teks pertanyaan, gambar, tabel, dan bagan sama-sama kosong.');
+      } else if (qText && qText.length < 8 && !hasImage && !hasTable && !hasChart && !hasStimulus) {
         warnings.push('Teks pertanyaan terlalu singkat (< 8 karakter).');
       }
 
@@ -3654,16 +4353,25 @@ class CBTAdmin {
           errors.push('Opsi pilihan jawaban kurang dari 2.');
         }
 
+        const optTables = (q.optionTables && typeof q.optionTables === 'object') ? q.optionTables : {};
         const emptyKeys = opts
-          .filter(o => !o || String(o.text || '').trim() === '')
+          .filter(o => {
+            if (!o) return true;
+            const k = String(o.key || '').trim().toUpperCase();
+            const hasOptTxt = String(o.text || '').trim() !== '';
+            const hasOptTbl = Boolean(optTables[k] && Array.isArray(optTables[k].rows) && optTables[k].rows.length > 0);
+            return !hasOptTxt && !hasOptTbl;
+          })
           .map(o => o?.key || '?');
         if (emptyKeys.length > 0) {
-          errors.push(`Teks opsi ${emptyKeys.join(', ')} masih kosong.`);
+          errors.push(`Teks/tabel opsi ${emptyKeys.join(', ')} masih kosong.`);
         }
 
         const seenOptTexts = new Map();
         const dupPairs = [];
         opts.forEach(o => {
+          const k = String(o?.key || '').trim().toUpperCase();
+          if (optTables[k] && Array.isArray(optTables[k].rows) && optTables[k].rows.length > 0) return;
           const t = normalizeText(o?.text);
           if (!t) return;
           if (seenOptTexts.has(t)) {

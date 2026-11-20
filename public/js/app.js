@@ -1184,7 +1184,7 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (e) {}
 
           const serverActiveScheds = Array.isArray(cloudScheds)
-            ? cloudScheds.filter(s => s && s.active)
+            ? cloudScheds.filter(s => s && (s.isActive || s.active))
             : activeSchedules;
           const serverCfg = cloudCfg || window.examEngine.config;
 
@@ -1431,7 +1431,60 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    // Render Wacana / Stimulus Berkelompok (jika soal bagian dari kelompok 3-5 soal)
+    const qStimulusContainer = document.getElementById('questionStimulusContainer');
+    if (qStimulusContainer) {
+      if (q.passageText || q.passageTitle || q.passageTable || q.passageChart) {
+        let rangeLabel = '';
+        if (q.passageGroupId) {
+          const indices = [];
+          activeQs.forEach((item, idx) => {
+            if (item && item.passageGroupId === q.passageGroupId) indices.push(idx + 1);
+          });
+          if (indices.length > 1) {
+            rangeLabel = indices[0] === indices[indices.length - 1]
+              ? `${indices[0]}`
+              : `${indices[0]} s.d. ${indices[indices.length - 1]}`;
+          }
+        }
+        const stimHtml = (window.cbtAdmin && typeof window.cbtAdmin.renderPassageStimulusHtml === 'function')
+          ? window.cbtAdmin.renderPassageStimulusHtml(q, rangeLabel, false)
+          : `<div class="cbt-wacana-card"><div class="cbt-wacana-title">${escapeHtmlSafe(q.passageTitle || 'Wacana / Stimulus Soal')}</div><div class="whitespace-pre-line">${escapeHtmlSafe(q.passageText || '')}</div></div>`;
+        qStimulusContainer.innerHTML = stimHtml;
+        qStimulusContainer.classList.remove('hidden');
+      } else {
+        qStimulusContainer.innerHTML = '';
+        qStimulusContainer.classList.add('hidden');
+      }
+    }
+
     document.getElementById('questionText').innerText = q.question;
+
+    // Render Tabel Pertanyaan (jika ada)
+    const qTableContainer = document.getElementById('questionTableContainer');
+    if (qTableContainer) {
+      if (q.tableData && window.cbtAdmin && typeof window.cbtAdmin.renderQuestionTableHtml === 'function') {
+        const tblHtml = window.cbtAdmin.renderQuestionTableHtml(q.tableData, false);
+        qTableContainer.innerHTML = tblHtml;
+        qTableContainer.classList.toggle('hidden', !tblHtml);
+      } else {
+        qTableContainer.innerHTML = '';
+        qTableContainer.classList.add('hidden');
+      }
+    }
+
+    // Render Bagan / Diagram Pertanyaan (jika ada)
+    const qChartContainer = document.getElementById('questionChartContainer');
+    if (qChartContainer) {
+      if (q.chartData && window.cbtAdmin && typeof window.cbtAdmin.renderChartSvgHtml === 'function') {
+        const chartHtml = window.cbtAdmin.renderChartSvgHtml(q.chartData, { isPrint: false, compact: false });
+        qChartContainer.innerHTML = chartHtml;
+        qChartContainer.classList.toggle('hidden', !chartHtml);
+      } else {
+        qChartContainer.innerHTML = '';
+        qChartContainer.classList.add('hidden');
+      }
+    }
 
     const qImageContainer = document.getElementById('questionImageContainer');
     const qImageEl = document.getElementById('questionImage');
@@ -1446,12 +1499,20 @@ document.addEventListener('DOMContentLoaded', () => {
     optionsContainer.innerHTML = '';
 
     const currentAnswerData = window.examEngine.answers[q.id]?.answer;
+    const renderOptTable = (key) => {
+      const upKey = String(key || '').toUpperCase();
+      if (q.optionTables && q.optionTables[upKey] && window.cbtAdmin && typeof window.cbtAdmin.renderQuestionTableHtml === 'function') {
+        return window.cbtAdmin.renderQuestionTableHtml(q.optionTables[upKey], false, 'mt-1.5');
+      }
+      return '';
+    };
 
     if (type === 'single') {
       q.options.forEach(opt => {
         const isSelected = currentAnswerData === opt.key;
+        const optTableHtml = renderOptTable(opt.key);
         const optEl = document.createElement('div');
-        optEl.className = `option-label cursor-pointer flex items-center p-3 sm:p-4 rounded-2xl border-2 transition-all ${
+        optEl.className = `option-label cursor-pointer flex items-start p-3 sm:p-4 rounded-2xl border-2 transition-all ${
           isSelected
             ? 'selected border-blue-600 bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:border-blue-500 dark:text-blue-100 shadow-xs'
             : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -1460,8 +1521,11 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl font-bold text-xs sm:text-sm mr-3 transition-colors flex-shrink-0 ${
             isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
           }">${opt.key}</div>
-          <div class="text-xs sm:text-base font-medium flex-1 text-slate-800 dark:text-slate-100">${opt.text}</div>
-          <span class="hidden md:inline-flex kbd-hint ml-2">${opt.key}</span>
+          <div class="text-xs sm:text-base font-medium flex-1 text-slate-800 dark:text-slate-100 min-w-0">
+            ${opt.text ? `<div>${opt.text}</div>` : ''}
+            ${optTableHtml}
+          </div>
+          <span class="hidden md:inline-flex kbd-hint ml-2 flex-shrink-0">${opt.key}</span>
         `;
         optEl.addEventListener('click', () => {
           window.examEngine.selectSingleAnswer(opt.key);
@@ -1485,8 +1549,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       q.options.forEach(opt => {
         const isChecked = selectedArr.includes(opt.key);
+        const optTableHtml = renderOptTable(opt.key);
         const optEl = document.createElement('div');
-        optEl.className = `option-label cursor-pointer flex items-center p-3 sm:p-4 rounded-2xl border-2 transition-all ${
+        optEl.className = `option-label cursor-pointer flex items-start p-3 sm:p-4 rounded-2xl border-2 transition-all ${
           isChecked
             ? 'selected border-purple-600 bg-purple-50 text-purple-950 dark:bg-purple-950/60 dark:border-purple-500 dark:text-purple-100 shadow-xs'
             : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-purple-300 dark:hover:border-purple-500 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -1497,8 +1562,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }">
             ${isChecked ? '✓' : opt.key}
           </div>
-          <div class="text-xs sm:text-base font-medium flex-1 text-slate-800 dark:text-slate-100">${opt.text}</div>
-          <span class="hidden md:inline-flex kbd-hint ml-2">${opt.key}</span>
+          <div class="text-xs sm:text-base font-medium flex-1 text-slate-800 dark:text-slate-100 min-w-0">
+            ${opt.text ? `<div>${opt.text}</div>` : ''}
+            ${optTableHtml}
+          </div>
+          <span class="hidden md:inline-flex kbd-hint ml-2 flex-shrink-0">${opt.key}</span>
         `;
         optEl.addEventListener('click', () => {
           window.examEngine.toggleMultipleAnswer(opt.key);
@@ -3419,7 +3487,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">Kosong</span>`;
       if (it.status === 'correct') {
         badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">✓ Benar</span>`;
-      } else if (it.status === 'wrong') {
+      } else if (it.status === 'wrong' || it.status === 'incorrect') {
         badgeHtml = `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold text-[10px]">✗ Salah</span>`;
       }
 
@@ -3500,7 +3568,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (emptyRow) emptyRow.classList.add('hidden');
       tbody.innerHTML = `
         <tr>
-          <td colspan="10" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
+          <td colspan="11" class="p-6 text-center text-slate-500 text-xs sm:text-sm font-medium">
             Tidak ada peserta yang cocok dengan filter pencarian aktif.
           </td>
         </tr>
@@ -3561,6 +3629,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }">
             ${r.finalScore}
           </span>
+          ${r.maxPossiblePoints ? `<div class="text-[10px] text-slate-400 font-semibold mt-0.5">Poin: ${r.totalEarnedPoints ?? 0}/${r.maxPossiblePoints}</div>` : ''}
         </td>
         <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
@@ -3586,6 +3655,11 @@ document.addEventListener('DOMContentLoaded', () => {
             : `<span class="text-[11px] text-emerald-600 font-medium">Tertib (0)</span>`
           }
         </td>
+        <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
+          <button type="button" class="btn-delete-result px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[11px] transition cursor-pointer" title="Hapus permanen hasil ujian ini agar tidak muncul kembali">
+            🗑️ Hapus
+          </button>
+        </td>
       `;
       const btnConsult = tr.querySelector('.btn-consult-student');
       if (btnConsult) {
@@ -3595,6 +3669,24 @@ document.addEventListener('DOMContentLoaded', () => {
           selectedConsultAttemptIdx = 0;
           renderAdminAnalyticsAndResults();
           document.getElementById('studentConsultationPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
+      const btnDelRow = tr.querySelector('.btn-delete-result');
+      if (btnDelRow) {
+        btnDelRow.addEventListener('click', async () => {
+          if (!confirm(`Hapus permanen hasil ujian "${r.student?.name || '-'}" (${r.subject || '-'})?\n\nData akan dihapus dari perangkat maupun Cloud sehingga tidak akan muncul kembali.`)) {
+            return;
+          }
+          btnDelRow.disabled = true;
+          btnDelRow.innerText = '⏳...';
+          try {
+            await window.cbtAdmin.deleteSingleResult(r);
+            renderAdminAnalyticsAndResults();
+          } catch (err) {
+            alert('Gagal menghapus hasil ujian: ' + (err?.message || err));
+            btnDelRow.disabled = false;
+            btnDelRow.innerText = '🗑️ Hapus';
+          }
         });
       }
       tbody.appendChild(tr);
@@ -3609,10 +3701,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnClearAllResults = document.getElementById('btnClearAllResults');
   if (btnClearAllResults) {
-    btnClearAllResults.addEventListener('click', () => {
-      if (confirm("Peringatan: Yakin ingin menghapus seluruh riwayat rekap nilai ujian?")) {
-        window.cbtAdmin.clearAllResults();
-        renderAdminAnalyticsAndResults();
+    btnClearAllResults.addEventListener('click', async () => {
+      if (confirm("Peringatan: Yakin ingin menghapus PERMANEN seluruh riwayat rekap nilai ujian (termasuk yang ada di Cloud agar tidak muncul lagi)?")) {
+        btnClearAllResults.disabled = true;
+        const prevTxt = btnClearAllResults.innerText;
+        btnClearAllResults.innerText = '⏳ Menghapus...';
+        try {
+          await window.cbtAdmin.clearAllResults({ scopeOnlyFiltered: false });
+          renderAdminAnalyticsAndResults();
+        } finally {
+          btnClearAllResults.disabled = false;
+          btnClearAllResults.innerText = prevTxt;
+        }
       }
     });
   }
@@ -3777,13 +3877,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     };
 
-    const roomMatchedSchedules = activeSchedules.filter(s => matchesRoom(s.targetClass));
+    const roomMatchedSchedules = activeSchedules.filter(s => matchesRoom(s.classLevel || s.targetClass));
     const schedulesToShow = roomMatchedSchedules.length > 0 ? roomMatchedSchedules : activeSchedules;
 
     const items = schedulesToShow.length > 0
       ? schedulesToShow.map(s => ({
           subject: s.subject || 'Ujian Sekolah',
-          targetClass: s.targetClass || 'Semua Kelas',
+          targetClass: s.classLevel || s.targetClass || 'Semua Kelas',
           token: String(s.token || cfg.examToken || 'CBT80M').trim().toUpperCase(),
           timeLabel: [s.day, s.time].filter(Boolean).join(' • ')
         }))
@@ -3968,7 +4068,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!stuNisn || nisnWithActivityForScope.has(stuNisn)) return;
       let stuDefaultSubject = defaultSubject;
       if (subjFilter === 'ALL' && activeSchedules.length > 1) {
-        const matchedSchForStu = activeSchedules.find(sch => window.examEngine.matchesClassLevel(sch.targetClass || 'Semua Kelas', stu.class || ''));
+        const matchedSchForStu = activeSchedules.find(sch => window.examEngine.matchesClassLevel(sch.classLevel || sch.targetClass || 'Semua Kelas', stu.class || ''));
         if (matchedSchForStu && matchedSchForStu.subject) stuDefaultSubject = matchedSchForStu.subject;
       }
       const syntheticKey = `${stuNisn}__${String(stuDefaultSubject).toLowerCase()}__none`;
@@ -5133,6 +5233,12 @@ document.addEventListener('DOMContentLoaded', () => {
       totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}${catLabel}) — Total Bank: ${totalAll}`;
     }
 
+    const totalWeightEl = document.getElementById('questionTotalWeightBadge');
+    if (totalWeightEl) {
+      const sumWeight = questions.reduce((acc, q) => acc + (parseInt(q?.weight, 10) || 10), 0);
+      totalWeightEl.innerText = String(sumWeight);
+    }
+
     const btnClearTrials = document.getElementById('btnClearTrialQuestions');
     if (btnClearTrials) {
       btnClearTrials.innerText = trialScopedCount > 0
@@ -5217,13 +5323,22 @@ document.addEventListener('DOMContentLoaded', () => {
       let typeBadge = '';
       let answerDetailsHtml = '';
 
+      const renderCardOptTable = (key) => {
+        const upKey = String(key || '').toUpperCase();
+        if (q.optionTables && q.optionTables[upKey] && window.cbtAdmin && typeof window.cbtAdmin.renderQuestionTableHtml === 'function') {
+          return window.cbtAdmin.renderQuestionTableHtml(q.optionTables[upKey], false, 'mt-1');
+        }
+        return '';
+      };
+
       if (type === 'single') {
         typeBadge = `<span class="text-[11px] font-semibold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md">PG Tunggal (Kunci: ${q.correctAnswer})</span>`;
         answerDetailsHtml = `
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
             ${(q.options || []).map(opt => `
               <div class="p-2 rounded-lg ${opt.key === q.correctAnswer ? 'bg-green-50 border border-green-200 font-semibold text-green-800' : 'bg-slate-50 text-slate-600'}">
-                <span class="font-bold mr-1">${opt.key}.</span> ${opt.text}
+                <span class="font-bold mr-1">${opt.key}.</span> ${opt.text || ''}
+                ${renderCardOptTable(opt.key)}
               </div>
             `).join('')}
           </div>
@@ -5235,18 +5350,20 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
             ${(q.options || []).map(opt => `
               <div class="p-2 rounded-lg ${correctKeys.includes(opt.key) ? 'bg-purple-50 border border-purple-200 font-bold text-purple-900' : 'bg-slate-50 text-slate-600'}">
-                <span class="font-bold mr-1">[${opt.key}]</span> ${opt.text}
+                <span class="font-bold mr-1">[${opt.key}]</span> ${opt.text || ''}
+                ${renderCardOptTable(opt.key)}
               </div>
             `).join('')}
           </div>
         `;
       } else if (type === 'true_false') {
-        typeBadge = `<span class="text-[11px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md">Benar / Salah</span>`;
+        const stmtCount = Array.isArray(q.statements) ? q.statements.length : 0;
+        typeBadge = `<span class="text-[11px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md">Benar / Salah (${stmtCount} Pernyataan)</span>`;
         answerDetailsHtml = `
           <div class="mt-3 pt-3 border-t border-slate-100 text-xs space-y-1.5">
-            ${(q.statements || []).map(stmt => `
+            ${(q.statements || []).map((stmt, stIdx) => `
               <div class="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-                <span class="text-slate-700">${stmt.text}</span>
+                <span class="text-slate-700"><strong class="mr-1">${stIdx + 1}.</strong>${stmt.text}</span>
                 <span class="font-bold px-2 py-0.5 rounded text-[10px] ${stmt.correct === 'B' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}">
                   ${stmt.correct === 'B' ? 'BENAR' : 'SALAH'}
                 </span>
@@ -5305,6 +5422,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      const cardStemTableHtml = (q.tableData && window.cbtAdmin && typeof window.cbtAdmin.renderQuestionTableHtml === 'function')
+        ? window.cbtAdmin.renderQuestionTableHtml(q.tableData, false, 'mt-2')
+        : '';
+      const cardStemChartHtml = (q.chartData && window.cbtAdmin && typeof window.cbtAdmin.renderChartSvgHtml === 'function')
+        ? window.cbtAdmin.renderChartSvgHtml(q.chartData, { isPrint: false, compact: true })
+        : '';
+      const cardPassageHtml = (q.passageGroupId || q.passageText || q.passageTitle)
+        ? `<div class="mt-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs">
+             <div class="font-bold text-indigo-900 mb-0.5">📖 Wacana ${q.passageGroupId ? `[${escapeHtmlSafe(q.passageGroupId)}${q.passageOrder ? ` • Urutan #${q.passageOrder}` : ''}]` : ''}${q.passageTitle ? ` — ${escapeHtmlSafe(q.passageTitle)}` : ''}</div>
+             ${q.passageText ? `<div class="text-slate-700 whitespace-pre-line line-clamp-3">${escapeHtmlSafe(q.passageText)}</div>` : ''}
+           </div>`
+        : '';
+
       card.innerHTML = `
         <div class="flex items-start justify-between gap-3">
           <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -5318,6 +5448,9 @@ document.addEventListener('DOMContentLoaded', () => {
               🏫 ${qClass}
             </span>
             ${isTrialQ ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-violet-100 text-violet-800 border border-violet-200 rounded-md">🧪 Simulasi</span>` : ''}
+            ${q.passageGroupId ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-md">📖 Wacana #${q.passageOrder || 1}</span>` : ''}
+            ${q.chartData ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-cyan-50 text-cyan-800 border border-cyan-200 rounded-md">🗺️ Bagan</span>` : ''}
+            ${(q.tableData || q.optionTables) ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 rounded-md">📊 Tabel</span>` : ''}
             ${q.createdBy ? `<span class="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">✍️ ${q.createdBy}</span>` : ''}
             ${typeBadge}
             <span class="text-[11px] font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
@@ -5333,7 +5466,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </button>
           </div>
         </div>
+        ${cardPassageHtml}
         <p class="text-slate-800 text-xs sm:text-sm font-medium mt-2.5 whitespace-pre-line leading-relaxed">${q.question}</p>
+        ${cardStemTableHtml}
+        ${cardStemChartHtml ? `<div class="mt-2">${cardStemChartHtml}</div>` : ''}
         ${q.image ? `<div class="mt-2.5 p-1.5 bg-slate-50 rounded-xl border border-slate-200 inline-block max-w-xs"><img src="${q.image}" alt="Gambar Soal" class="rounded-lg max-h-28 object-contain"></div>` : ''}
         ${answerDetailsHtml}
         ${analysisStripHtml}
@@ -5714,11 +5850,363 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupQuestionSubjectAutocomplete();
 
+  // ===================== PENGATURAN BOBOT MASSAL DI BANK SOAL =====================
+  const btnApplyBulkWeight = document.getElementById('btnApplyBulkWeight');
+  if (btnApplyBulkWeight) {
+    btnApplyBulkWeight.addEventListener('click', () => {
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
+      if (questions.length === 0) {
+        alert('Tidak ada soal yang tampil pada filter aktif.');
+        return;
+      }
+      const val = parseInt(document.getElementById('bulkWeightValueInput')?.value, 10) || 25;
+      if (!confirm(`Terapkan bobot nilai ${val} poin ke seluruh ${questions.length} soal yang sedang tampil?`)) return;
+      const res = window.cbtAdmin.updateQuestionsWeightBatch(questions.map(q => q.id), val);
+      renderAdminQuestionList();
+      alert(`Berhasil mengubah bobot ${res.count} soal menjadi ${res.weight} poin per soal.`);
+    });
+  }
+
+  const btnRebalanceWeight100 = document.getElementById('btnRebalanceWeight100');
+  if (btnRebalanceWeight100) {
+    btnRebalanceWeight100.addEventListener('click', () => {
+      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
+      if (questions.length === 0) {
+        alert('Tidak ada soal yang tampil pada filter aktif.');
+        return;
+      }
+      if (!confirm(`Bagi rata bobot ${questions.length} soal yang tampil agar jumlah totalnya tepat 100 poin?`)) return;
+      const res = window.cbtAdmin.rebalanceQuestionsWeightTo100(questions.map(q => q.id));
+      renderAdminQuestionList();
+      alert(`Berhasil membagi rata bobot ${res.count} soal (sekitar ${res.baseWeight} poin/soal, total = 100 poin).`);
+    });
+  }
+
+  // ===================== STATE BUILDER TABEL & BAGAN MODAL SOAL TUNGGAL =====================
+  let singleStemTableState = null;
+  let singleOptionTablesState = { A: null, B: null, C: null, D: null };
+  let singleChartState = null;
+
+  function renderTableGridEditor(containerEl, tableState, onChangeCallback) {
+    if (!containerEl) return;
+    if (!tableState) {
+      containerEl.innerHTML = '';
+      containerEl.classList.add('hidden');
+      return;
+    }
+    containerEl.classList.remove('hidden');
+    const headers = Array.isArray(tableState.headers) ? tableState.headers : ['Kolom 1', 'Kolom 2'];
+    const rows = Array.isArray(tableState.rows) ? tableState.rows : [['', '']];
+    const colCount = headers.length;
+
+    let html = `<table class="w-full border-collapse text-xs"><thead><tr>`;
+    headers.forEach((h, cIdx) => {
+      html += `<th class="p-1 border border-slate-300 bg-slate-100"><input type="text" data-tbl-h="${cIdx}" value="${escapeHtmlSafe(h)}" placeholder="Judul Kolom ${cIdx + 1}" class="w-full px-2 py-1 rounded border border-slate-200 bg-white font-bold outline-none"></th>`;
+    });
+    html += `</tr></thead><tbody>`;
+    rows.forEach((r, rIdx) => {
+      html += `<tr>`;
+      for (let cIdx = 0; cIdx < colCount; cIdx++) {
+        const cellVal = r && r[cIdx] !== undefined ? r[cIdx] : '';
+        html += `<td class="p-1 border border-slate-300"><input type="text" data-tbl-r="${rIdx}" data-tbl-c="${cIdx}" value="${escapeHtmlSafe(cellVal)}" placeholder="Isi sel..." class="w-full px-2 py-1 rounded border border-slate-200 bg-white outline-none"></td>`;
+      }
+      html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+    containerEl.innerHTML = html;
+
+    containerEl.querySelectorAll('input[data-tbl-h]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const c = parseInt(inp.getAttribute('data-tbl-h'), 10);
+        tableState.headers[c] = inp.value;
+        if (onChangeCallback) onChangeCallback();
+      });
+    });
+    containerEl.querySelectorAll('input[data-tbl-r]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const r = parseInt(inp.getAttribute('data-tbl-r'), 10);
+        const c = parseInt(inp.getAttribute('data-tbl-c'), 10);
+        if (!tableState.rows[r]) tableState.rows[r] = [];
+        tableState.rows[r][c] = inp.value;
+        if (onChangeCallback) onChangeCallback();
+      });
+    });
+  }
+
+  function syncStemTableBuilderUI() {
+    const gridEl = document.getElementById('qStemTableEditorGrid');
+    const badgeEl = document.getElementById('qStemTableStatusBadge');
+    const btnToggle = document.getElementById('btnToggleStemTable');
+    const extraBtns = ['btnStemTableAddCol', 'btnStemTableDelCol', 'btnStemTableAddRow', 'btnStemTableDelRow', 'btnClearStemTable'];
+    if (singleStemTableState) {
+      if (badgeEl) badgeEl.innerText = `✓ Aktif (${singleStemTableState.rows.length} baris × ${singleStemTableState.headers.length} kolom)`;
+      if (btnToggle) btnToggle.classList.add('hidden');
+      extraBtns.forEach(id => document.getElementById(id)?.classList.remove('hidden'));
+      renderTableGridEditor(gridEl, singleStemTableState);
+    } else {
+      if (badgeEl) badgeEl.innerText = 'Belum ada tabel';
+      if (btnToggle) btnToggle.classList.remove('hidden');
+      extraBtns.forEach(id => document.getElementById(id)?.classList.add('hidden'));
+      renderTableGridEditor(gridEl, null);
+    }
+  }
+
+  function syncOptionTableBuilderUI(optKey) {
+    const wrapEl = document.getElementById(`qOptTableWrap${optKey}`);
+    const btnToggle = document.querySelector(`.btn-toggle-opt-table[data-opt-table="${optKey}"]`);
+    const st = singleOptionTablesState[optKey];
+    if (!wrapEl) return;
+    if (!st) {
+      wrapEl.innerHTML = '';
+      wrapEl.classList.add('hidden');
+      if (btnToggle) btnToggle.innerText = `📊 Tabel ${optKey}`;
+      return;
+    }
+    if (btnToggle) btnToggle.innerText = `✕ Hapus Tabel ${optKey}`;
+    wrapEl.classList.remove('hidden');
+    wrapEl.innerHTML = `
+      <div class="p-2 bg-white rounded-lg border border-slate-200 space-y-1.5">
+        <div class="flex flex-wrap gap-1.5 text-[11px]">
+          <button type="button" class="opt-tbl-add-col px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold cursor-pointer">+ Kolom</button>
+          <button type="button" class="opt-tbl-del-col px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold cursor-pointer">- Kolom</button>
+          <button type="button" class="opt-tbl-add-row px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold cursor-pointer">+ Baris</button>
+          <button type="button" class="opt-tbl-del-row px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold cursor-pointer">- Baris</button>
+        </div>
+        <div class="opt-tbl-grid"></div>
+      </div>
+    `;
+    const gridEl = wrapEl.querySelector('.opt-tbl-grid');
+    renderTableGridEditor(gridEl, st);
+    wrapEl.querySelector('.opt-tbl-add-col').addEventListener('click', () => {
+      st.headers.push(`Kolom ${st.headers.length + 1}`);
+      st.rows.forEach(r => r.push(''));
+      syncOptionTableBuilderUI(optKey);
+    });
+    wrapEl.querySelector('.opt-tbl-del-col').addEventListener('click', () => {
+      if (st.headers.length <= 1) return;
+      st.headers.pop();
+      st.rows.forEach(r => r.pop());
+      syncOptionTableBuilderUI(optKey);
+    });
+    wrapEl.querySelector('.opt-tbl-add-row').addEventListener('click', () => {
+      st.rows.push(Array(st.headers.length).fill(''));
+      syncOptionTableBuilderUI(optKey);
+    });
+    wrapEl.querySelector('.opt-tbl-del-row').addEventListener('click', () => {
+      if (st.rows.length <= 1) return;
+      st.rows.pop();
+      syncOptionTableBuilderUI(optKey);
+    });
+  }
+
+  function renderChartLivePreview() {
+    const prevEl = document.getElementById('qChartLivePreview');
+    if (!prevEl) return;
+    if (!singleChartState || !window.cbtAdmin || typeof window.cbtAdmin.renderChartSvgHtml !== 'function') {
+      prevEl.innerHTML = '';
+      return;
+    }
+    const html = window.cbtAdmin.renderChartSvgHtml(singleChartState, { isPrint: false, compact: false });
+    prevEl.innerHTML = html || '<span class="text-slate-400 italic text-xs">Isi minimal 1 label kotak bagan untuk melihat pratinjau...</span>';
+  }
+
+  function syncStemChartBuilderUI() {
+    const bodyEl = document.getElementById('qChartBuilderBody');
+    const badgeEl = document.getElementById('qChartStatusBadge');
+    const btnToggle = document.getElementById('btnToggleStemChart');
+    const btnAdd = document.getElementById('btnAddChartNode');
+    const btnClear = document.getElementById('btnClearStemChart');
+    const layoutSel = document.getElementById('qChartLayoutSelect');
+    const titleInp = document.getElementById('qChartTitleInput');
+    const nodesEditor = document.getElementById('qChartNodesEditor');
+
+    if (!singleChartState) {
+      if (badgeEl) badgeEl.innerText = 'Belum ada bagan';
+      btnToggle?.classList.remove('hidden');
+      btnAdd?.classList.add('hidden');
+      btnClear?.classList.add('hidden');
+      bodyEl?.classList.add('hidden');
+      if (nodesEditor) nodesEditor.innerHTML = '';
+      renderChartLivePreview();
+      return;
+    }
+
+    if (badgeEl) badgeEl.innerText = `✓ Aktif (${singleChartState.nodes.length} kotak • ${singleChartState.layout})`;
+    btnToggle?.classList.add('hidden');
+    btnAdd?.classList.remove('hidden');
+    btnClear?.classList.remove('hidden');
+    bodyEl?.classList.remove('hidden');
+    if (layoutSel) layoutSel.value = singleChartState.layout || 'vertical';
+    if (titleInp) titleInp.value = singleChartState.title || '';
+
+    if (nodesEditor) {
+      const nodeOptions = singleChartState.nodes;
+      nodesEditor.innerHTML = singleChartState.nodes.map((n, idx) => {
+        const parentOpts = `<option value="">-- Akar / Atas --</option>` + nodeOptions
+          .filter(p => p.id !== n.id)
+          .map(p => `<option value="${escapeHtmlSafe(p.id)}" ${n.parentId === p.id ? 'selected' : ''}>Induk: ${escapeHtmlSafe(p.label || p.id)}</option>`)
+          .join('');
+        return `
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 items-center p-2 bg-white rounded-xl border border-cyan-200">
+            <div class="sm:col-span-4">
+              <input type="text" data-node-idx="${idx}" data-node-field="label" value="${escapeHtmlSafe(n.label || '')}" placeholder="Judul Kotak ${idx + 1}" class="w-full px-2 py-1 rounded-lg border border-slate-300 font-bold text-xs outline-none">
+            </div>
+            <div class="sm:col-span-3">
+              <input type="text" data-node-idx="${idx}" data-node-field="sublabel" value="${escapeHtmlSafe(n.sublabel || '')}" placeholder="Subteks (opsional)" class="w-full px-2 py-1 rounded-lg border border-slate-300 text-xs outline-none">
+            </div>
+            <div class="sm:col-span-2 ${singleChartState.layout === 'hierarchy' ? '' : 'hidden'}">
+              <select data-node-idx="${idx}" data-node-field="parentId" class="w-full px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] outline-none">${parentOpts}</select>
+            </div>
+            <div class="sm:col-span-2">
+              <select data-node-idx="${idx}" data-node-field="tone" class="w-full px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-bold outline-none">
+                <option value="blue" ${n.tone === 'blue' ? 'selected' : ''}>Biru</option>
+                <option value="emerald" ${n.tone === 'emerald' ? 'selected' : ''}>Hijau</option>
+                <option value="amber" ${n.tone === 'amber' ? 'selected' : ''}>Kuning</option>
+                <option value="rose" ${n.tone === 'rose' ? 'selected' : ''}>Merah</option>
+                <option value="violet" ${n.tone === 'violet' ? 'selected' : ''}>Ungu</option>
+                <option value="slate" ${n.tone === 'slate' ? 'selected' : ''}>Abu</option>
+              </select>
+            </div>
+            <div class="sm:col-span-1 text-right">
+              <button type="button" data-del-node="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs cursor-pointer" title="Hapus Kotak">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      nodesEditor.querySelectorAll('[data-node-idx]').forEach(el => {
+        const evtName = el.tagName === 'SELECT' ? 'change' : 'input';
+        el.addEventListener(evtName, () => {
+          const idx = parseInt(el.getAttribute('data-node-idx'), 10);
+          const field = el.getAttribute('data-node-field');
+          if (singleChartState && singleChartState.nodes[idx]) {
+            singleChartState.nodes[idx][field] = el.value;
+            renderChartLivePreview();
+          }
+        });
+      });
+
+      nodesEditor.querySelectorAll('[data-del-node]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.getAttribute('data-del-node'), 10);
+          if (singleChartState.nodes.length <= 1) return;
+          singleChartState.nodes.splice(idx, 1);
+          syncStemChartBuilderUI();
+        });
+      });
+    }
+    renderChartLivePreview();
+  }
+
+  // Bind controls untuk Tabel, Bagan, Wacana, & Bobot preset di Modal Soal Tunggal
+  document.getElementById('btnGenPassageGroupId')?.addEventListener('click', () => {
+    const inp = document.getElementById('qInputPassageGroupId');
+    if (inp) inp.value = `WACANA-${Math.floor(1000 + Math.random() * 9000)}`;
+  });
+
+  document.getElementById('btnToggleStemTable')?.addEventListener('click', () => {
+    singleStemTableState = { headers: ['No / Aspek', 'Data 1', 'Data 2'], rows: [['1', '', ''], ['2', '', '']] };
+    syncStemTableBuilderUI();
+  });
+  document.getElementById('btnStemTableAddCol')?.addEventListener('click', () => {
+    if (!singleStemTableState) return;
+    singleStemTableState.headers.push(`Kolom ${singleStemTableState.headers.length + 1}`);
+    singleStemTableState.rows.forEach(r => r.push(''));
+    syncStemTableBuilderUI();
+  });
+  document.getElementById('btnStemTableDelCol')?.addEventListener('click', () => {
+    if (!singleStemTableState || singleStemTableState.headers.length <= 1) return;
+    singleStemTableState.headers.pop();
+    singleStemTableState.rows.forEach(r => r.pop());
+    syncStemTableBuilderUI();
+  });
+  document.getElementById('btnStemTableAddRow')?.addEventListener('click', () => {
+    if (!singleStemTableState) return;
+    singleStemTableState.rows.push(Array(singleStemTableState.headers.length).fill(''));
+    syncStemTableBuilderUI();
+  });
+  document.getElementById('btnStemTableDelRow')?.addEventListener('click', () => {
+    if (!singleStemTableState || singleStemTableState.rows.length <= 1) return;
+    singleStemTableState.rows.pop();
+    syncStemTableBuilderUI();
+  });
+  document.getElementById('btnClearStemTable')?.addEventListener('click', () => {
+    singleStemTableState = null;
+    syncStemTableBuilderUI();
+  });
+
+  document.querySelectorAll('.btn-toggle-opt-table').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.getAttribute('data-opt-table');
+      if (singleOptionTablesState[k]) {
+        singleOptionTablesState[k] = null;
+      } else {
+        singleOptionTablesState[k] = { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] };
+      }
+      syncOptionTableBuilderUI(k);
+    });
+  });
+
+  document.getElementById('btnToggleStemChart')?.addEventListener('click', () => {
+    singleChartState = {
+      layout: 'vertical',
+      title: '',
+      nodes: [
+        { id: 'n1', label: 'Langkah / Unsur 1', sublabel: '', parentId: '', tone: 'blue' },
+        { id: 'n2', label: 'Langkah / Unsur 2', sublabel: '', parentId: 'n1', tone: 'emerald' },
+        { id: 'n3', label: 'Langkah / Unsur 3', sublabel: '', parentId: 'n1', tone: 'amber' }
+      ]
+    };
+    syncStemChartBuilderUI();
+  });
+  document.getElementById('btnAddChartNode')?.addEventListener('click', () => {
+    if (!singleChartState) return;
+    const nextNum = singleChartState.nodes.length + 1;
+    const firstId = singleChartState.nodes[0]?.id || '';
+    singleChartState.nodes.push({
+      id: `n${Date.now()}_${nextNum}`,
+      label: `Kotak ${nextNum}`,
+      sublabel: '',
+      parentId: firstId,
+      tone: 'blue'
+    });
+    syncStemChartBuilderUI();
+  });
+  document.getElementById('btnClearStemChart')?.addEventListener('click', () => {
+    singleChartState = null;
+    syncStemChartBuilderUI();
+  });
+  document.getElementById('qChartLayoutSelect')?.addEventListener('change', (e) => {
+    if (!singleChartState) return;
+    singleChartState.layout = e.target.value;
+    syncStemChartBuilderUI();
+  });
+  document.getElementById('qChartTitleInput')?.addEventListener('input', (e) => {
+    if (!singleChartState) return;
+    singleChartState.title = e.target.value;
+    renderChartLivePreview();
+  });
+  document.querySelectorAll('.btn-q-weight-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wInp = document.getElementById('qInputWeight');
+      if (wInp) wInp.value = btn.getAttribute('data-q-weight') || '10';
+    });
+  });
+
   function closeQuestionModal() {
     if (modalQuestionForm) modalQuestionForm.classList.add('hidden');
     const editIdEl = document.getElementById('editQuestionId');
     if (editIdEl) editIdEl.value = '';
     qSubjectEditingExtraValue = '';
+    singleStemTableState = null;
+    singleOptionTablesState = { A: null, B: null, C: null, D: null };
+    singleChartState = null;
     closeQuestionSubjectDropdown();
     resetImageUploader();
   }
@@ -5727,6 +6215,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const formEl = document.getElementById('formQuestionItem');
     if (formEl) formEl.reset();
     resetImageUploader();
+    singleStemTableState = null;
+    singleOptionTablesState = { A: null, B: null, C: null, D: null };
+    singleChartState = null;
     qSubjectEditingExtraValue = question && question.subject ? String(question.subject).trim() : '';
     setupQuestionSubjectAutocomplete();
     setupQuestionBankFilters();
@@ -5737,6 +6228,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const editIdEl = document.getElementById('editQuestionId');
     const modalSubjEl = document.getElementById('qInputSubject');
     const modalClassEl = document.getElementById('qInputClassLevel');
+
+    // Reset panel wacana
+    const pDetails = document.getElementById('qPassageDetails');
+    const tDetails = document.getElementById('qTableDetails');
+    const cDetails = document.getElementById('qChartDetails');
+    if (pDetails) pDetails.open = false;
+    if (tDetails) tDetails.open = false;
+    if (cDetails) cDetails.open = false;
+    if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = '';
+    if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = '1';
+    if (document.getElementById('qInputPassageGroupSize')) document.getElementById('qInputPassageGroupSize').value = '5';
+    if (document.getElementById('qInputPassageTitle')) document.getElementById('qInputPassageTitle').value = '';
+    if (document.getElementById('qInputPassageText')) document.getElementById('qInputPassageText').value = '';
 
     if (question) {
       if (titleEl) titleEl.innerText = displayNumber ? `Edit Soal No. ${displayNumber}` : "Edit Butir Soal Ujian";
@@ -5786,6 +6290,37 @@ document.addEventListener('DOMContentLoaded', () => {
         setImageUploaderPreview(question.image);
       }
 
+      // Muat Wacana
+      if (question.passageGroupId || question.passageText || question.passageTitle) {
+        if (pDetails) pDetails.open = true;
+        if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = question.passageGroupId || '';
+        if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = question.passageOrder || 1;
+        if (document.getElementById('qInputPassageGroupSize')) document.getElementById('qInputPassageGroupSize').value = String(question.passageGroupSize || 5);
+        if (document.getElementById('qInputPassageTitle')) document.getElementById('qInputPassageTitle').value = question.passageTitle || '';
+        if (document.getElementById('qInputPassageText')) document.getElementById('qInputPassageText').value = question.passageText || '';
+      }
+
+      // Muat Tabel Pertanyaan
+      if (question.tableData) {
+        singleStemTableState = JSON.parse(JSON.stringify(question.tableData));
+        if (tDetails) tDetails.open = true;
+      }
+
+      // Muat Bagan Pertanyaan
+      if (question.chartData) {
+        singleChartState = JSON.parse(JSON.stringify(question.chartData));
+        if (cDetails) cDetails.open = true;
+      }
+
+      // Muat Tabel Opsi A-D
+      if (question.optionTables && typeof question.optionTables === 'object') {
+        ['A', 'B', 'C', 'D'].forEach(k => {
+          if (question.optionTables[k]) {
+            singleOptionTablesState[k] = JSON.parse(JSON.stringify(question.optionTables[k]));
+          }
+        });
+      }
+
       if (qType === 'single' || qType === 'multiple') {
         const optsMap = {};
         (question.options || []).forEach(o => {
@@ -5809,7 +6344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else if (qType === 'true_false') {
         const stmts = Array.isArray(question.statements) ? question.statements : [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           const stmtInput = document.getElementById(`tfStmt${i + 1}`);
           const corrSelect = document.getElementById(`tfCorrect${i + 1}`);
           const item = stmts[i];
@@ -5852,6 +6387,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (qInputType) qInputType.dispatchEvent(new Event('change'));
     }
+
+    syncStemTableBuilderUI();
+    syncStemChartBuilderUI();
+    ['A', 'B', 'C', 'D'].forEach(k => syncOptionTableBuilderUI(k));
 
     if (modalQuestionForm) modalQuestionForm.classList.remove('hidden');
   }
@@ -5898,6 +6437,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let qData = { subject, classLevel, isTrial, type, question: questionText, image, weight };
 
+      // Wacana / Kelompok
+      const pGroupId = document.getElementById('qInputPassageGroupId')?.value.trim() || '';
+      const pTitle = document.getElementById('qInputPassageTitle')?.value.trim() || '';
+      const pText = document.getElementById('qInputPassageText')?.value.trim() || '';
+      if (pGroupId || pTitle || pText) {
+        qData.passageGroupId = pGroupId || `WACANA-${Date.now()}`;
+        qData.passageTitle = pTitle;
+        qData.passageText = pText;
+        qData.passageOrder = parseInt(document.getElementById('qInputPassageOrder')?.value, 10) || 1;
+        qData.passageGroupSize = parseInt(document.getElementById('qInputPassageGroupSize')?.value, 10) || 5;
+      }
+
+      // Tabel & Bagan
+      if (singleStemTableState) qData.tableData = singleStemTableState;
+      if (singleChartState) qData.chartData = singleChartState;
+
+      const optTablesClean = {};
+      ['A', 'B', 'C', 'D'].forEach(k => {
+        if (singleOptionTablesState[k]) optTablesClean[k] = singleOptionTablesState[k];
+      });
+      if (Object.keys(optTablesClean).length > 0) qData.optionTables = optTablesClean;
+
       if (type === 'single') {
         const correctSingle = document.getElementById('qInputCorrectSingle').value;
         const opts = [
@@ -5925,21 +6486,17 @@ document.addEventListener('DOMContentLoaded', () => {
         qData.options = opts;
         qData.correctAnswer = checkedBoxes;
       } else if (type === 'true_false') {
-        const s1 = document.getElementById('tfStmt1').value.trim();
-        const s2 = document.getElementById('tfStmt2').value.trim();
-        const s3 = document.getElementById('tfStmt3').value.trim();
-
-        if (!s1 || !s2) {
+        const statements = [];
+        for (let i = 1; i <= 4; i++) {
+          const sTxt = (document.getElementById(`tfStmt${i}`)?.value || '').trim();
+          const sCorr = document.getElementById(`tfCorrect${i}`)?.value === 'S' ? 'S' : 'B';
+          if (sTxt) {
+            statements.push({ id: `s${i}`, text: sTxt, correct: sCorr });
+          }
+        }
+        if (statements.length < 2) {
           alert("Harap isi minimal 2 pernyataan untuk soal Benar / Salah!");
           return;
-        }
-
-        const statements = [
-          { id: "s1", text: s1, correct: document.getElementById('tfCorrect1').value },
-          { id: "s2", text: s2, correct: document.getElementById('tfCorrect2').value }
-        ];
-        if (s3) {
-          statements.push({ id: "s3", text: s3, correct: document.getElementById('tfCorrect3').value });
         }
         qData.statements = statements;
       }
@@ -5966,6 +6523,419 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderAdminQuestionList();
       renderAdminSchedulesList();
+    });
+  }
+
+  // ===================== MODAL INPUT SOAL SEKALIGUS (BULK & PAKET WACANA 3-5 SOAL) =====================
+  const modalBulkQuestionForm = document.getElementById('modalBulkQuestionForm');
+  const btnOpenBulkQuestion = document.getElementById('btnOpenBulkQuestion');
+  const btnCloseBulkQuestionForm = document.getElementById('btnCloseBulkQuestionForm');
+  const btnCancelBulkQuestionForm = document.getElementById('btnCancelBulkQuestionForm');
+  const bulkInputMode = document.getElementById('bulkInputMode');
+  const bulkPassageCard = document.getElementById('bulkPassageCard');
+  const bulkQuestionsListContainer = document.getElementById('bulkQuestionsListContainer');
+
+  let bulkRowsState = [];
+
+  function createEmptyBulkRow(defaultWeight = 25) {
+    return {
+      type: 'single',
+      question: '',
+      optA: '',
+      optB: '',
+      optC: '',
+      optD: '',
+      correctSingle: 'A',
+      correctMulti: ['A'],
+      tfStmts: [
+        { text: '', correct: 'B' },
+        { text: '', correct: 'S' },
+        { text: '', correct: 'B' },
+        { text: '', correct: 'S' }
+      ],
+      weight: Math.max(1, parseInt(defaultWeight, 10) || 25),
+      hasTable: false,
+      tableData: { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] },
+      hasChart: false,
+      chartData: {
+        layout: 'vertical',
+        title: '',
+        nodes: [
+          { id: 'n1', label: 'Langkah 1', sublabel: '', parentId: '', tone: 'blue' },
+          { id: 'n2', label: 'Langkah 2', sublabel: '', parentId: 'n1', tone: 'emerald' }
+        ]
+      }
+    };
+  }
+
+  function updateBulkTotalWeightInfo() {
+    const infoEl = document.getElementById('bulkTotalWeightInfo');
+    if (!infoEl) return;
+    const sum = bulkRowsState.reduce((acc, r) => acc + (parseInt(r.weight, 10) || 10), 0);
+    infoEl.innerText = String(sum);
+  }
+
+  function syncBulkModeUI() {
+    if (!bulkPassageCard || !bulkInputMode) return;
+    const isPassage = bulkInputMode.value === 'passage';
+    bulkPassageCard.classList.toggle('hidden', !isPassage);
+  }
+
+  function renderBulkQuestionRows() {
+    if (!bulkQuestionsListContainer) return;
+    bulkQuestionsListContainer.innerHTML = bulkRowsState.map((row, idx) => {
+      const isSingle = row.type === 'single';
+      const isMultiple = row.type === 'multiple';
+      const isTf = row.type === 'true_false';
+      const tblHtml = row.hasTable ? `
+        <div class="p-2.5 rounded-xl bg-sky-50/70 border border-sky-200 space-y-1.5">
+          <div class="text-[11px] font-bold text-sky-900">📊 Tabel Pertanyaan Baris #${idx + 1} (2×2 cepat — atau edit detail setelah simpan)</div>
+          <div class="grid grid-cols-2 gap-1.5">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="h0" value="${escapeHtmlSafe(row.tableData.headers[0] || '')}" placeholder="Judul Kolom 1" class="px-2 py-1 rounded border border-sky-200 bg-white font-bold text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="h1" value="${escapeHtmlSafe(row.tableData.headers[1] || '')}" placeholder="Judul Kolom 2" class="px-2 py-1 rounded border border-sky-200 bg-white font-bold text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="r0c0" value="${escapeHtmlSafe(row.tableData.rows[0]?.[0] || '')}" placeholder="Baris 1 Kol 1" class="px-2 py-1 rounded border border-sky-200 bg-white text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="r0c1" value="${escapeHtmlSafe(row.tableData.rows[0]?.[1] || '')}" placeholder="Baris 1 Kol 2" class="px-2 py-1 rounded border border-sky-200 bg-white text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="r1c0" value="${escapeHtmlSafe(row.tableData.rows[1]?.[0] || '')}" placeholder="Baris 2 Kol 1" class="px-2 py-1 rounded border border-sky-200 bg-white text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-tbl="r1c1" value="${escapeHtmlSafe(row.tableData.rows[1]?.[1] || '')}" placeholder="Baris 2 Kol 2" class="px-2 py-1 rounded border border-sky-200 bg-white text-xs outline-none">
+          </div>
+        </div>
+      ` : '';
+
+      const chartHtml = row.hasChart ? `
+        <div class="p-2.5 rounded-xl bg-cyan-50/70 border border-cyan-200 space-y-1.5">
+          <div class="text-[11px] font-bold text-cyan-900">🗺️ Bagan Cepat Baris #${idx + 1}</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+            <select data-b-idx="${idx}" data-b-chart="layout" class="px-2 py-1 rounded border border-cyan-200 bg-white font-bold text-xs outline-none">
+              <option value="vertical" ${row.chartData.layout === 'vertical' ? 'selected' : ''}>Alur Vertikal</option>
+              <option value="horizontal" ${row.chartData.layout === 'horizontal' ? 'selected' : ''}>Alur Horizontal</option>
+              <option value="hierarchy" ${row.chartData.layout === 'hierarchy' ? 'selected' : ''}>Pohon Hierarki</option>
+            </select>
+            <input type="text" data-b-idx="${idx}" data-b-chart="n0" value="${escapeHtmlSafe(row.chartData.nodes[0]?.label || '')}" placeholder="Kotak Bagan 1" class="px-2 py-1 rounded border border-cyan-200 bg-white text-xs outline-none">
+            <input type="text" data-b-idx="${idx}" data-b-chart="n1" value="${escapeHtmlSafe(row.chartData.nodes[1]?.label || '')}" placeholder="Kotak Bagan 2" class="px-2 py-1 rounded border border-cyan-200 bg-white text-xs outline-none">
+          </div>
+        </div>
+      ` : '';
+
+      return `
+        <div class="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">Soal #${idx + 1}</span>
+              <select data-b-idx="${idx}" data-b-field="type" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-xs text-blue-700 outline-none">
+                <option value="single" ${isSingle ? 'selected' : ''}>PG Tunggal</option>
+                <option value="multiple" ${isMultiple ? 'selected' : ''}>PG Kompleks (&gt;1 Benar)</option>
+                <option value="true_false" ${isTf ? 'selected' : ''}>Benar / Salah (4 Pernyataan)</option>
+              </select>
+              <label class="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
+                <span>Bobot:</span>
+                <input type="number" data-b-idx="${idx}" data-b-field="weight" min="1" max="100" value="${row.weight}" class="w-14 px-2 py-1 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
+              </label>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" data-b-toggle-tbl="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasTable ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">📊 Tabel</button>
+              <button type="button" data-b-toggle-chart="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasChart ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">🗺️ Bagan</button>
+              ${bulkRowsState.length > 1 ? `<button type="button" data-b-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
+            </div>
+          </div>
+
+          <textarea rows="2" data-b-idx="${idx}" data-b-field="question" placeholder="Tuliskan teks pertanyaan nomor ${idx + 1}..." class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500">${escapeHtmlSafe(row.question)}</textarea>
+
+          ${tblHtml}
+          ${chartHtml}
+
+          ${!isTf ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">A</span><input type="text" data-b-idx="${idx}" data-b-field="optA" value="${escapeHtmlSafe(row.optA)}" placeholder="Pilihan A" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">B</span><input type="text" data-b-idx="${idx}" data-b-field="optB" value="${escapeHtmlSafe(row.optB)}" placeholder="Pilihan B" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">C</span><input type="text" data-b-idx="${idx}" data-b-field="optC" value="${escapeHtmlSafe(row.optC)}" placeholder="Pilihan C" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">D</span><input type="text" data-b-idx="${idx}" data-b-field="optD" value="${escapeHtmlSafe(row.optD)}" placeholder="Pilihan D" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+            </div>
+            ${isSingle ? `
+              <div class="flex items-center gap-2 text-xs">
+                <span class="font-bold text-slate-700">Kunci Jawaban:</span>
+                <select data-b-idx="${idx}" data-b-field="correctSingle" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+                  ${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${row.correctSingle === k ? 'selected' : ''}>${k}</option>`).join('')}
+                </select>
+              </div>
+            ` : `
+              <div class="flex flex-wrap items-center gap-3 text-xs">
+                <span class="font-bold text-slate-700">Kunci PG Kompleks:</span>
+                ${['A', 'B', 'C', 'D'].map(k => `
+                  <label class="inline-flex items-center gap-1 font-bold">
+                    <input type="checkbox" data-b-idx="${idx}" data-b-multi="${k}" ${row.correctMulti.includes(k) ? 'checked' : ''}> ${k}
+                  </label>
+                `).join('')}
+              </div>
+            `}
+          ` : `
+            <div class="space-y-1.5">
+              ${row.tfStmts.map((st, sIdx) => `
+                <div class="flex items-center gap-2">
+                  <input type="text" data-b-idx="${idx}" data-b-tf-text="${sIdx}" value="${escapeHtmlSafe(st.text)}" placeholder="Pernyataan ${sIdx + 1}${sIdx < 2 ? ' (Wajib)' : ' (Opsional)'}" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none">
+                  <select data-b-idx="${idx}" data-b-tf-corr="${sIdx}" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold outline-none">
+                    <option value="B" ${st.correct === 'B' ? 'selected' : ''}>Benar</option>
+                    <option value="S" ${st.correct === 'S' ? 'selected' : ''}>Salah</option>
+                  </select>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    }).join('');
+
+    updateBulkTotalWeightInfo();
+
+    // Bind row input events
+    bulkQuestionsListContainer.querySelectorAll('[data-b-field]').forEach(el => {
+      const idx = parseInt(el.getAttribute('data-b-idx'), 10);
+      const field = el.getAttribute('data-b-field');
+      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(evt, () => {
+        if (!bulkRowsState[idx]) return;
+        if (field === 'weight') {
+          bulkRowsState[idx].weight = Math.max(1, parseInt(el.value, 10) || 10);
+          updateBulkTotalWeightInfo();
+        } else {
+          bulkRowsState[idx][field] = el.value;
+          if (field === 'type') renderBulkQuestionRows();
+        }
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-multi]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const idx = parseInt(cb.getAttribute('data-b-idx'), 10);
+        const key = cb.getAttribute('data-b-multi');
+        const set = new Set(bulkRowsState[idx].correctMulti || []);
+        if (cb.checked) set.add(key);
+        else set.delete(key);
+        bulkRowsState[idx].correctMulti = Array.from(set);
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-tf-text]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const idx = parseInt(inp.getAttribute('data-b-idx'), 10);
+        const sIdx = parseInt(inp.getAttribute('data-b-tf-text'), 10);
+        bulkRowsState[idx].tfStmts[sIdx].text = inp.value;
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-tf-corr]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const idx = parseInt(sel.getAttribute('data-b-idx'), 10);
+        const sIdx = parseInt(sel.getAttribute('data-b-tf-corr'), 10);
+        bulkRowsState[idx].tfStmts[sIdx].correct = sel.value;
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-toggle-tbl]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-b-toggle-tbl'), 10);
+        bulkRowsState[idx].hasTable = !bulkRowsState[idx].hasTable;
+        renderBulkQuestionRows();
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-tbl]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const idx = parseInt(inp.getAttribute('data-b-idx'), 10);
+        const pos = inp.getAttribute('data-b-tbl');
+        const td = bulkRowsState[idx].tableData;
+        if (pos === 'h0') td.headers[0] = inp.value;
+        else if (pos === 'h1') td.headers[1] = inp.value;
+        else if (pos === 'r0c0') td.rows[0][0] = inp.value;
+        else if (pos === 'r0c1') td.rows[0][1] = inp.value;
+        else if (pos === 'r1c0') td.rows[1][0] = inp.value;
+        else if (pos === 'r1c1') td.rows[1][1] = inp.value;
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-toggle-chart]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-b-toggle-chart'), 10);
+        bulkRowsState[idx].hasChart = !bulkRowsState[idx].hasChart;
+        renderBulkQuestionRows();
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-chart]').forEach(el => {
+      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(evt, () => {
+        const idx = parseInt(el.getAttribute('data-b-idx'), 10);
+        const key = el.getAttribute('data-b-chart');
+        const cd = bulkRowsState[idx].chartData;
+        if (key === 'layout') cd.layout = el.value;
+        else if (key === 'n0') cd.nodes[0].label = el.value;
+        else if (key === 'n1') cd.nodes[1].label = el.value;
+      });
+    });
+
+    bulkQuestionsListContainer.querySelectorAll('[data-b-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-b-remove'), 10);
+        if (bulkRowsState.length <= 1) return;
+        bulkRowsState.splice(idx, 1);
+        renderBulkQuestionRows();
+      });
+    });
+  }
+
+  function openBulkQuestionModal() {
+    if (!modalBulkQuestionForm) return;
+    const subjSel = document.getElementById('bulkInputSubject');
+    if (subjSel) {
+      const opts = getQuestionSubjectOptionsList();
+      subjSel.innerHTML = opts.map(o => `<option value="${escapeHtmlSafe(o.value)}">${escapeHtmlSafe(o.label)}</option>`).join('');
+      const activeSubjFilter = document.getElementById('filterQuestionsSubject')?.value || '';
+      if (activeSubjFilter && activeSubjFilter !== 'ALL' && Array.from(subjSel.options).some(o => o.value === activeSubjFilter)) {
+        subjSel.value = activeSubjFilter;
+      }
+    }
+    const clsSel = document.getElementById('bulkInputClassLevel');
+    if (clsSel) {
+      const activeClsFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      if (activeClsFilter !== 'ALL' && Array.from(clsSel.options).some(o => o.value === activeClsFilter)) {
+        clsSel.value = activeClsFilter;
+      }
+    }
+    const countVal = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
+    const defWeight = parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25;
+    bulkRowsState = Array.from({ length: countVal }, () => createEmptyBulkRow(defWeight));
+    if (document.getElementById('bulkPassageTitle')) document.getElementById('bulkPassageTitle').value = '';
+    if (document.getElementById('bulkPassageText')) document.getElementById('bulkPassageText').value = '';
+    syncBulkModeUI();
+    renderBulkQuestionRows();
+    modalBulkQuestionForm.classList.remove('hidden');
+  }
+
+  function closeBulkQuestionModal() {
+    if (modalBulkQuestionForm) modalBulkQuestionForm.classList.add('hidden');
+  }
+
+  if (btnOpenBulkQuestion) btnOpenBulkQuestion.addEventListener('click', openBulkQuestionModal);
+  if (btnCloseBulkQuestionForm) btnCloseBulkQuestionForm.addEventListener('click', closeBulkQuestionModal);
+  if (btnCancelBulkQuestionForm) btnCancelBulkQuestionForm.addEventListener('click', closeBulkQuestionModal);
+  if (bulkInputMode) bulkInputMode.addEventListener('change', syncBulkModeUI);
+
+  document.getElementById('btnBulkSyncCountAndWeight')?.addEventListener('click', () => {
+    const targetCount = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
+    const targetWeight = Math.max(1, parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25);
+    while (bulkRowsState.length < targetCount) bulkRowsState.push(createEmptyBulkRow(targetWeight));
+    if (bulkRowsState.length > targetCount) bulkRowsState = bulkRowsState.slice(0, targetCount);
+    bulkRowsState.forEach(r => { r.weight = targetWeight; });
+    renderBulkQuestionRows();
+  });
+
+  document.getElementById('btnBulkAuto100')?.addEventListener('click', () => {
+    const n = bulkRowsState.length;
+    if (n === 0) return;
+    const base = Math.floor(100 / n);
+    const rem = 100 - (base * n);
+    bulkRowsState.forEach((r, i) => {
+      r.weight = base + (i < rem ? 1 : 0);
+    });
+    renderBulkQuestionRows();
+  });
+
+  document.getElementById('btnBulkAddOneRow')?.addEventListener('click', () => {
+    const w = parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25;
+    bulkRowsState.push(createEmptyBulkRow(w));
+    renderBulkQuestionRows();
+  });
+
+  const formBulkQuestions = document.getElementById('formBulkQuestions');
+  if (formBulkQuestions) {
+    formBulkQuestions.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const subject = document.getElementById('bulkInputSubject')?.value.trim() || 'Umum';
+      const classLevel = document.getElementById('bulkInputClassLevel')?.value || 'Semua Kelas';
+      const isTrial = (document.getElementById('bulkInputCategory')?.value || 'exam') === 'trial';
+      const mode = document.getElementById('bulkInputMode')?.value || 'passage';
+      const passageTitle = (document.getElementById('bulkPassageTitle')?.value || '').trim();
+      const passageText = (document.getElementById('bulkPassageText')?.value || '').trim();
+
+      if (mode === 'passage' && !passageText && !passageTitle) {
+        alert('Pada mode Paket Wacana / Pernyataan, harap isi Teks Wacana / Stimulus Bersama terlebih dahulu!');
+        return;
+      }
+
+      const passageGroupId = mode === 'passage' ? `WACANA-${Date.now()}` : '';
+      const payloadList = [];
+
+      for (let i = 0; i < bulkRowsState.length; i++) {
+        const r = bulkRowsState[i];
+        const qText = String(r.question || '').trim();
+        if (!qText) {
+          alert(`Teks pertanyaan pada Soal #${i + 1} belum diisi!`);
+          return;
+        }
+        const item = {
+          subject,
+          classLevel,
+          isTrial,
+          type: r.type,
+          question: qText,
+          weight: Math.max(1, parseInt(r.weight, 10) || 10)
+        };
+        if (mode === 'passage') {
+          item.passageGroupId = passageGroupId;
+          item.passageTitle = passageTitle;
+          item.passageText = passageText;
+          item.passageOrder = i + 1;
+          item.passageGroupSize = bulkRowsState.length;
+        }
+        if (r.hasTable && r.tableData) item.tableData = JSON.parse(JSON.stringify(r.tableData));
+        if (r.hasChart && r.chartData) item.chartData = JSON.parse(JSON.stringify(r.chartData));
+
+        if (r.type === 'single') {
+          item.options = [
+            { key: 'A', text: (r.optA || '').trim() },
+            { key: 'B', text: (r.optB || '').trim() },
+            { key: 'C', text: (r.optC || '').trim() },
+            { key: 'D', text: (r.optD || '').trim() }
+          ];
+          item.correctAnswer = r.correctSingle || 'A';
+        } else if (r.type === 'multiple') {
+          if (!r.correctMulti || r.correctMulti.length === 0) {
+            alert(`Pilih minimal 1 kunci jawaban PG Kompleks pada Soal #${i + 1}!`);
+            return;
+          }
+          item.options = [
+            { key: 'A', text: (r.optA || '').trim() },
+            { key: 'B', text: (r.optB || '').trim() },
+            { key: 'C', text: (r.optC || '').trim() },
+            { key: 'D', text: (r.optD || '').trim() }
+          ];
+          item.correctAnswer = r.correctMulti;
+        } else if (r.type === 'true_false') {
+          const stmts = (r.tfStmts || [])
+            .map((s, si) => ({ id: `s${si + 1}`, text: String(s.text || '').trim(), correct: s.correct === 'S' ? 'S' : 'B' }))
+            .filter(s => s.text !== '');
+          if (stmts.length < 2) {
+            alert(`Soal #${i + 1} (Benar/Salah) harus memiliki minimal 2 pernyataan yang diisi!`);
+            return;
+          }
+          item.statements = stmts;
+        }
+        payloadList.push(item);
+      }
+
+      const res = window.cbtAdmin.addQuestionsBatch(payloadList);
+      if (res && res.success) {
+        closeBulkQuestionModal();
+        setupQuestionBankFilters();
+        const subjFilterEl = document.getElementById('filterQuestionsSubject');
+        if (subjFilterEl && Array.from(subjFilterEl.options).some(o => o.value === subject)) {
+          subjFilterEl.value = subject;
+        }
+        renderAdminQuestionList();
+        renderAdminSchedulesList();
+        alert(`Berhasil menyimpan ${res.count} soal sekaligus ke Bank Soal (${subject})!`);
+      } else {
+        alert(res?.message || 'Gagal menyimpan paket soal.');
+      }
     });
   }
 
@@ -6925,9 +7895,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tbody || !window.cbtAdmin) return;
     tbody.innerHTML = '';
 
-    const teachers = searchQuery
-      ? window.cbtAdmin.searchTeachers(searchQuery)
-      : window.cbtAdmin.getAllTeachers();
+    const roleFilter = document.getElementById('filterTeacherRole')?.value || 'ALL';
+    const teachers = window.cbtAdmin.searchTeachers(searchQuery, roleFilter);
 
     if (badge) {
       const allNonAdmin = window.cbtAdmin.getAllTeachers().filter(t => t.role !== 'admin' && t.id !== 'admin');
@@ -7055,6 +8024,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchTeacherInput = document.getElementById('searchTeacherInput');
   if (searchTeacherInput) {
     searchTeacherInput.addEventListener('input', (e) => renderAdminTeachersList(e.target.value.trim()));
+  }
+  const filterTeacherRole = document.getElementById('filterTeacherRole');
+  if (filterTeacherRole) {
+    filterTeacherRole.addEventListener('change', () => {
+      renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value.trim() || '');
+    });
   }
 
   const modalEditTeacher = document.getElementById('modalEditTeacher');

@@ -916,6 +916,8 @@ BEGIN
     'incorrectCount', v_incorrect_cnt,
     'unattemptedCount', v_unattempted_cnt,
     'totalQuestions', v_idx,
+    'totalEarnedPoints', v_total_earned,
+    'maxPossiblePoints', v_max_points,
     'finalScore', v_final_score,
     'cheatCount', v_cheat_count,
     'cheatLogs', v_cheat_logs,
@@ -1183,6 +1185,86 @@ BEGIN
 END;
 $$;
 
+-- Helper Internal: Normalisasi token kelas (Romawi VII/VIII/IX + rentang 7-8-9 / 7-9)
+CREATE OR REPLACE FUNCTION cbt_expand_class_tokens(p_raw TEXT)
+RETURNS TEXT[]
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_clean TEXT := UPPER(BTRIM(COALESCE(p_raw, '')));
+  v_parts TEXT[];
+  v_part TEXT;
+  v_res TEXT[] := ARRAY[]::text[];
+  v_norm TEXT;
+  v_match TEXT[];
+  v_num_a INTEGER;
+  v_num_b INTEGER;
+  v_i INTEGER;
+  v_seg TEXT;
+  v_segs TEXT[];
+BEGIN
+  IF v_clean = '' THEN RETURN v_res; END IF;
+  v_clean := regexp_replace(v_clean, '\bKELAS\b', '', 'gi');
+  v_clean := regexp_replace(v_clean, '\bTINGKAT\b', '', 'gi');
+  v_clean := regexp_replace(v_clean, '\s+(DAN|&)\s+', ',', 'gi');
+  v_clean := regexp_replace(v_clean, '\s*(S/D|SD|TO)\s*', '-', 'gi');
+  v_parts := regexp_split_to_array(v_clean, '[,;/]+');
+
+  FOREACH v_part IN ARRAY v_parts LOOP
+    v_part := BTRIM(v_part);
+    IF v_part = '' THEN CONTINUE; END IF;
+
+    -- Konversi angka romawi di depan segmen (termasuk 7-8-9 atau VII-IX atau VII-a)
+    v_part := regexp_replace(v_part, '^(XII)(?=[^A-Z]|$)', '12', 'i');
+    v_part := regexp_replace(v_part, '^(XI)(?=[^A-Z]|$)', '11', 'i');
+    v_part := regexp_replace(v_part, '^(VIII)(?=[^A-Z]|$)', '8', 'i');
+    v_part := regexp_replace(v_part, '^(VII)(?=[^A-Z]|$)', '7', 'i');
+    v_part := regexp_replace(v_part, '^(VI)(?=[^A-Z]|$)', '6', 'i');
+    v_part := regexp_replace(v_part, '^(IX)(?=[^A-Z]|$)', '9', 'i');
+    v_part := regexp_replace(v_part, '^(IV)(?=[^A-Z]|$)', '4', 'i');
+    v_part := regexp_replace(v_part, '^(X)(?=[^A-Z]|$)', '10', 'i');
+
+    -- Cek rentang / daftar tingkat dipisah strip: misal 7-8-9 atau 7-9 atau VII-IX
+    v_norm := regexp_replace(v_part, '\s+', '', 'g');
+    IF v_norm ~ '^\d+(-\d+)+$' THEN
+      v_segs := regexp_split_to_array(v_norm, '-');
+      IF array_length(v_segs, 1) = 2 THEN
+        v_num_a := v_segs[1]::integer;
+        v_num_b := v_segs[2]::integer;
+        IF v_num_a <= v_num_b AND (v_num_b - v_num_a) <= 6 THEN
+          FOR v_i IN v_num_a..v_num_b LOOP
+            v_res := array_append(v_res, v_i::text);
+          END LOOP;
+          CONTINUE;
+        END IF;
+      END IF;
+      FOREACH v_seg IN ARRAY v_segs LOOP
+        v_res := array_append(v_res, v_seg);
+      END LOOP;
+      CONTINUE;
+    END IF;
+
+    -- Token tunggal seperti VII-a -> 7A, 8 B -> 8B, 9 -> 9
+    v_norm := regexp_replace(v_part, '[\s\-_]+', '', 'g');
+    v_norm := regexp_replace(v_norm, '^XII', '12', 'i');
+    v_norm := regexp_replace(v_norm, '^XI', '11', 'i');
+    v_norm := regexp_replace(v_norm, '^VIII', '8', 'i');
+    v_norm := regexp_replace(v_norm, '^VII', '7', 'i');
+    v_norm := regexp_replace(v_norm, '^VI', '6', 'i');
+    v_norm := regexp_replace(v_norm, '^IX', '9', 'i');
+    v_norm := regexp_replace(v_norm, '^IV', '4', 'i');
+    v_norm := regexp_replace(v_norm, '^X', '10', 'i');
+
+    IF v_norm <> '' THEN
+      v_res := array_append(v_res, v_norm);
+    END IF;
+  END LOOP;
+
+  RETURN v_res;
+END;
+$$;
+
 -- Helper Internal: Cek kesesuaian kelas siswa terhadap classLevel jadwal di server
 CREATE OR REPLACE FUNCTION cbt_matches_class_level(p_sched_class TEXT, p_student_class TEXT)
 RETURNS BOOLEAN
@@ -1199,21 +1281,21 @@ DECLARE
   v_q_grade TEXT;
   v_t_grade TEXT;
 BEGIN
-  IF v_qc = '' OR v_qc IN ('SEMUA', 'SEMUA KELAS', 'ALL') THEN RETURN true; END IF;
-  IF v_tc = '' OR v_tc IN ('SEMUA', 'SEMUA KELAS', 'ALL') THEN RETURN true; END IF;
+  IF v_qc = '' OR v_qc ~ '(SEMUA|ALL)' THEN RETURN true; END IF;
+  IF v_tc = '' OR v_tc ~ '(SEMUA|ALL)' THEN RETURN true; END IF;
 
-  v_q_parts := regexp_split_to_array(regexp_replace(v_qc, 'KELAS\s*', '', 'g'), '[,;/]+');
-  v_t_parts := regexp_split_to_array(regexp_replace(v_tc, 'KELAS\s*', '', 'g'), '[,;/]+');
+  v_q_parts := cbt_expand_class_tokens(v_qc);
+  v_t_parts := cbt_expand_class_tokens(v_tc);
+
+  IF COALESCE(array_length(v_q_parts, 1), 0) = 0 OR COALESCE(array_length(v_t_parts, 1), 0) = 0 THEN
+    RETURN true;
+  END IF;
 
   FOREACH v_q IN ARRAY v_q_parts LOOP
-    v_q := regexp_replace(BTRIM(v_q), '\s+', '', 'g');
-    IF v_q = '' THEN CONTINUE; END IF;
     IF v_q IN ('SEMUA', 'SEMUAKELAS', 'ALL') THEN RETURN true; END IF;
     v_q_grade := substring(v_q FROM '^(\d+)');
 
     FOREACH v_t IN ARRAY v_t_parts LOOP
-      v_t := regexp_replace(BTRIM(v_t), '\s+', '', 'g');
-      IF v_t = '' THEN CONTINUE; END IF;
       IF v_q = v_t THEN RETURN true; END IF;
       v_t_grade := substring(v_t FROM '^(\d+)');
       IF v_q_grade IS NOT NULL AND v_t_grade IS NOT NULL AND v_q_grade = v_t_grade THEN
@@ -1247,9 +1329,13 @@ DECLARE
   v_has_active BOOLEAN := false;
   v_selected JSONB := NULL;
   v_matched JSONB := NULL;
+  v_matched_exact_id JSONB := NULL;
+  v_matched_class JSONB := NULL;
+  v_matched_any JSONB := NULL;
   v_sch JSONB;
   v_sch_tok TEXT;
-  v_match_count INTEGER := 0;
+  v_is_sched_active BOOLEAN;
+  v_sched_class TEXT;
 BEGIN
   IF v_input_token = '' THEN
     RETURN jsonb_build_object('success', false, 'valid', false, 'message', 'Harap masukkan Token Ujian!');
@@ -1279,9 +1365,14 @@ BEGIN
 
   IF v_scheds IS NOT NULL AND jsonb_typeof(v_scheds) = 'array' THEN
     FOR v_sch IN SELECT * FROM jsonb_array_elements(v_scheds) LOOP
-      IF COALESCE((v_sch->>'active')::boolean, false) THEN
+      v_is_sched_active := COALESCE((v_sch->>'isActive')::boolean, (v_sch->>'active')::boolean, false);
+      IF v_is_sched_active THEN
         v_has_active := true;
-        IF v_selected IS NULL OR (v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id) THEN
+        v_sched_class := COALESCE(NULLIF(v_sch->>'classLevel', ''), NULLIF(v_sch->>'targetClass', ''), 'Semua Kelas');
+
+        IF v_selected IS NULL
+           OR (v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id)
+           OR (v_stu_class <> '' AND cbt_matches_class_level(v_sched_class, v_stu_class) AND v_sched_id = '') THEN
           v_selected := v_sch;
         END IF;
 
@@ -1296,14 +1387,23 @@ BEGIN
           v_sch_tok := v_cfg_token;
         END IF;
 
-        IF v_sch_tok = v_input_token THEN
-          v_match_count := v_match_count + 1;
+        IF UPPER(BTRIM(v_sch_tok)) = v_input_token THEN
+          IF v_matched_any IS NULL THEN
+            v_matched_any := v_sch;
+          END IF;
+
           IF v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id THEN
-            v_matched := v_sch;
-          ELSIF v_matched IS NULL THEN
-            v_matched := v_sch;
-          ELSIF v_stu_class <> '' AND cbt_matches_class_level(COALESCE(v_sch->>'classLevel', 'Semua Kelas'), v_stu_class) THEN
-            v_matched := v_sch;
+            IF v_stu_class = '' OR cbt_matches_class_level(v_sched_class, v_stu_class) THEN
+              v_matched_exact_id := v_sch;
+            ELSIF v_matched_exact_id IS NULL THEN
+              v_matched_exact_id := v_sch;
+            END IF;
+          END IF;
+
+          IF v_stu_class <> '' AND cbt_matches_class_level(v_sched_class, v_stu_class) THEN
+            IF v_matched_class IS NULL OR (v_sched_id <> '' AND BTRIM(COALESCE(v_sch->>'id', '')) = v_sched_id) THEN
+              v_matched_class := v_sch;
+            END IF;
           END IF;
         END IF;
       END IF;
@@ -1311,6 +1411,9 @@ BEGIN
   END IF;
 
   IF v_has_active THEN
+    -- Prioritas: cocok kelas siswa (dan/atau schedule_id yang dipilih) -> exact schedule_id -> kecocokan pertama
+    v_matched := COALESCE(v_matched_class, v_matched_exact_id, v_matched_any);
+
     IF v_matched IS NULL THEN
       RETURN jsonb_build_object(
         'success', false,
@@ -1319,11 +1422,12 @@ BEGIN
       );
     END IF;
 
-    IF v_stu_class <> '' AND COALESCE(v_matched->>'classLevel', '') <> '' AND NOT cbt_matches_class_level(v_matched->>'classLevel', v_stu_class) THEN
+    v_sched_class := COALESCE(NULLIF(v_matched->>'classLevel', ''), NULLIF(v_matched->>'targetClass', ''), '');
+    IF v_stu_class <> '' AND v_sched_class <> '' AND NOT cbt_matches_class_level(v_sched_class, v_stu_class) THEN
       RETURN jsonb_build_object(
         'success', false,
         'valid', false,
-        'message', '⛔ Ujian Ditolak: Jadwal "' || COALESCE(v_matched->>'subject', '-') || '" (' || COALESCE(v_matched->>'classLevel', '-') || ') bukan untuk Kelas ' || v_stu_class || '. Pilih mata pelajaran lain yang sesuai kelas Anda.'
+        'message', '⛔ Ujian Ditolak: Jadwal "' || COALESCE(v_matched->>'subject', '-') || '" (' || v_sched_class || ') bukan untuk Kelas ' || v_stu_class || '. Pilih mata pelajaran lain yang sesuai kelas Anda.'
       );
     END IF;
 
@@ -1336,7 +1440,7 @@ BEGIN
   END IF;
 
   -- Mode Manual (belum ada jadwal aktif)
-  IF v_input_token <> v_cfg_token THEN
+  IF v_input_token <> UPPER(BTRIM(v_cfg_token)) THEN
     RETURN jsonb_build_object(
       'success', false,
       'valid', false,

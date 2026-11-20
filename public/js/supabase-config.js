@@ -1850,6 +1850,157 @@ class SupabaseSyncManager {
     }
   }
 
+  _getDeletedResultSignatures() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('cbt_deleted_result_sigs') || '[]');
+      return new Set(Array.isArray(raw) ? raw.map(String) : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  _addDeletedResultSignatures(sigs = []) {
+    try {
+      const set = this._getDeletedResultSignatures();
+      sigs.forEach(s => { if (s) set.add(String(s)); });
+      localStorage.setItem('cbt_deleted_result_sigs', JSON.stringify(Array.from(set).slice(-500)));
+    } catch (e) {}
+  }
+
+  _buildResultSignature(rec) {
+    if (!rec) return '';
+    if (rec._cloudRowId !== undefined && rec._cloudRowId !== null) return `ROW:${rec._cloudRowId}`;
+    const nisn = String(rec.student?.nisn || rec.student_nisn || '').trim().toUpperCase();
+    const subj = String(rec.subject || '').trim().toLowerCase();
+    const comp = String(rec.completedAt || rec.completed_at || '').trim();
+    const idStr = String(rec.id || '').trim();
+    return `${idStr}__${nisn}__${subj}__${comp}`;
+  }
+
+  async deleteSingleResultFromCloud(resultRecord) {
+    if (!resultRecord) return { success: false };
+    const sig = this._buildResultSignature(resultRecord);
+    if (sig) this._addDeletedResultSignatures([sig]);
+
+    if (!this.client || !this.isConnected) {
+      return { success: true, offlineQueued: true };
+    }
+
+    try {
+      let deletedCount = 0;
+      if (resultRecord._cloudRowId !== undefined && resultRecord._cloudRowId !== null) {
+        const { error } = await this.client
+          .from('cbt_exam_results')
+          .delete()
+          .eq('id', resultRecord._cloudRowId);
+        if (!error) deletedCount += 1;
+      }
+
+      const nisn = String(resultRecord.student?.nisn || resultRecord.student_nisn || '').trim();
+      const subj = String(resultRecord.subject || '').trim();
+      const compAt = String(resultRecord.completedAt || resultRecord.completed_at || '').trim();
+
+      if (nisn && nisn !== '__CBT_STATE__' && nisn !== '__CBT_QUESTION_ROW__') {
+        let q = this.client
+          .from('cbt_exam_results')
+          .delete()
+          .eq('student_nisn', nisn)
+          .neq('exam_title', '__CBT_LIVE_SESSION__');
+        if (subj) q = q.eq('subject', subj);
+        if (compAt) q = q.eq('completed_at', compAt);
+        const { error: qErr } = await q;
+        if (!qErr) deletedCount += 1;
+      }
+
+      if (nisn && subj) {
+        const sessKey = `${nisn.toUpperCase()}__${subj.toLowerCase()}`;
+        await this.client
+          .from('cbt_student_sessions')
+          .delete()
+          .eq('session_key', sessKey)
+          .eq('status', 'completed');
+      }
+
+      return { success: true, deletedCount };
+    } catch (err) {
+      console.warn('Gagal hapus hasil tunggal di cloud:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  async deleteAllResultsFromCloud(targetRecords = null) {
+    if (Array.isArray(targetRecords) && targetRecords.length > 0) {
+      const sigs = targetRecords.map(r => this._buildResultSignature(r)).filter(Boolean);
+      this._addDeletedResultSignatures(sigs);
+    }
+
+    if (!this.client || !this.isConnected) {
+      return { success: true, offlineOnly: true };
+    }
+
+    try {
+      if (Array.isArray(targetRecords) && targetRecords.length > 0) {
+        const rowIds = targetRecords
+          .map(r => r._cloudRowId)
+          .filter(id => id !== undefined && id !== null && id !== '');
+        if (rowIds.length > 0) {
+          for (let i = 0; i < rowIds.length; i += 100) {
+            const chunk = rowIds.slice(i, i + 100);
+            await this.client.from('cbt_exam_results').delete().in('id', chunk);
+          }
+        }
+        // Fallback hapus berdasarkan NISN + Subject + CompletedAt jika _cloudRowId belum ada
+        const withoutRowId = targetRecords.filter(r => r._cloudRowId === undefined || r._cloudRowId === null);
+        for (const rec of withoutRowId) {
+          const nisn = String(rec.student?.nisn || rec.student_nisn || '').trim();
+          const subj = String(rec.subject || '').trim();
+          const compAt = String(rec.completedAt || rec.completed_at || '').trim();
+          if (nisn && nisn !== '__CBT_STATE__' && nisn !== '__CBT_QUESTION_ROW__') {
+            let q = this.client
+              .from('cbt_exam_results')
+              .delete()
+              .eq('student_nisn', nisn)
+              .neq('exam_title', '__CBT_LIVE_SESSION__');
+            if (subj) q = q.eq('subject', subj);
+            if (compAt) q = q.eq('completed_at', compAt);
+            await q;
+          }
+        }
+        // Bersihkan sesi completed yang terkait agar siswa dapat ikut ulang bila diperlukan & monitoring bersih
+        const sessKeys = [...new Set(targetRecords.map(r => {
+          const n = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
+          const s = String(r.subject || '').trim().toLowerCase();
+          return (n && s) ? `${n}__${s}` : '';
+        }).filter(Boolean))];
+        for (let i = 0; i < sessKeys.length; i += 100) {
+          const chunk = sessKeys.slice(i, i + 100);
+          await this.client
+            .from('cbt_student_sessions')
+            .delete()
+            .in('session_key', chunk)
+            .eq('status', 'completed');
+        }
+      } else {
+        // Hapus seluruh hasil ujian asli di cbt_exam_results (pertahankan row __CBT_STATE__, __CBT_QUESTION_ROW__, __CBT_LIVE_SESSION__)
+        await this.client
+          .from('cbt_exam_results')
+          .delete()
+          .neq('student_nisn', '__CBT_STATE__')
+          .neq('student_nisn', '__CBT_QUESTION_ROW__')
+          .neq('exam_title', '__CBT_LIVE_SESSION__');
+
+        await this.client
+          .from('cbt_student_sessions')
+          .delete()
+          .eq('status', 'completed');
+      }
+      return { success: true };
+    } catch (err) {
+      console.warn('Gagal hapus hasil di cloud:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
   async fetchStudentAttemptsFromCloud(nisn) {
     if (!this.client || !this.isConnected || !nisn) return [];
     try {
@@ -1860,9 +2011,12 @@ class SupabaseSyncManager {
         .neq('exam_title', '__CBT_LIVE_SESSION__');
 
       if (error || !Array.isArray(data)) return [];
+      const deletedSigs = this._getDeletedResultSignatures();
       return data
         .filter(row => row.student_nisn !== '__CBT_STATE__' && row.student_nisn !== '__CBT_QUESTION_ROW__' && row.exam_title !== '__CBT_LIVE_SESSION__')
+        .filter(row => !deletedSigs.has(`ROW:${row.id}`))
         .map(row => ({
+          _cloudRowId: row.id,
           id: row.id,
           student: { name: row.student_name, nisn: row.student_nisn, class: row.student_class },
           subject: row.subject,
@@ -1940,29 +2094,37 @@ class SupabaseSyncManager {
         return { success: false, message: error.message, data: JSON.parse(localStorage.getItem('cbt_exam_results') || '[]') };
       }
 
+      const deletedSigs = this._getDeletedResultSignatures();
       const formatted = (data || [])
         .filter(row => row.student_nisn !== '__CBT_STATE__' && row.student_nisn !== '__CBT_QUESTION_ROW__' && row.exam_title !== '__CBT_LIVE_SESSION__')
         .map(row => {
-          if (row.raw_data) return row.raw_data;
-          return {
-            id: row.id,
-            student: {
-              name: row.student_name,
-              nisn: row.student_nisn,
-              class: row.student_class
-            },
-            examTitle: row.exam_title,
-            subject: row.subject,
-            finalScore: row.final_score,
-            correctCount: row.correct_count,
-            incorrectCount: row.incorrect_count,
-            unattemptedCount: row.unattempted_count,
-            totalQuestions: row.total_questions,
-            cheatCount: row.cheat_count,
-            completedAt: row.completed_at,
-            finishReason: row.finish_reason,
-            detailedAnswers: []
-          };
+          const base = row.raw_data && typeof row.raw_data === 'object'
+            ? { ...row.raw_data }
+            : {
+                id: row.id,
+                student: {
+                  name: row.student_name,
+                  nisn: row.student_nisn,
+                  class: row.student_class
+                },
+                examTitle: row.exam_title,
+                subject: row.subject,
+                finalScore: row.final_score,
+                correctCount: row.correct_count,
+                incorrectCount: row.incorrect_count,
+                unattemptedCount: row.unattempted_count,
+                totalQuestions: row.total_questions,
+                cheatCount: row.cheat_count,
+                completedAt: row.completed_at,
+                finishReason: row.finish_reason,
+                detailedAnswers: []
+              };
+          base._cloudRowId = row.id;
+          return base;
+        })
+        .filter(rec => {
+          const sig = this._buildResultSignature(rec);
+          return !deletedSigs.has(`ROW:${rec._cloudRowId}`) && (!sig || !deletedSigs.has(sig));
         });
 
       localStorage.setItem('cbt_exam_results', JSON.stringify(formatted));

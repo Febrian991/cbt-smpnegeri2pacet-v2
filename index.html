@@ -506,9 +506,18 @@
           </div>
 
           <div class="scalable-text flex-1">
+            <!-- Wacana / Stimulus Berkelompok (3-5 Soal) -->
+            <div id="questionStimulusContainer" class="hidden mb-4"></div>
+
             <p id="questionText" class="text-slate-800 font-semibold leading-relaxed whitespace-pre-line text-sm sm:text-base">
               Memuat butir soal ujian...
             </p>
+
+            <!-- Tabel Pertanyaan -->
+            <div id="questionTableContainer" class="hidden mt-3 sm:mt-4"></div>
+
+            <!-- Bagan / Diagram Pertanyaan -->
+            <div id="questionChartContainer" class="hidden mt-3 sm:mt-4"></div>
 
             <!-- Lampiran Gambar Soal -->
             <div id="questionImageContainer" class="hidden mt-3 sm:mt-4 max-w-lg mx-auto rounded-2xl overflow-hidden border border-slate-200 p-1 bg-slate-50 shadow-xs">
@@ -1027,6 +1036,7 @@
                   <th class="px-2.5 py-3 whitespace-nowrap">Waktu Selesai</th>
                   <th class="px-2.5 py-3 text-center whitespace-nowrap">B / S / K</th>
                   <th class="px-2.5 py-3 whitespace-nowrap">Ket. Curang</th>
+                  <th class="px-2.5 py-3 text-center whitespace-nowrap">Aksi</th>
                 </tr>
               </thead>
               <tbody id="adminResultsTbody"></tbody>
@@ -1332,6 +1342,9 @@
               <button id="btnRefreshQuestionsCloud" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 transition cursor-pointer" title="Ambil soal terbaru dari Cloud (per-baris)">
                 🔄 Segarkan Soal
               </button>
+              <button id="btnOpenBulkQuestion" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm cursor-pointer flex items-center gap-1" title="Input banyak soal sekaligus atau paket wacana 3-5 nomor soal">
+                <span>⚡ Input Massal / Paket Wacana</span>
+              </button>
               <button id="btnOpenAddQuestion" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm cursor-pointer flex items-center gap-1">
                 <span>+ Tambah Soal</span>
               </button>
@@ -1359,6 +1372,26 @@
                 <option value="exam">📝 Soal Ujian Asli Saja</option>
                 <option value="trial">🧪 Soal Simulasi Saja</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Bilah Pengaturan Bobot Nilai Massal (e.g. Bobot 25 per soal untuk 4 soal = 100) -->
+          <div id="questionBulkWeightBar" class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 font-bold">
+                ⚖️ Total Bobot Filter Aktif: <strong id="questionTotalWeightBadge">0</strong> Poin
+              </span>
+              <span class="text-[11px] text-slate-500">Nilai akhir otomatis dihitung proporsional (misal 4 soal × bobot 25 = 100 poin).</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] font-bold text-slate-600">Set Bobot Massal:</span>
+              <input type="number" id="bulkWeightValueInput" min="1" max="100" value="25" class="w-16 px-2 py-1 rounded-lg border border-slate-300 text-center font-bold text-blue-700 outline-none">
+              <button type="button" id="btnApplyBulkWeight" class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold cursor-pointer transition">
+                Terapkan ke Soal Tampil
+              </button>
+              <button type="button" id="btnRebalanceWeight100" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold cursor-pointer transition" title="Bagi rata bobot semua soal yang tampil agar total mendekati/tepat 100 poin">
+                ⚖️ Bagi Rata = 100
+              </button>
             </div>
           </div>
         </div>
@@ -1731,8 +1764,16 @@
         </div>
 
         <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-          <div class="p-3 border-b border-slate-100 flex items-center justify-between gap-3">
-            <input type="text" id="searchTeacherInput" placeholder="Cari nama, NIP, mapel, atau pengawas..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-64 outline-none focus:ring-2 focus:ring-blue-500">
+          <div class="p-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="text" id="searchTeacherInput" placeholder="Cari nama, NIP, mapel, atau pengawas..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-64 outline-none focus:ring-2 focus:ring-blue-500">
+              <select id="filterTeacherRole" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ALL">Semua Peran (Guru &amp; Pengawas)</option>
+                <option value="guru">👨‍🏫 Hanya Guru Mapel</option>
+                <option value="pengawas">👀 Hanya Pengawas Ruang</option>
+                <option value="admin">🛡️ Proktor / Admin</option>
+              </select>
+            </div>
             <span class="text-xs text-slate-400 font-bold" id="teacherCountBadge">Total: 13 Guru</span>
           </div>
           <div class="overflow-x-auto">
@@ -2319,9 +2360,9 @@
     </div>
   </div>
 
-  <!-- MODAL: TAMBAH SOAL UJIAN -->
-  <div id="modalQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+  <!-- MODAL: TAMBAH / EDIT SOAL UJIAN (LENGKAP: BAGAN, TABEL, WACANA 3-5 SOAL, B/S 4 PERNYATAAN, BOBOT) -->
+  <div id="modalQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
         <h3 id="questionFormTitle" class="font-bold text-base text-slate-900">Tambah Soal Ujian Baru</h3>
         <button id="btnCloseQuestionForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
@@ -2393,7 +2434,7 @@
             <select id="qInputType" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-blue-700 outline-none">
               <option value="single">Pilihan Ganda Tunggal (1 Jawaban Benar)</option>
               <option value="multiple">Pilihan Ganda Kompleks (Jawaban &gt; 1)</option>
-              <option value="true_false">Tabel Pernyataan Benar / Salah</option>
+              <option value="true_false">Tabel Pernyataan Benar / Salah (Maks. 4 Pernyataan)</option>
             </select>
           </div>
         </div>
@@ -2401,10 +2442,104 @@
           🧪 <strong>Mode Simulasi:</strong> Soal ini ditandai khusus sebagai soal simulasi dan bisa disaring atau dihapus 1 klik sebelum ujian asli dimulai.
         </p>
 
+        <!-- PANEL KELOMPOK WACANA / STIMULUS (3 S.D 5 SOAL) -->
+        <details id="qPassageDetails" class="bg-indigo-50/60 dark:bg-indigo-950/30 p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800">
+          <summary class="cursor-pointer font-bold text-xs text-indigo-900 dark:text-indigo-200 flex items-center justify-between">
+            <span>📖 Kelompok Soal Berbasis Wacana / Pernyataan (Untuk 3 s.d. 5 Soal) — Opsional</span>
+            <span class="text-[10px] font-semibold text-indigo-600">Klik untuk buka/tutup</span>
+          </summary>
+          <div class="mt-3 space-y-2.5 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="qInputPassageGroupId">Kode Kelompok Wacana</label>
+                <div class="flex gap-1">
+                  <input type="text" id="qInputPassageGroupId" placeholder="Misal: WACANA-1" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono text-xs outline-none">
+                  <button type="button" id="btnGenPassageGroupId" class="px-2 py-1.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-bold text-[11px] cursor-pointer" title="Buat kode kelompok baru">✨</button>
+                </div>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="qInputPassageOrder">Urutan Nomor dalam Wacana</label>
+                <input type="number" id="qInputPassageOrder" min="1" max="10" value="1" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none">
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="qInputPassageGroupSize">Jumlah Soal Kelompok</label>
+                <select id="qInputPassageGroupSize" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none">
+                  <option value="3">3 Nomor Soal</option>
+                  <option value="4">4 Nomor Soal</option>
+                  <option value="5" selected>5 Nomor Soal</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1" for="qInputPassageTitle">Judul Wacana / Stimulus (Opsional)</label>
+              <input type="text" id="qInputPassageTitle" placeholder="Contoh: Teks Bacaan Ekosistem Danau / Info Grafik Energi" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1" for="qInputPassageText">Isi Teks Wacana / Stimulus Bersama</label>
+              <textarea id="qInputPassageText" rows="3" placeholder="Tuliskan teks bacaan atau pernyataan utama yang berlaku untuk soal-soal dalam kelompok ini..." class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none"></textarea>
+            </div>
+          </div>
+        </details>
+
         <div>
           <label class="block font-bold text-slate-700 mb-1" for="qInputText">Teks Pertanyaan</label>
           <textarea id="qInputText" rows="3" required placeholder="Tuliskan butir soal di sini..." class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
         </div>
+
+        <!-- PANEL TABEL PERTANYAAN (VISUAL BUILDER) -->
+        <details id="qTableDetails" class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <summary class="cursor-pointer font-bold text-xs text-slate-800 flex items-center justify-between">
+            <span>📊 Sisipkan Tabel ke Dalam Pertanyaan (Opsional)</span>
+            <span class="text-[10px] font-semibold text-blue-600" id="qStemTableStatusBadge">Belum ada tabel</span>
+          </summary>
+          <div class="mt-3 space-y-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" id="btnToggleStemTable" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer">+ Aktifkan / Buat Tabel</button>
+              <button type="button" id="btnStemTableAddCol" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-bold cursor-pointer">+ Kolom</button>
+              <button type="button" id="btnStemTableDelCol" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-bold cursor-pointer">- Kolom</button>
+              <button type="button" id="btnStemTableAddRow" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-bold cursor-pointer">+ Baris</button>
+              <button type="button" id="btnStemTableDelRow" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-bold cursor-pointer">- Baris</button>
+              <button type="button" id="btnClearStemTable" class="hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-bold cursor-pointer">🗑️ Hapus Tabel</button>
+            </div>
+            <div id="qStemTableEditorGrid" class="hidden overflow-x-auto bg-white p-2 rounded-xl border border-slate-200"></div>
+          </div>
+        </details>
+
+        <!-- PANEL BAGAN / DIAGRAM BUILDER + LIVE SVG PREVIEW -->
+        <details id="qChartDetails" class="bg-cyan-50/50 dark:bg-cyan-950/30 p-3.5 rounded-2xl border border-cyan-200 dark:border-cyan-800">
+          <summary class="cursor-pointer font-bold text-xs text-cyan-900 dark:text-cyan-200 flex items-center justify-between">
+            <span>🗺️ Sisipkan Bagan / Diagram Alur / Pohon Hierarki (Opsional)</span>
+            <span class="text-[10px] font-semibold text-cyan-700" id="qChartStatusBadge">Belum ada bagan</span>
+          </summary>
+          <div class="mt-3 space-y-2.5 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" id="btnToggleStemChart" class="px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold cursor-pointer">+ Aktifkan / Buat Bagan</button>
+              <button type="button" id="btnAddChartNode" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-cyan-300 hover:bg-cyan-50 text-cyan-800 font-bold cursor-pointer">+ Tambah Kotak Bagan</button>
+              <button type="button" id="btnClearStemChart" class="hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-bold cursor-pointer">🗑️ Hapus Bagan</button>
+            </div>
+            <div id="qChartBuilderBody" class="hidden space-y-2.5">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="qChartLayoutSelect">Bentuk / Arah Bagan</label>
+                  <select id="qChartLayoutSelect" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none">
+                    <option value="vertical">⬇️ Alur Vertikal (Atas ke Bawah)</option>
+                    <option value="horizontal">➡️ Alur Horizontal (Kiri ke Kanan)</option>
+                    <option value="hierarchy">🌳 Pohon Hierarki / Struktur Organisasi</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1" for="qChartTitleInput">Judul Bagan (Opsional)</label>
+                  <input type="text" id="qChartTitleInput" placeholder="Contoh: Rantai Makanan / Struktur Sel" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+                </div>
+              </div>
+              <div id="qChartNodesEditor" class="space-y-1.5"></div>
+              <div class="p-2.5 bg-white rounded-xl border border-slate-200">
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pratinjau Bagan Langsung:</div>
+                <div id="qChartLivePreview" class="overflow-x-auto flex justify-center"></div>
+              </div>
+            </div>
+          </div>
+        </details>
 
         <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
           <label class="block font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -2430,12 +2565,45 @@
           </div>
         </div>
 
-        <div id="sectionOptionsAE" class="space-y-2">
-          <label class="block font-bold text-slate-700">Pilihan Jawaban (A - D)</label>
-          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">A</span><input type="text" id="qInputOptA" placeholder="Teks Pilihan A" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
-          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">B</span><input type="text" id="qInputOptB" placeholder="Teks Pilihan B" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
-          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">C</span><input type="text" id="qInputOptC" placeholder="Teks Pilihan C" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
-          <div class="flex items-center gap-2"><span class="w-6 font-bold text-slate-500">D</span><input type="text" id="qInputOptD" placeholder="Teks Pilihan D" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none"></div>
+        <div id="sectionOptionsAE" class="space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <label class="block font-bold text-slate-700">Pilihan Jawaban (A - D)</label>
+            <span class="text-[10px] text-slate-500">Klik tombol <strong>📊 Tabel Opsi</strong> jika pilihan jawaban berupa tabel.</span>
+          </div>
+          <div class="space-y-2">
+            <div class="p-2 rounded-xl bg-slate-50/70 border border-slate-200 space-y-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-6 font-bold text-slate-500">A</span>
+                <input type="text" id="qInputOptA" placeholder="Teks Pilihan A (atau judul tabel opsi A)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+                <button type="button" data-opt-table="A" class="btn-toggle-opt-table px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 text-[11px] font-bold text-slate-700 cursor-pointer">📊 Tabel A</button>
+              </div>
+              <div id="qOptTableWrapA" class="hidden pl-8 overflow-x-auto"></div>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-50/70 border border-slate-200 space-y-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-6 font-bold text-slate-500">B</span>
+                <input type="text" id="qInputOptB" placeholder="Teks Pilihan B (atau judul tabel opsi B)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+                <button type="button" data-opt-table="B" class="btn-toggle-opt-table px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 text-[11px] font-bold text-slate-700 cursor-pointer">📊 Tabel B</button>
+              </div>
+              <div id="qOptTableWrapB" class="hidden pl-8 overflow-x-auto"></div>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-50/70 border border-slate-200 space-y-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-6 font-bold text-slate-500">C</span>
+                <input type="text" id="qInputOptC" placeholder="Teks Pilihan C (atau judul tabel opsi C)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+                <button type="button" data-opt-table="C" class="btn-toggle-opt-table px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 text-[11px] font-bold text-slate-700 cursor-pointer">📊 Tabel C</button>
+              </div>
+              <div id="qOptTableWrapC" class="hidden pl-8 overflow-x-auto"></div>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-50/70 border border-slate-200 space-y-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-6 font-bold text-slate-500">D</span>
+                <input type="text" id="qInputOptD" placeholder="Teks Pilihan D (atau judul tabel opsi D)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
+                <button type="button" data-opt-table="D" class="btn-toggle-opt-table px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 text-[11px] font-bold text-slate-700 cursor-pointer">📊 Tabel D</button>
+              </div>
+              <div id="qOptTableWrapD" class="hidden pl-8 overflow-x-auto"></div>
+            </div>
+          </div>
 
           <div id="boxKeySingle" class="pt-1">
             <label class="block font-bold text-slate-700 mb-1" for="qInputCorrectSingle">Kunci Jawaban Tunggal</label>
@@ -2459,17 +2627,17 @@
         </div>
 
         <div id="sectionTrueFalse" class="hidden space-y-2">
-          <label class="block font-bold text-slate-700">Pernyataan &amp; Kunci Benar / Salah:</label>
+          <label class="block font-bold text-slate-700">Pernyataan &amp; Kunci Benar / Salah (Mendukung 2 s.d. 4 Pernyataan):</label>
           <div class="space-y-2">
             <div class="flex items-center gap-2">
-              <input type="text" id="tfStmt1" placeholder="Pernyataan 1" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <input type="text" id="tfStmt1" placeholder="Pernyataan 1 (Wajib)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
               <select id="tfCorrect1" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
                 <option value="B">Benar</option>
                 <option value="S">Salah</option>
               </select>
             </div>
             <div class="flex items-center gap-2">
-              <input type="text" id="tfStmt2" placeholder="Pernyataan 2" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <input type="text" id="tfStmt2" placeholder="Pernyataan 2 (Wajib)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
               <select id="tfCorrect2" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
                 <option value="B">Benar</option>
                 <option value="S">Salah</option>
@@ -2482,12 +2650,28 @@
                 <option value="S">Salah</option>
               </select>
             </div>
+            <div class="flex items-center gap-2">
+              <input type="text" id="tfStmt4" placeholder="Pernyataan 4 (Opsional)" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 outline-none">
+              <select id="tfCorrect4" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 font-bold bg-white">
+                <option value="B">Benar</option>
+                <option value="S">Salah</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div class="pt-1">
-          <label class="block font-bold text-slate-700 mb-1" for="qInputWeight">Bobot Nilai</label>
-          <input type="number" id="qInputWeight" min="1" max="100" value="10" required class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <label class="block font-bold text-slate-700" for="qInputWeight">Bobot Nilai Soal (Poin)</label>
+            <div class="flex items-center gap-1 text-[11px]">
+              <span class="text-slate-500 font-medium">Pilih Cepat:</span>
+              <button type="button" data-q-weight="5" class="btn-q-weight-preset px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 font-bold cursor-pointer">5</button>
+              <button type="button" data-q-weight="10" class="btn-q-weight-preset px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 font-bold cursor-pointer">10</button>
+              <button type="button" data-q-weight="20" class="btn-q-weight-preset px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 font-bold cursor-pointer">20</button>
+              <button type="button" data-q-weight="25" class="btn-q-weight-preset px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-extrabold cursor-pointer" title="4 soal × 25 = 100 poin">25</button>
+            </div>
+          </div>
+          <input type="number" id="qInputWeight" min="1" max="100" value="10" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-blue-700 outline-none">
         </div>
 
         <div class="pt-3 border-t border-slate-100 flex gap-2">
@@ -2497,6 +2681,104 @@
           <button type="submit" id="btnSubmitQuestionForm" class="flex-1 py-2.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
             Simpan Soal Ujian
           </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: INPUT SOAL LENGKAP SEKALIGUS (BULK INPUT & PAKET WACANA 3-5 SOAL) -->
+  <div id="modalBulkQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[94vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+          <h3 class="font-bold text-base sm:text-lg text-slate-900">⚡ Input Soal Lengkap Sekaligus (Bulk &amp; Paket Wacana 3–5 Soal)</h3>
+          <p class="text-xs text-slate-500">Buat beberapa butir soal atau 1 Wacana/Pernyataan untuk 3–5 nomor soal sekaligus dalam satu layar tanpa klik tambah satu per satu.</p>
+        </div>
+        <button id="btnCloseBulkQuestionForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base p-1">✕</button>
+      </div>
+
+      <form id="formBulkQuestions" class="space-y-4 text-xs sm:text-sm">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="bulkInputSubject">Mata Pelajaran</label>
+            <select id="bulkInputSubject" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-blue-700 outline-none"></select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="bulkInputClassLevel">Untuk Kelas / Tingkat</label>
+            <select id="bulkInputClassLevel" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-semibold outline-none">
+              <option value="Semua Kelas">Semua Kelas (7, 8, 9)</option>
+              <option value="Kelas 7">Kelas 7</option>
+              <option value="Kelas 8">Kelas 8</option>
+              <option value="Kelas 9">Kelas 9</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="bulkInputCategory">Kategori Soal</label>
+            <select id="bulkInputCategory" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-violet-700 outline-none">
+              <option value="exam">📝 Soal Ujian Asli</option>
+              <option value="trial">🧪 Soal Simulasi</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="bulkInputMode">Mode Pengisian</label>
+            <select id="bulkInputMode" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-indigo-700 outline-none">
+              <option value="passage">📖 Paket Wacana / Pernyataan (3–5 Soal)</option>
+              <option value="batch">⚡ Input Massal Bebas (Banyak Soal)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Pengaturan Jumlah & Bobot -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-amber-50/70 p-3 rounded-2xl border border-amber-200 text-xs">
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="font-bold text-slate-700" for="bulkInputCount">Jumlah Butir Soal:</label>
+            <select id="bulkInputCount" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+              <option value="3">3 Soal</option>
+              <option value="4">4 Soal (Misal @ 25 Poin)</option>
+              <option value="5" selected>5 Soal (Paket Wacana)</option>
+              <option value="10">10 Soal</option>
+              <option value="15">15 Soal</option>
+              <option value="20">20 Soal</option>
+            </select>
+            <label class="font-bold text-slate-700 ml-2" for="bulkDefaultWeight">Bobot Tiap Soal:</label>
+            <input type="number" id="bulkDefaultWeight" min="1" max="100" value="25" class="w-16 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
+            <button type="button" id="btnBulkSyncCountAndWeight" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer transition">
+              Terapkan ke Semua Baris
+            </button>
+            <button type="button" id="btnBulkAuto100" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition">
+              ⚖️ Bagi Rata Total = 100
+            </button>
+          </div>
+          <div class="font-bold text-amber-950">
+            Total Bobot Paket: <span id="bulkTotalWeightInfo" class="text-blue-700 font-black">125</span> Poin
+          </div>
+        </div>
+
+        <!-- Panel Wacana / Stimulus Bersama (Aktif di Mode Paket Wacana) -->
+        <div id="bulkPassageCard" class="bg-indigo-50/70 dark:bg-indigo-950/30 p-4 rounded-2xl border border-indigo-200 space-y-2.5 text-xs">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h4 class="font-extrabold text-indigo-950 dark:text-indigo-200">📖 Stimulus / Wacana Bersama (Berlaku untuk seluruh soal di bawah)</h4>
+            <span class="text-[11px] font-semibold text-indigo-700">Otomatis dikelompokkan berurutan pada ujian &amp; cetak F4 PDF</span>
+          </div>
+          <input type="text" id="bulkPassageTitle" placeholder="Judul Wacana / Stimulus (Opsional)" class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white font-semibold outline-none">
+          <textarea id="bulkPassageText" rows="3" placeholder="Tuliskan teks bacaan, kasus, atau pernyataan bersama untuk 3 s.d. 5 nomor soal di bawah..." class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white outline-none"></textarea>
+        </div>
+
+        <!-- Daftar Form Soal Dinamis -->
+        <div id="bulkQuestionsListContainer" class="space-y-3"></div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+          <button type="button" id="btnBulkAddOneRow" class="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer transition">
+            + Tambah 1 Baris Soal Lagi
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btnCancelBulkQuestionForm" class="px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+              Batal
+            </button>
+            <button type="submit" id="btnSubmitBulkQuestionForm" class="px-5 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm cursor-pointer">
+              💾 Simpan Semua Soal Sekaligus
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -2879,10 +3161,10 @@
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.58"></script>
-  <script src="js/supabase-config.js?v=3.57"></script>
-  <script src="js/exam-engine.js?v=3.57"></script>
-  <script src="js/admin.js?v=3.60"></script>
-  <script src="js/app.js?v=3.60"></script>
+  <script src="js/supabase-config.js?v=3.61"></script>
+  <script src="js/exam-engine.js?v=3.61"></script>
+  <script src="js/admin.js?v=3.61"></script>
+  <script src="js/app.js?v=3.61"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

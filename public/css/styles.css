@@ -166,7 +166,7 @@ body.exam-locked img {
     border-color: #b7c6db !important;
   }
 
-  html:not(.dark) tbody tr:nth-child(even) {
+  html:not(.dark) table:not(.naskah-clean-table):not(.cbt-light-paper):not(.cbt-question-table) tbody tr:nth-child(even) {
     background-color: #e3ebf6;
   }
 
@@ -176,6 +176,101 @@ body.exam-locked img {
     background-color: #f8fafd !important;
     border-color: #aebfd6 !important;
   }
+}
+
+/* Pastikan naskah soal PDF/Print & tabel soal bebas blok seleksi/zebra */
+.naskah-paper-sheet,
+.naskah-paper-sheet * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.naskah-paper-sheet table,
+.naskah-paper-sheet tbody,
+.naskah-paper-sheet thead,
+.naskah-paper-sheet tr,
+.naskah-paper-sheet td {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+.naskah-paper-sheet .cbt-tf-print-thead th,
+.naskah-paper-sheet .cbt-rich-table-print thead th {
+  background-color: #f1f5f9 !important;
+  background: #f1f5f9 !important;
+  color: #000000 !important;
+}
+
+/* Tabel terstruktur di soal / opsi / wacana */
+.cbt-rich-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+  border-radius: 10px;
+}
+.cbt-rich-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background-color: #ffffff;
+  color: #0f172a;
+}
+.cbt-rich-table th,
+.cbt-rich-table td {
+  border: 1px solid #cbd5e1;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.cbt-rich-table thead th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
+}
+html.dark .cbt-rich-table {
+  background-color: #0e112a;
+  color: #f1f5f9;
+}
+html.dark .cbt-rich-table th,
+html.dark .cbt-rich-table td {
+  border-color: #334155;
+}
+html.dark .cbt-rich-table thead th {
+  background-color: #161b3d;
+  color: #f8fafc;
+}
+
+/* Bagan / Diagram SVG Wrapper */
+.cbt-bagan-wrap {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  overflow-x: auto;
+}
+html.dark .cbt-bagan-wrap {
+  background-color: #0e112a;
+  border-color: #334155;
+}
+.cbt-bagan-wrap svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Wacana / Stimulus Berkelompok */
+.cbt-wacana-card {
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border: 1.5px solid #cbd5e1;
+  border-left: 4px solid #2563eb;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+html.dark .cbt-wacana-card {
+  background: #131838;
+  border-color: #334155;
+  border-left-color: #3b82f6;
 }
 
 /* ==========================================================================

@@ -561,13 +561,25 @@ class ExamEngine {
     const a = String(qSub || '').trim().toLowerCase();
     const b = String(targetSub || '').trim().toLowerCase();
     if (!a || !b || a === '-' || b === '-' || a === '—' || b === '—') return false;
-    return a === b || a.includes(b) || b.includes(a);
+    if (a === b) return true;
+    // Cocokkan akronim resmi dalam tanda kurung (mis. "Ilmu Pengetahuan Alam (IPA)" <-> "IPA")
+    const acronymA = (a.match(/\(([^)]+)\)/) || [])[1] || '';
+    const acronymB = (b.match(/\(([^)]+)\)/) || [])[1] || '';
+    if (acronymA && acronymA.trim() === b) return true;
+    if (acronymB && acronymB.trim() === a) return true;
+    // Cocokkan tanpa suffix dalam kurung, misal "IPS" <-> "Ilmu Pengetahuan Sosial (IPS)" hanya jika kata lengkap
+    const baseA = a.replace(/\s*\([^)]*\)/g, '').trim();
+    const baseB = b.replace(/\s*\([^)]*\)/g, '').trim();
+    if (baseA && baseB && baseA === baseB) return true;
+    // Dukungan backward-compatibility untuk singkatan umum atau prefix terpisah batas kata (bukan sekadar substring acak)
+    const esc = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (b.length >= 4 && new RegExp(`(^|[\\s\\(/\\-])${esc(b)}($|[\\s\\)/\\-])`, 'i').test(a)) return true;
+    if (a.length >= 4 && new RegExp(`(^|[\\s\\(/\\-])${esc(a)}($|[\\s\\)/\\-])`, 'i').test(b)) return true;
+    return false;
   }
 
-  normalizeClassToken(rawToken) {
-    let s = String(rawToken || '').trim().toUpperCase();
-    s = s.replace(/^KELAS\s+/i, '').replace(/[\s\-_]+/g, '');
-    if (!s) return '';
+  _replaceRomanPrefix(str) {
+    let s = String(str || '').trim().toUpperCase();
     const romanPrefixes = [
       ['XII', '12'],
       ['XI', '11'],
@@ -579,7 +591,8 @@ class ExamEngine {
       ['X', '10']
     ];
     for (const [rom, dig] of romanPrefixes) {
-      if (s === rom || s.startsWith(rom)) {
+      const m = s.match(new RegExp(`^${rom}(?=[^A-Z]|$)`, 'i'));
+      if (m) {
         s = dig + s.slice(rom.length);
         break;
       }
@@ -587,19 +600,56 @@ class ExamEngine {
     return s;
   }
 
+  normalizeClassToken(rawToken) {
+    let s = String(rawToken || '').trim().toUpperCase();
+    s = s.replace(/\bKELAS\b/gi, '').replace(/\bTINGKAT\b/gi, '').replace(/[\s\-_]+/g, '');
+    if (!s) return '';
+    return this._replaceRomanPrefix(s);
+  }
+
+  _expandClassTokensList(rawClassStr) {
+    let clean = String(rawClassStr || '').trim().toUpperCase();
+    if (!clean) return [];
+    clean = clean
+      .replace(/\bKELAS\b/gi, '')
+      .replace(/\bTINGKAT\b/gi, '')
+      .replace(/\s+(?:DAN|&)\s+/gi, ',')
+      .replace(/\s*(?:S\/D|SD|TO)\s*/gi, '-');
+
+    const tokens = [];
+    clean.split(/[,;/]+/).forEach(rawPart => {
+      let part = rawPart.trim();
+      if (!part) return;
+      // Ubah romawi di tiap segmen rentang, misal "VII-IX" -> "7-9", "VII-a" -> "7-a"
+      part = part.split('-').map(seg => this._replaceRomanPrefix(seg.trim())).join('-');
+      const compactRange = part.replace(/\s+/g, '');
+
+      // Rentang angka seperti 7-8-9 atau 7-9
+      if (/^\d+(?:-\d+)+$/.test(compactRange)) {
+        const nums = compactRange.split('-').map(n => parseInt(n, 10)).filter(Number.isFinite);
+        if (nums.length === 2 && nums[0] <= nums[1] && (nums[1] - nums[0]) <= 6) {
+          for (let n = nums[0]; n <= nums[1]; n++) tokens.push(String(n));
+        } else {
+          nums.forEach(n => tokens.push(String(n)));
+        }
+        return;
+      }
+
+      const norm = this.normalizeClassToken(part);
+      if (norm) tokens.push(norm);
+    });
+
+    return [...new Set(tokens)];
+  }
+
   matchesClassLevel(qClass, targetClass) {
     const qcRaw = String(qClass || '').trim().toUpperCase();
     const tcRaw = String(targetClass || '').trim().toUpperCase();
-    if (!qcRaw || qcRaw === 'SEMUA' || qcRaw === 'SEMUA KELAS' || qcRaw === 'ALL') return true;
-    if (!tcRaw || tcRaw === 'SEMUA' || tcRaw === 'SEMUA KELAS' || tcRaw === 'ALL') return true;
+    if (!qcRaw || qcRaw === 'SEMUA' || qcRaw === 'SEMUA KELAS' || qcRaw === 'ALL' || qcRaw.includes('SEMUA')) return true;
+    if (!tcRaw || tcRaw === 'SEMUA' || tcRaw === 'SEMUA KELAS' || tcRaw === 'ALL' || tcRaw.includes('SEMUA')) return true;
 
-    const splitTokens = (str) => str
-      .split(/[,;/]+/)
-      .map(s => this.normalizeClassToken(s))
-      .filter(Boolean);
-
-    const qTokens = splitTokens(qcRaw);
-    const tTokens = splitTokens(tcRaw);
+    const qTokens = this._expandClassTokensList(qcRaw);
+    const tTokens = this._expandClassTokensList(tcRaw);
     if (qTokens.length === 0 || tTokens.length === 0) return true;
 
     return qTokens.some(qc => tTokens.some(tc => {
@@ -627,6 +677,34 @@ class ExamEngine {
     return /^\[Soal\s+(?:Simulasi|Uji Coba)/i.test(String(q.question || '').trim());
   }
 
+  groupPassageQuestionsOrder(list = []) {
+    if (!Array.isArray(list) || list.length <= 1) return Array.isArray(list) ? list : [];
+    const groupedBuckets = new Map();
+    list.forEach(q => {
+      const gid = q && q.passageGroupId ? String(q.passageGroupId).trim() : '';
+      if (gid) {
+        if (!groupedBuckets.has(gid)) groupedBuckets.set(gid, []);
+        groupedBuckets.get(gid).push(q);
+      }
+    });
+    if (groupedBuckets.size === 0) return list;
+    groupedBuckets.forEach(bucket => {
+      bucket.sort((a, b) => (Number(a.passageOrder) || 0) - (Number(b.passageOrder) || 0));
+    });
+    const emitted = new Set();
+    const ordered = [];
+    list.forEach(q => {
+      const gid = q && q.passageGroupId ? String(q.passageGroupId).trim() : '';
+      if (!gid) {
+        ordered.push(q);
+      } else if (!emitted.has(gid)) {
+        emitted.add(gid);
+        ordered.push(...groupedBuckets.get(gid));
+      }
+    });
+    return ordered;
+  }
+
   getQuestionsForExam(subjectOverride = null, classOverride = null, categoryOverride = null) {
     const targetSubject = subjectOverride || (this.config && this.config.subject) || '';
     const targetClass = classOverride || (this.student && this.student.class) || (this.config && this.config.targetClass) || 'Semua Kelas';
@@ -651,7 +729,7 @@ class ExamEngine {
     });
 
     if (matched.length > 0) {
-      return { questions: matched, isFallback: false, category: effectiveCategory };
+      return { questions: this.groupPassageQuestionsOrder(matched), isFallback: false, category: effectiveCategory };
     }
 
     const subjectOnly = this.questions.filter(q => {
@@ -662,14 +740,14 @@ class ExamEngine {
     });
 
     if (subjectOnly.length > 0) {
-      return { questions: subjectOnly, isFallback: false, category: effectiveCategory };
+      return { questions: this.groupPassageQuestionsOrder(subjectOnly), isFallback: false, category: effectiveCategory };
     }
 
     if (effectiveCategory !== 'ALL') {
       return { questions: [], isFallback: true, emptyForCategory: true, category: effectiveCategory };
     }
 
-    return { questions: [...this.questions], isFallback: true, category: 'ALL' };
+    return { questions: this.groupPassageQuestionsOrder([...this.questions]), isFallback: true, category: 'ALL' };
   }
 
   getExamQuestions() {
@@ -1600,6 +1678,8 @@ class ExamEngine {
         incorrectCount,
         unattemptedCount,
         totalQuestions: activeQs.length,
+        totalEarnedPoints: totalPointsEarned,
+        maxPossiblePoints,
         finalScore,
         cheatCount: cheatCountSnap,
         cheatLogs: cheatLogsSnap,
