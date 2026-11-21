@@ -93,13 +93,13 @@ document.addEventListener('DOMContentLoaded', () => {
         tempStudent = JSON.parse(savedConfirm);
         populateConfirmView(tempStudent);
         showView('confirm');
-        syncFromCloud(false, { publicOnly: true });
+        syncFromCloud(false, { publicOnly: true, includeQuestions: false });
         return;
       }
     } catch (e) {}
 
     showView('login');
-    syncFromCloud(false, { publicOnly: true });
+    syncFromCloud(false, { publicOnly: true, includeQuestions: false });
 
     // Shortcut URL ?admin / #admin / #guru untuk Proktor & Guru
     const hashLower = (window.location.hash || '').toLowerCase();
@@ -174,8 +174,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     cloudSyncPublicOnly = publicOnly;
+    const includeQuestions = options && options.includeQuestions !== undefined
+      ? Boolean(options.includeQuestions)
+      : !publicOnly;
     const myPromise = (async () => {
-      const res = await window.supabaseSync.pullAllSchoolState({ publicOnly });
+      const res = await window.supabaseSync.pullAllSchoolState({ publicOnly, includeQuestions });
       if (res && res.success && res.state) {
         const hasCloudData = Object.keys(res.state).length > 0;
         if (hasCloudData) {
@@ -228,6 +231,19 @@ document.addEventListener('DOMContentLoaded', () => {
     questionsCloudSyncPromise = (async () => {
       try {
         await window.supabaseSync.flushPendingQuestionOps();
+
+        const curStaff = (window.cbtAdmin && window.cbtAdmin.isAuthenticated) ? window.cbtAdmin.getCurrentTeacher() : null;
+        const scopeKey = curStaff && (curStaff.id || curStaff.nip) ? `staff:${curStaff.id || curStaff.nip}` : 'public';
+        const hasLocalQuestions = Array.isArray(window.examEngine.questions) && window.examEngine.questions.length > 0;
+        let latestStamp = null;
+
+        if (!forceRender && hasLocalQuestions && typeof window.supabaseSync.getQuestionsRemoteStamp === 'function') {
+          latestStamp = await window.supabaseSync.getQuestionsRemoteStamp(scopeKey);
+          if (latestStamp && latestStamp === window.supabaseSync._lastQuestionsRemoteStamp) {
+            return false;
+          }
+        }
+
         const qRes = await window.supabaseSync.fetchAllQuestionRows();
         if (qRes && qRes.success && Array.isArray(qRes.rows)) {
           const canApply = qRes.rows.length > 0 || (
@@ -241,6 +257,10 @@ document.addEventListener('DOMContentLoaded', () => {
               window.examEngine.applyRemoteQuestions(qRes.rows);
             } else {
               window.examEngine.saveQuestions(qRes.rows, true);
+            }
+            if (typeof window.supabaseSync.getQuestionsRemoteStamp === 'function') {
+              const updatedStamp = latestStamp || await window.supabaseSync.getQuestionsRemoteStamp(scopeKey);
+              if (updatedStamp) window.supabaseSync._lastQuestionsRemoteStamp = updatedStamp;
             }
             const nextSig = getQuestionsListSignature(window.examEngine.questions);
             const hasChanged = prevSig !== nextSig;
@@ -312,17 +332,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (realtimeQuestionRefreshTimer) clearTimeout(realtimeQuestionRefreshTimer);
     realtimeQuestionRefreshTimer = setTimeout(() => {
       realtimeQuestionRefreshTimer = null;
-      syncQuestionsFromCloud(true);
+      syncQuestionsFromCloud(true, true);
     }, 650);
   }
 
+  let lastVisibilityCloudSyncAt = 0;
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && viewLogin && !viewLogin.classList.contains('hidden')) {
-      syncFromCloud(true, { publicOnly: true });
-    } else if (!document.hidden && viewAdmin && !viewAdmin.classList.contains('hidden')) {
+    if (document.hidden) return;
+    const now = Date.now();
+    if (now - lastVisibilityCloudSyncAt < 30000) return;
+    lastVisibilityCloudSyncAt = now;
+
+    if (viewLogin && !viewLogin.classList.contains('hidden')) {
+      syncFromCloud(true, { publicOnly: true, includeQuestions: false });
+    } else if (viewAdmin && !viewAdmin.classList.contains('hidden')) {
       const isPengawas = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser());
       if (isPengawas) {
-        syncFromCloud(true, { publicOnly: true });
+        syncFromCloud(true, { publicOnly: true, includeQuestions: false });
       } else {
         syncQuestionsFromCloud(true);
       }
@@ -1149,12 +1175,52 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedScheduleId = selectEl ? selectEl.value : '';
       let matchedSchedule = null;
 
+      let serverPublicConfigOverride = null;
       if (isCloudOnline && typeof window.supabaseSync.verifyExamTokenRpc === 'function') {
-        const tokRes = await window.supabaseSync.verifyExamTokenRpc(
+        let tokRes = await window.supabaseSync.verifyExamTokenRpc(
           token,
           selectedScheduleId || null,
           authenticatedStudent.class || null
         );
+        if (tokRes && !tokRes.rpcUnavailable && !tokRes.valid) {
+          const errMsg = String(tokRes.message || '');
+          // Guard jika RPC Postgres masih versi lama (\bKELAS\b) padahal token SUDAH VALID & kelas siswa sebenarnya cocok
+          if (errMsg.includes('⛔ Ujian Ditolak:')) {
+            const manualMatch = errMsg.match(/saat ini dikhususkan untuk\s+(.+?)\.$/i);
+            const schedMatch = errMsg.match(/Jadwal\s+"([^"]+)"\s+\(([^)]+)\)\s+bukan untuk Kelas/i);
+            const rejectedTargetClass = (manualMatch ? manualMatch[1] : (schedMatch ? schedMatch[2] : '')).trim();
+            const stuCls = String(authenticatedStudent.class || '').trim();
+            if (stuCls && rejectedTargetClass && window.examEngine.matchesClassLevel(rejectedTargetClass, stuCls)) {
+              const tokenOnlyCheck = await window.supabaseSync.verifyExamTokenRpc(
+                token,
+                selectedScheduleId || null,
+                null
+              );
+              if (tokenOnlyCheck && tokenOnlyCheck.valid) {
+                if (tokenOnlyCheck.mode === 'schedule' && tokenOnlyCheck.schedule) {
+                  const sCls = tokenOnlyCheck.schedule.classLevel || tokenOnlyCheck.schedule.targetClass || 'Semua Kelas';
+                  if (window.examEngine.matchesClassLevel(sCls, stuCls)) {
+                    tokRes = tokenOnlyCheck;
+                  }
+                } else if (tokenOnlyCheck.mode === 'manual') {
+                  let serverTargetCls = rejectedTargetClass;
+                  if (typeof window.supabaseSync.getPublicExamConfigRpc === 'function') {
+                    try {
+                      const pubCfg = await window.supabaseSync.getPublicExamConfigRpc();
+                      if (pubCfg && pubCfg.success && pubCfg.config) {
+                        serverPublicConfigOverride = pubCfg.config;
+                        if (pubCfg.config.targetClass) serverTargetCls = pubCfg.config.targetClass;
+                      }
+                    } catch (e) {}
+                  }
+                  if (window.examEngine.matchesClassLevel(serverTargetCls, stuCls)) {
+                    tokRes = tokenOnlyCheck;
+                  }
+                }
+              }
+            }
+          }
+        }
         if (!tokRes || !tokRes.rpcUnavailable) {
           if (!tokRes || !tokRes.valid) {
             showLoginRejection((tokRes && tokRes.message) || 'Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang!');
@@ -1275,6 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
         questionCategory: matchedSchedule.questionCategory || 'ALL'
       } : {
         ...window.examEngine.config,
+        ...(serverPublicConfigOverride && typeof serverPublicConfigOverride === 'object' ? serverPublicConfigOverride : {}),
         examToken: ''
       };
 
@@ -1947,13 +2014,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function startMonitoringAutoRefresh() {
     stopMonitoringAutoRefresh();
     monitoringRefreshTimer = setInterval(() => {
+      if (document.hidden) return;
       const tabMonitoringPane = document.getElementById('tabMonitoring');
       if (viewAdmin && !viewAdmin.classList.contains('hidden') && tabMonitoringPane && !tabMonitoringPane.classList.contains('hidden')) {
-        renderMonitoringDashboard(true);
+        renderMonitoringDashboard(true, false);
       } else {
         stopMonitoringAutoRefresh();
       }
-    }, 10000);
+    }, 20000);
   }
 
   let pendingLogoutAction = null;
@@ -3844,7 +3912,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnRefreshMon.onclick = async () => {
         btnRefreshMon.disabled = true;
         btnRefreshMon.innerText = 'Menyegarkan...';
-        await renderMonitoringDashboard(true);
+        await renderMonitoringDashboard(true, true);
         btnRefreshMon.disabled = false;
         btnRefreshMon.innerText = '🔄 Refresh Pantauan';
       };
@@ -3934,7 +4002,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function renderMonitoringDashboard(pullCloud = false) {
+  let lastPengawasStatePullAt = 0;
+  async function renderMonitoringDashboard(pullCloud = false, forcePull = false) {
     const tbody = document.getElementById('adminMonitoringTbody');
     const emptyEl = document.getElementById('adminMonitoringEmpty');
     if (!tbody || !window.cbtAdmin) return;
@@ -3948,12 +4017,14 @@ document.addEventListener('DOMContentLoaded', () => {
       : [];
 
     if (pullCloud && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+      const now = Date.now();
       const cloudTasks = [
-        window.supabaseSync.fetchStudentSessions(),
-        window.supabaseSync.fetchCloudResults()
+        window.supabaseSync.fetchStudentSessions({ force: forcePull }),
+        window.supabaseSync.fetchCloudResults({ skipIfUnchanged: !forcePull })
       ];
-      if (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function') {
-        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: true }));
+      if (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function' && (forcePull || now - lastPengawasStatePullAt >= 60000)) {
+        lastPengawasStatePullAt = now;
+        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: true, includeQuestions: false }));
       }
       const [sessRes, , stateRes] = await Promise.all(cloudTasks);
       if (sessRes && Array.isArray(sessRes.data)) {
@@ -5206,6 +5277,63 @@ document.addEventListener('DOMContentLoaded', () => {
   const teacherProgressTargetEl = document.getElementById('teacherProgressTargetInput');
   if (teacherProgressTargetEl) teacherProgressTargetEl.addEventListener('input', () => renderAdminTeacherQuestionProgress());
 
+  const selectedQuestionIds = new Set();
+  let lastFilteredQuestionsCache = [];
+
+  function getActiveFilteredQuestions() {
+    const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+    const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+    return window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
+  }
+
+  function getTargetQuestionsForBulkAction() {
+    const filtered = getActiveFilteredQuestions();
+    if (selectedQuestionIds.size > 0) {
+      const selectedInView = filtered.filter(q => selectedQuestionIds.has(String(q.id)));
+      if (selectedInView.length > 0) {
+        return { questions: selectedInView, isExplicitSelection: true, filteredCount: filtered.length };
+      }
+    }
+    return { questions: filtered, isExplicitSelection: false, filteredCount: filtered.length };
+  }
+
+  function populateBulkPatchSubjectOptions() {
+    const sel = document.getElementById('bulkPatchSubjectSelect');
+    if (!sel || typeof getQuestionSubjectOptionsList !== 'function') return;
+    const prevVal = sel.value;
+    const opts = getQuestionSubjectOptionsList();
+    sel.innerHTML = opts.map(o => `<option value="${escapeHtmlSafe(o.value)}">${escapeHtmlSafe(o.label)}</option>`).join('');
+    if (prevVal && Array.from(sel.options).some(o => o.value === prevVal)) {
+      sel.value = prevVal;
+    } else {
+      const firstReal = opts.find(o => o.value.toLowerCase() !== 'umum');
+      if (firstReal) sel.value = firstReal.value;
+    }
+  }
+
+  function syncBulkSelectionUI(filteredQuestions = lastFilteredQuestionsCache) {
+    const list = Array.isArray(filteredQuestions) ? filteredQuestions : [];
+    const checkedCount = list.filter(q => selectedQuestionIds.has(String(q.id))).length;
+    const selectAllEl = document.getElementById('chkSelectAllQuestions');
+    if (selectAllEl) {
+      selectAllEl.checked = list.length > 0 && checkedCount === list.length;
+      selectAllEl.indeterminate = checkedCount > 0 && checkedCount < list.length;
+      selectAllEl.disabled = list.length === 0;
+    }
+    const badgeEl = document.getElementById('selectedQuestionsCountBadge');
+    if (badgeEl) {
+      if (checkedCount > 0) {
+        badgeEl.className = 'px-2.5 py-1 rounded-xl bg-blue-600 text-white border border-blue-600 font-bold';
+        badgeEl.innerText = `☑️ ${checkedCount} soal dipilih (dari ${list.length} tampil)`;
+      } else {
+        badgeEl.className = 'px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold';
+        badgeEl.innerText = list.length > 0 ? `Target: Semua ${list.length} soal tampil` : 'Target: 0 soal tampil';
+      }
+    }
+    populateBulkPatchSubjectOptions();
+  }
+
   function renderAdminQuestionList() {
     const listContainer = document.getElementById('adminQuestionList');
     const totalCountEl = document.getElementById('adminTotalQuestionsCount');
@@ -5214,6 +5342,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
 
     const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
+    lastFilteredQuestionsCache = questions;
+    // Bersihkan ID terpilih yang sudah tidak ada di bank soal
+    const allIdsSet = new Set(window.cbtAdmin.getAllQuestions().map(q => String(q.id)));
+    Array.from(selectedQuestionIds).forEach(id => {
+      if (!allIdsSet.has(id)) selectedQuestionIds.delete(id);
+    });
     const trialScopedCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'trial').length;
     const totalAll = window.cbtAdmin.getAllQuestions().length;
     const analysisResult = (window.cbtAdmin && typeof window.cbtAdmin.computeItemAnalysis === 'function')
@@ -5303,6 +5437,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       }
+      syncBulkSelectionUI(questions);
       return;
     }
 
@@ -5315,10 +5450,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const qClass = q.classLevel && String(q.classLevel).trim() !== '' ? q.classLevel : 'Semua Kelas';
       const itemStat = analysisResult.items[index] || null;
       const preExamStat = preExamResult.items[index] || null;
+      const qIdStr = String(q.id);
+      const isSelectedQ = selectedQuestionIds.has(qIdStr);
       const card = document.createElement('div');
-      card.className = isTrialQ
+      card.className = (isTrialQ
         ? "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-violet-200 dark:border-violet-800/70 shadow-xs hover:border-violet-300 transition"
-        : "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition";
+        : "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition")
+        + (isSelectedQ ? " ring-2 ring-blue-500 border-blue-400" : "");
 
       let typeBadge = '';
       let answerDetailsHtml = '';
@@ -5438,6 +5576,9 @@ document.addEventListener('DOMContentLoaded', () => {
       card.innerHTML = `
         <div class="flex items-start justify-between gap-3">
           <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <label class="inline-flex items-center cursor-pointer p-1 rounded-lg hover:bg-blue-50" title="Centang soal untuk edit massal">
+              <input type="checkbox" class="chk-q-select w-4 h-4 rounded accent-blue-600 cursor-pointer" data-q-id="${escapeHtmlSafe(qIdStr)}" ${isSelectedQ ? 'checked' : ''}>
+            </label>
             <span class="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 font-black text-xs flex items-center justify-center">
               ${index + 1}
             </span>
@@ -5475,12 +5616,27 @@ document.addEventListener('DOMContentLoaded', () => {
         ${analysisStripHtml}
       `;
 
+      const qChk = card.querySelector('.chk-q-select');
+      if (qChk) {
+        qChk.addEventListener('change', () => {
+          if (qChk.checked) {
+            selectedQuestionIds.add(qIdStr);
+            card.classList.add('ring-2', 'ring-blue-500', 'border-blue-400');
+          } else {
+            selectedQuestionIds.delete(qIdStr);
+            card.classList.remove('ring-2', 'ring-blue-500', 'border-blue-400');
+          }
+          syncBulkSelectionUI(questions);
+        });
+      }
+
       card.querySelector('.btn-edit-q').addEventListener('click', () => {
         openQuestionModal(q, index + 1);
       });
 
       card.querySelector('.btn-delete-q').addEventListener('click', () => {
         if (confirm(`Yakin ingin menghapus Soal No. ${index + 1} (${qSubj})?`)) {
+          selectedQuestionIds.delete(qIdStr);
           window.cbtAdmin.deleteQuestion(q.id);
           renderAdminQuestionList();
           renderAdminSchedulesList();
@@ -5489,6 +5645,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       listContainer.appendChild(card);
     });
+    syncBulkSelectionUI(questions);
     applyRoleButtonPermissions();
   }
 
@@ -5850,21 +6007,111 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupQuestionSubjectAutocomplete();
 
-  // ===================== PENGATURAN BOBOT MASSAL DI BANK SOAL =====================
+  // ===================== BILAH CHECKLIST, UBAH MASSAL & BOBOT DI BANK SOAL =====================
+  const chkSelectAllQuestions = document.getElementById('chkSelectAllQuestions');
+  if (chkSelectAllQuestions) {
+    chkSelectAllQuestions.addEventListener('change', () => {
+      const filtered = getActiveFilteredQuestions();
+      if (chkSelectAllQuestions.checked) {
+        filtered.forEach(q => selectedQuestionIds.add(String(q.id)));
+      } else {
+        filtered.forEach(q => selectedQuestionIds.delete(String(q.id)));
+      }
+      renderAdminQuestionList();
+    });
+  }
+
+  document.getElementById('btnApplyBulkSubject')?.addEventListener('click', () => {
+    const target = getTargetQuestionsForBulkAction();
+    if (target.questions.length === 0) {
+      alert('Tidak ada soal yang dipilih atau tampil pada filter aktif.');
+      return;
+    }
+    const newSubj = document.getElementById('bulkPatchSubjectSelect')?.value?.trim();
+    if (!newSubj) {
+      alert('Pilih mata pelajaran tujuan terlebih dahulu.');
+      return;
+    }
+    const scopeText = target.isExplicitSelection
+      ? `${target.questions.length} soal yang dicentang`
+      : `seluruh ${target.questions.length} soal yang sedang tampil`;
+    if (!confirm(`Ubah Mata Pelajaran ${scopeText} menjadi "${newSubj}"?`)) return;
+    const res = window.cbtAdmin.bulkPatchQuestions(target.questions.map(q => q.id), { subject: newSubj });
+    if (!res || !res.success) {
+      alert(res?.message || 'Gagal mengubah mata pelajaran secara massal.');
+      return;
+    }
+    selectedQuestionIds.clear();
+    setupQuestionBankFilters();
+    const subjFilterEl = document.getElementById('filterQuestionsSubject');
+    if (subjFilterEl && Array.from(subjFilterEl.options).some(o => o.value === newSubj)) {
+      subjFilterEl.value = newSubj;
+    }
+    renderAdminQuestionList();
+    renderAdminSchedulesList();
+    alert(`Berhasil mengubah Mata Pelajaran ${res.count} soal menjadi "${newSubj}"!`);
+  });
+
+  document.getElementById('btnApplyBulkClass')?.addEventListener('click', () => {
+    const target = getTargetQuestionsForBulkAction();
+    if (target.questions.length === 0) {
+      alert('Tidak ada soal yang dipilih atau tampil pada filter aktif.');
+      return;
+    }
+    const newCls = document.getElementById('bulkPatchClassSelect')?.value || 'Semua Kelas';
+    const scopeText = target.isExplicitSelection
+      ? `${target.questions.length} soal yang dicentang`
+      : `seluruh ${target.questions.length} soal yang sedang tampil`;
+    if (!confirm(`Ubah Tingkat/Kelas ${scopeText} menjadi "${newCls}"?`)) return;
+    const res = window.cbtAdmin.bulkPatchQuestions(target.questions.map(q => q.id), { classLevel: newCls });
+    if (!res || !res.success) {
+      alert(res?.message || 'Gagal mengubah tingkat kelas secara massal.');
+      return;
+    }
+    selectedQuestionIds.clear();
+    renderAdminQuestionList();
+    renderAdminSchedulesList();
+    alert(`Berhasil mengubah Tingkat Kelas ${res.count} soal menjadi "${newCls}"!`);
+  });
+
+  document.getElementById('btnApplyBulkCategory')?.addEventListener('click', () => {
+    const target = getTargetQuestionsForBulkAction();
+    if (target.questions.length === 0) {
+      alert('Tidak ada soal yang dipilih atau tampil pada filter aktif.');
+      return;
+    }
+    const newCat = document.getElementById('bulkPatchCategorySelect')?.value || 'exam';
+    const isTrial = newCat === 'trial';
+    const catName = isTrial ? 'Soal Simulasi' : 'Soal Ujian Asli';
+    const scopeText = target.isExplicitSelection
+      ? `${target.questions.length} soal yang dicentang`
+      : `seluruh ${target.questions.length} soal yang sedang tampil`;
+    if (!confirm(`Ubah Kategori ${scopeText} menjadi "${catName}"?`)) return;
+    const res = window.cbtAdmin.bulkPatchQuestions(target.questions.map(q => q.id), { isTrial });
+    if (!res || !res.success) {
+      alert(res?.message || 'Gagal mengubah kategori soal secara massal.');
+      return;
+    }
+    selectedQuestionIds.clear();
+    renderAdminQuestionList();
+    renderAdminSchedulesList();
+    alert(`Berhasil mengubah Kategori ${res.count} soal menjadi "${catName}"!`);
+  });
+
   const btnApplyBulkWeight = document.getElementById('btnApplyBulkWeight');
   if (btnApplyBulkWeight) {
     btnApplyBulkWeight.addEventListener('click', () => {
-      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
-      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
-      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
-      if (questions.length === 0) {
-        alert('Tidak ada soal yang tampil pada filter aktif.');
+      const target = getTargetQuestionsForBulkAction();
+      if (target.questions.length === 0) {
+        alert('Tidak ada soal yang tampil atau dicentang.');
         return;
       }
       const val = parseInt(document.getElementById('bulkWeightValueInput')?.value, 10) || 25;
-      if (!confirm(`Terapkan bobot nilai ${val} poin ke seluruh ${questions.length} soal yang sedang tampil?`)) return;
-      const res = window.cbtAdmin.updateQuestionsWeightBatch(questions.map(q => q.id), val);
+      const scopeText = target.isExplicitSelection
+        ? `${target.questions.length} soal yang dicentang`
+        : `seluruh ${target.questions.length} soal yang sedang tampil`;
+      if (!confirm(`Terapkan bobot nilai ${val} poin ke ${scopeText}?`)) return;
+      const res = window.cbtAdmin.updateQuestionsWeightBatch(target.questions.map(q => q.id), val);
       renderAdminQuestionList();
       alert(`Berhasil mengubah bobot ${res.count} soal menjadi ${res.weight} poin per soal.`);
     });
@@ -5873,16 +6120,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRebalanceWeight100 = document.getElementById('btnRebalanceWeight100');
   if (btnRebalanceWeight100) {
     btnRebalanceWeight100.addEventListener('click', () => {
-      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
-      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
-      const questions = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter);
-      if (questions.length === 0) {
-        alert('Tidak ada soal yang tampil pada filter aktif.');
+      const target = getTargetQuestionsForBulkAction();
+      if (target.questions.length === 0) {
+        alert('Tidak ada soal yang tampil atau dicentang.');
         return;
       }
-      if (!confirm(`Bagi rata bobot ${questions.length} soal yang tampil agar jumlah totalnya tepat 100 poin?`)) return;
-      const res = window.cbtAdmin.rebalanceQuestionsWeightTo100(questions.map(q => q.id));
+      const scopeText = target.isExplicitSelection
+        ? `${target.questions.length} soal yang dicentang`
+        : `${target.questions.length} soal yang tampil`;
+      if (!confirm(`Bagi rata bobot ${scopeText} agar jumlah totalnya tepat 100 poin?`)) return;
+      const res = window.cbtAdmin.rebalanceQuestionsWeightTo100(target.questions.map(q => q.id));
       renderAdminQuestionList();
       alert(`Berhasil membagi rata bobot ${res.count} soal (sekitar ${res.baseWeight} poin/soal, total = 100 poin).`);
     });
@@ -6223,6 +6470,14 @@ document.addEventListener('DOMContentLoaded', () => {
     setupQuestionBankFilters();
     closeQuestionSubjectDropdown();
 
+    const saveContNoticeEl = document.getElementById('qSaveContinueNotice');
+    if (saveContNoticeEl) {
+      saveContNoticeEl.classList.add('hidden');
+      saveContNoticeEl.innerText = '';
+    }
+    const btnSaveAndContinueEl = document.getElementById('btnSubmitAndContinueQuestion');
+    if (btnSaveAndContinueEl) btnSaveAndContinueEl.classList.toggle('hidden', Boolean(question));
+
     const titleEl = document.getElementById('questionFormTitle');
     const submitBtnEl = document.getElementById('btnSubmitQuestionForm');
     const editIdEl = document.getElementById('editQuestionId');
@@ -6407,128 +6662,190 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCancelQuestionForm.addEventListener('click', closeQuestionModal);
   }
 
+  function saveSingleQuestionFromForm({ keepOpenForNext = false } = {}) {
+    const editId = document.getElementById('editQuestionId')?.value.trim() || '';
+    const rawSubjectInput = document.getElementById('qInputSubject')?.value.trim() || '';
+    const matchedSubject = resolveRegisteredQuestionSubject(rawSubjectInput);
+    if (!matchedSubject) {
+      const subjInputEl = document.getElementById('qInputSubject');
+      if (subjInputEl) {
+        subjInputEl.focus();
+        renderQuestionSubjectDropdown({ showAll: false });
+      }
+      alert(
+        rawSubjectInput
+          ? `Mata pelajaran "${rawSubjectInput}" tidak terdaftar di daftar mapel sistem.\n\nSilakan pilih salah satu mata pelajaran dari daftar saran autocompletion untuk menghindari salah ketik.`
+          : "Silakan pilih Mata Pelajaran yang terdaftar terlebih dahulu."
+      );
+      return false;
+    }
+    const subject = matchedSubject.value;
+    const classLevel = document.getElementById('qInputClassLevel')?.value || 'Semua Kelas';
+    const isTrial = (document.getElementById('qInputCategory')?.value || 'exam') === 'trial';
+    const type = qInputType.value;
+    const questionTextEl = document.getElementById('qInputText');
+    const questionText = questionTextEl ? questionTextEl.value.trim() : '';
+    if (!questionText) {
+      alert('Teks pertanyaan soal belum diisi.');
+      if (questionTextEl) questionTextEl.focus();
+      return false;
+    }
+    const weight = parseInt(document.getElementById('qInputWeight').value, 10) || 10;
+    const image = currentUploadedImageBase64 || "";
+
+    let qData = { subject, classLevel, isTrial, type, question: questionText, image, weight };
+
+    // Wacana / Kelompok
+    const pGroupId = document.getElementById('qInputPassageGroupId')?.value.trim() || '';
+    const pTitle = document.getElementById('qInputPassageTitle')?.value.trim() || '';
+    const pText = document.getElementById('qInputPassageText')?.value.trim() || '';
+    if (pGroupId || pTitle || pText) {
+      qData.passageGroupId = pGroupId || `WACANA-${Date.now()}`;
+      qData.passageTitle = pTitle;
+      qData.passageText = pText;
+      qData.passageOrder = parseInt(document.getElementById('qInputPassageOrder')?.value, 10) || 1;
+      qData.passageGroupSize = parseInt(document.getElementById('qInputPassageGroupSize')?.value, 10) || 5;
+    }
+
+    // Tabel & Bagan
+    if (singleStemTableState) qData.tableData = singleStemTableState;
+    if (singleChartState) qData.chartData = singleChartState;
+
+    const optTablesClean = {};
+    ['A', 'B', 'C', 'D'].forEach(k => {
+      if (singleOptionTablesState[k]) optTablesClean[k] = singleOptionTablesState[k];
+    });
+    if (Object.keys(optTablesClean).length > 0) qData.optionTables = optTablesClean;
+
+    if (type === 'single') {
+      const correctSingle = document.getElementById('qInputCorrectSingle').value;
+      const opts = [
+        { key: "A", text: document.getElementById('qInputOptA').value.trim() },
+        { key: "B", text: document.getElementById('qInputOptB').value.trim() },
+        { key: "C", text: document.getElementById('qInputOptC').value.trim() },
+        { key: "D", text: document.getElementById('qInputOptD').value.trim() }
+      ];
+      qData.options = opts;
+      qData.correctAnswer = ['A', 'B', 'C', 'D'].includes(correctSingle) ? correctSingle : 'A';
+    } else if (type === 'multiple') {
+      const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked'))
+        .map(el => el.value)
+        .filter(v => ['A', 'B', 'C', 'D'].includes(v));
+      if (checkedBoxes.length === 0) {
+        alert("Pilih minimal 1 kunci jawaban untuk soal pilihan ganda kompleks!");
+        return false;
+      }
+      const opts = [
+        { key: "A", text: document.getElementById('qInputOptA').value.trim() },
+        { key: "B", text: document.getElementById('qInputOptB').value.trim() },
+        { key: "C", text: document.getElementById('qInputOptC').value.trim() },
+        { key: "D", text: document.getElementById('qInputOptD').value.trim() }
+      ];
+      qData.options = opts;
+      qData.correctAnswer = checkedBoxes;
+    } else if (type === 'true_false') {
+      const statements = [];
+      for (let i = 1; i <= 4; i++) {
+        const sTxt = (document.getElementById(`tfStmt${i}`)?.value || '').trim();
+        const sCorr = document.getElementById(`tfCorrect${i}`)?.value === 'S' ? 'S' : 'B';
+        if (sTxt) {
+          statements.push({ id: `s${i}`, text: sTxt, correct: sCorr });
+        }
+      }
+      if (statements.length < 2) {
+        alert("Harap isi minimal 2 pernyataan untuk soal Benar / Salah!");
+        return false;
+      }
+      qData.statements = statements;
+    }
+
+    if (editId) {
+      const res = window.cbtAdmin.updateQuestion(editId, qData);
+      if (!res.success) {
+        alert(res.message || "Gagal memperbarui soal.");
+        return false;
+      }
+    } else {
+      window.cbtAdmin.addQuestion(qData);
+    }
+
+    setupQuestionBankFilters();
+    const subjFilterEl = document.getElementById('filterQuestionsSubject');
+    if (subjFilterEl && subject && subject !== 'Umum') {
+      if (Array.from(subjFilterEl.options).some(o => o.value === subject)) {
+        subjFilterEl.value = subject;
+      }
+    }
+    renderAdminQuestionList();
+    renderAdminSchedulesList();
+
+    if (keepOpenForNext && !editId) {
+      if (questionTextEl) questionTextEl.value = '';
+      ['qInputOptA', 'qInputOptB', 'qInputOptC', 'qInputOptD'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      if (document.getElementById('qInputCorrectSingle')) document.getElementById('qInputCorrectSingle').value = 'A';
+      document.querySelectorAll('input[name="multiCorrect"]').forEach((cb, i) => { cb.checked = i === 0; });
+      for (let i = 1; i <= 4; i++) {
+        const sEl = document.getElementById(`tfStmt${i}`);
+        if (sEl) sEl.value = '';
+      }
+      resetImageUploader();
+      singleStemTableState = null;
+      singleOptionTablesState = { A: null, B: null, C: null, D: null };
+      singleChartState = null;
+      syncStemTableBuilderUI();
+      syncStemChartBuilderUI();
+      ['A', 'B', 'C', 'D'].forEach(k => syncOptionTableBuilderUI(k));
+      if (qData.passageGroupId) {
+        if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = qData.passageGroupId;
+        const orderEl = document.getElementById('qInputPassageOrder');
+        if (orderEl) orderEl.value = String((parseInt(orderEl.value, 10) || 1) + 1);
+      }
+      const noticeEl = document.getElementById('qSaveContinueNotice');
+      if (noticeEl) {
+        noticeEl.innerText = `✅ Soal "${subject}" (${classLevel}) tersimpan! Silakan langsung isi butir soal berikutnya di bawah.`;
+        noticeEl.classList.remove('hidden');
+      }
+      if (questionTextEl) questionTextEl.focus();
+      return true;
+    }
+
+    closeQuestionModal();
+    return true;
+  }
+
   const formQuestionItem = document.getElementById('formQuestionItem');
   if (formQuestionItem) {
     formQuestionItem.addEventListener('submit', (e) => {
       e.preventDefault();
-      const editId = document.getElementById('editQuestionId')?.value.trim() || '';
-      const rawSubjectInput = document.getElementById('qInputSubject')?.value.trim() || '';
-      const matchedSubject = resolveRegisteredQuestionSubject(rawSubjectInput);
-      if (!matchedSubject) {
-        const subjInputEl = document.getElementById('qInputSubject');
-        if (subjInputEl) {
-          subjInputEl.focus();
-          renderQuestionSubjectDropdown({ showAll: false });
-        }
-        alert(
-          rawSubjectInput
-            ? `Mata pelajaran "${rawSubjectInput}" tidak terdaftar di daftar mapel sistem.\n\nSilakan pilih salah satu mata pelajaran dari daftar saran autocompletion untuk menghindari salah ketik.`
-            : "Silakan pilih Mata Pelajaran yang terdaftar terlebih dahulu."
-        );
-        return;
-      }
-      const subject = matchedSubject.value;
-      const classLevel = document.getElementById('qInputClassLevel')?.value || 'Semua Kelas';
-      const isTrial = (document.getElementById('qInputCategory')?.value || 'exam') === 'trial';
-      const type = qInputType.value;
-      const questionText = document.getElementById('qInputText').value.trim();
-      const weight = parseInt(document.getElementById('qInputWeight').value) || 10;
-      const image = currentUploadedImageBase64 || "";
-
-      let qData = { subject, classLevel, isTrial, type, question: questionText, image, weight };
-
-      // Wacana / Kelompok
-      const pGroupId = document.getElementById('qInputPassageGroupId')?.value.trim() || '';
-      const pTitle = document.getElementById('qInputPassageTitle')?.value.trim() || '';
-      const pText = document.getElementById('qInputPassageText')?.value.trim() || '';
-      if (pGroupId || pTitle || pText) {
-        qData.passageGroupId = pGroupId || `WACANA-${Date.now()}`;
-        qData.passageTitle = pTitle;
-        qData.passageText = pText;
-        qData.passageOrder = parseInt(document.getElementById('qInputPassageOrder')?.value, 10) || 1;
-        qData.passageGroupSize = parseInt(document.getElementById('qInputPassageGroupSize')?.value, 10) || 5;
-      }
-
-      // Tabel & Bagan
-      if (singleStemTableState) qData.tableData = singleStemTableState;
-      if (singleChartState) qData.chartData = singleChartState;
-
-      const optTablesClean = {};
-      ['A', 'B', 'C', 'D'].forEach(k => {
-        if (singleOptionTablesState[k]) optTablesClean[k] = singleOptionTablesState[k];
-      });
-      if (Object.keys(optTablesClean).length > 0) qData.optionTables = optTablesClean;
-
-      if (type === 'single') {
-        const correctSingle = document.getElementById('qInputCorrectSingle').value;
-        const opts = [
-          { key: "A", text: document.getElementById('qInputOptA').value.trim() },
-          { key: "B", text: document.getElementById('qInputOptB').value.trim() },
-          { key: "C", text: document.getElementById('qInputOptC').value.trim() },
-          { key: "D", text: document.getElementById('qInputOptD').value.trim() }
-        ];
-        qData.options = opts;
-        qData.correctAnswer = ['A', 'B', 'C', 'D'].includes(correctSingle) ? correctSingle : 'A';
-      } else if (type === 'multiple') {
-        const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked'))
-          .map(el => el.value)
-          .filter(v => ['A', 'B', 'C', 'D'].includes(v));
-        if (checkedBoxes.length === 0) {
-          alert("Pilih minimal 1 kunci jawaban untuk soal pilihan ganda kompleks!");
-          return;
-        }
-        const opts = [
-          { key: "A", text: document.getElementById('qInputOptA').value.trim() },
-          { key: "B", text: document.getElementById('qInputOptB').value.trim() },
-          { key: "C", text: document.getElementById('qInputOptC').value.trim() },
-          { key: "D", text: document.getElementById('qInputOptD').value.trim() }
-        ];
-        qData.options = opts;
-        qData.correctAnswer = checkedBoxes;
-      } else if (type === 'true_false') {
-        const statements = [];
-        for (let i = 1; i <= 4; i++) {
-          const sTxt = (document.getElementById(`tfStmt${i}`)?.value || '').trim();
-          const sCorr = document.getElementById(`tfCorrect${i}`)?.value === 'S' ? 'S' : 'B';
-          if (sTxt) {
-            statements.push({ id: `s${i}`, text: sTxt, correct: sCorr });
-          }
-        }
-        if (statements.length < 2) {
-          alert("Harap isi minimal 2 pernyataan untuk soal Benar / Salah!");
-          return;
-        }
-        qData.statements = statements;
-      }
-
-      if (editId) {
-        const res = window.cbtAdmin.updateQuestion(editId, qData);
-        if (!res.success) {
-          alert(res.message || "Gagal memperbarui soal.");
-          return;
-        }
-      } else {
-        window.cbtAdmin.addQuestion(qData);
-      }
-
-      closeQuestionModal();
-      setupQuestionBankFilters();
-
-      const subjFilterEl = document.getElementById('filterQuestionsSubject');
-      if (subjFilterEl && subject && subject !== 'Umum') {
-        if (Array.from(subjFilterEl.options).some(o => o.value === subject)) {
-          subjFilterEl.value = subject;
-        }
-      }
-
-      renderAdminQuestionList();
-      renderAdminSchedulesList();
+      saveSingleQuestionFromForm({ keepOpenForNext: false });
     });
   }
+
+  document.getElementById('btnSubmitAndContinueQuestion')?.addEventListener('click', () => {
+    saveSingleQuestionFromForm({ keepOpenForNext: true });
+  });
+
+  document.getElementById('btnSwitchSingleToBulk')?.addEventListener('click', () => {
+    const curSubj = document.getElementById('qInputSubject')?.value.trim() || '';
+    const curCls = document.getElementById('qInputClassLevel')?.value || '';
+    const curCat = document.getElementById('qInputCategory')?.value || 'exam';
+    closeQuestionModal();
+    openBulkQuestionModal({ subject: curSubj, classLevel: curCls, category: curCat });
+  });
+
+  document.getElementById('btnSwitchSingleToBulkEdit')?.addEventListener('click', () => {
+    closeQuestionModal();
+    openBulkEditQuestionsModal();
+  });
 
   // ===================== MODAL INPUT SOAL SEKALIGUS (BULK & PAKET WACANA 3-5 SOAL) =====================
   const modalBulkQuestionForm = document.getElementById('modalBulkQuestionForm');
   const btnOpenBulkQuestion = document.getElementById('btnOpenBulkQuestion');
+  const btnOpenBulkEditQuestions = document.getElementById('btnOpenBulkEditQuestions');
+  const btnQuickBulkEditFromBar = document.getElementById('btnQuickBulkEditFromBar');
   const btnCloseBulkQuestionForm = document.getElementById('btnCloseBulkQuestionForm');
   const btnCancelBulkQuestionForm = document.getElementById('btnCancelBulkQuestionForm');
   const bulkInputMode = document.getElementById('bulkInputMode');
@@ -6536,6 +6853,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const bulkQuestionsListContainer = document.getElementById('bulkQuestionsListContainer');
 
   let bulkRowsState = [];
+  let bulkModalActionMode = 'create'; // 'create' | 'edit_existing'
 
   function createEmptyBulkRow(defaultWeight = 25) {
     return {
@@ -6616,11 +6934,16 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       ` : '';
 
+      const rowMetaBadge = bulkModalActionMode === 'edit_existing'
+        ? `<span class="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 text-[10px] font-bold">📚 ${escapeHtmlSafe(row.originalSubject || 'Umum')} • 🏫 ${escapeHtmlSafe(row.originalClassLevel || 'Semua Kelas')}${row.originalIsTrial ? ' • 🧪 Simulasi' : ''}${row.hasImage ? ' • 🖼️ Gambar' : ''}${row.hasOptionTables ? ' • 📊 Tabel Opsi' : ''}</span>`
+        : '';
+
       return `
-        <div class="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+        <div class="p-3.5 rounded-2xl border ${bulkModalActionMode === 'edit_existing' ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">Soal #${idx + 1}</span>
+              <span class="px-2.5 py-0.5 rounded-lg ${bulkModalActionMode === 'edit_existing' ? 'bg-amber-600' : 'bg-indigo-600'} text-white font-black text-xs">Soal #${idx + 1}</span>
+              ${rowMetaBadge}
               <select data-b-idx="${idx}" data-b-field="type" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-xs text-blue-700 outline-none">
                 <option value="single" ${isSingle ? 'selected' : ''}>PG Tunggal</option>
                 <option value="multiple" ${isMultiple ? 'selected' : ''}>PG Kompleks (&gt;1 Benar)</option>
@@ -6634,7 +6957,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="flex flex-wrap items-center gap-1.5">
               <button type="button" data-b-toggle-tbl="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasTable ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">📊 Tabel</button>
               <button type="button" data-b-toggle-chart="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasChart ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">🗺️ Bagan</button>
-              ${bulkRowsState.length > 1 ? `<button type="button" data-b-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
+              ${(bulkModalActionMode === 'create' && bulkRowsState.length > 1) ? `<button type="button" data-b-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
             </div>
           </div>
 
@@ -6782,48 +7105,212 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function openBulkQuestionModal() {
-    if (!modalBulkQuestionForm) return;
+  function updateBulkModalChromeForMode() {
+    const isEditMode = bulkModalActionMode === 'edit_existing';
+    const titleEl = document.getElementById('bulkQuestionModalTitle');
+    const subEl = document.getElementById('bulkQuestionModalSubtitle');
+    const submitEl = document.getElementById('btnSubmitBulkQuestionForm');
+    const countGroupEl = document.getElementById('bulkCountControlGroup');
+    const addRowBtn = document.getElementById('btnBulkAddOneRow');
+    const overrideBarEl = document.getElementById('bulkEditMetaOverrideBar');
+
+    if (titleEl) {
+      titleEl.innerText = isEditMode
+        ? `✏️ Edit Massal ${bulkRowsState.length} Soal Sekaligus (Satu Layar)`
+        : '⚡ Input Soal Lengkap Sekaligus (Bulk & Paket Wacana 3–5 Soal)';
+    }
+    if (subEl) {
+      subEl.innerText = isEditMode
+        ? 'Ubah teks pertanyaan, pilihan A–D, kunci jawaban, bobot, serta Mapel/Kelas seluruh soal di bawah sekaligus lalu klik Simpan.'
+        : 'Buat beberapa butir soal atau 1 Wacana/Pernyataan untuk 3–5 nomor soal sekaligus dalam satu layar tanpa klik tambah satu per satu.';
+    }
+    if (submitEl) {
+      submitEl.innerText = isEditMode ? '💾 Simpan Perubahan Semua Soal' : '💾 Simpan Semua Soal Sekaligus';
+      submitEl.className = isEditMode
+        ? 'px-5 py-2.5 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer'
+        : 'px-5 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm cursor-pointer';
+    }
+    if (countGroupEl) countGroupEl.classList.toggle('hidden', isEditMode);
+    if (addRowBtn) addRowBtn.classList.toggle('hidden', isEditMode);
+    if (overrideBarEl) {
+      overrideBarEl.classList.toggle('hidden', !isEditMode);
+      overrideBarEl.classList.toggle('flex', isEditMode);
+    }
+    if (bulkPassageCard && bulkInputMode) {
+      const showPassage = !isEditMode && bulkInputMode.value === 'passage';
+      bulkPassageCard.classList.toggle('hidden', !showPassage);
+    }
+  }
+
+  function populateBulkHeaderControls(preset = {}) {
     const subjSel = document.getElementById('bulkInputSubject');
     if (subjSel) {
       const opts = getQuestionSubjectOptionsList();
       subjSel.innerHTML = opts.map(o => `<option value="${escapeHtmlSafe(o.value)}">${escapeHtmlSafe(o.label)}</option>`).join('');
-      const activeSubjFilter = document.getElementById('filterQuestionsSubject')?.value || '';
-      if (activeSubjFilter && activeSubjFilter !== 'ALL' && Array.from(subjSel.options).some(o => o.value === activeSubjFilter)) {
-        subjSel.value = activeSubjFilter;
+      const wantedSubj = preset.subject || document.getElementById('filterQuestionsSubject')?.value || '';
+      if (wantedSubj && wantedSubj !== 'ALL' && Array.from(subjSel.options).some(o => o.value === wantedSubj)) {
+        subjSel.value = wantedSubj;
+      } else {
+        const firstReal = opts.find(o => o.value.toLowerCase() !== 'umum');
+        if (firstReal) subjSel.value = firstReal.value;
       }
     }
     const clsSel = document.getElementById('bulkInputClassLevel');
     if (clsSel) {
-      const activeClsFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      if (activeClsFilter !== 'ALL' && Array.from(clsSel.options).some(o => o.value === activeClsFilter)) {
-        clsSel.value = activeClsFilter;
+      const wantedCls = preset.classLevel || document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      if (wantedCls !== 'ALL' && Array.from(clsSel.options).some(o => o.value === wantedCls)) {
+        clsSel.value = wantedCls;
       }
     }
+    const catSel = document.getElementById('bulkInputCategory');
+    if (catSel && preset.category) {
+      catSel.value = preset.category === 'trial' ? 'trial' : 'exam';
+    }
+  }
+
+  function openBulkQuestionModal(preset = {}) {
+    if (!modalBulkQuestionForm) return;
+    bulkModalActionMode = 'create';
+    if (bulkInputMode && bulkInputMode.value === 'edit_existing') {
+      bulkInputMode.value = preset.mode || 'passage';
+    } else if (bulkInputMode && preset.mode) {
+      bulkInputMode.value = preset.mode;
+    }
+    populateBulkHeaderControls(preset);
     const countVal = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
     const defWeight = parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25;
     bulkRowsState = Array.from({ length: countVal }, () => createEmptyBulkRow(defWeight));
     if (document.getElementById('bulkPassageTitle')) document.getElementById('bulkPassageTitle').value = '';
     if (document.getElementById('bulkPassageText')) document.getElementById('bulkPassageText').value = '';
+    updateBulkModalChromeForMode();
     syncBulkModeUI();
+    renderBulkQuestionRows();
+    modalBulkQuestionForm.classList.remove('hidden');
+  }
+
+  function mapQuestionToBulkEditRow(q) {
+    const optsMap = {};
+    (q.options || []).forEach(o => {
+      if (o && o.key) optsMap[String(o.key).toUpperCase()] = o.text || '';
+    });
+    const stmts = Array.isArray(q.statements) ? q.statements : [];
+    const tfStmts = [0, 1, 2, 3].map(i => ({
+      text: stmts[i]?.text || '',
+      correct: stmts[i]?.correct === 'S' ? 'S' : (i % 2 === 1 ? 'S' : 'B')
+    }));
+    const clonedTable = q.tableData ? JSON.parse(JSON.stringify(q.tableData)) : { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] };
+    const clonedChart = q.chartData ? JSON.parse(JSON.stringify(q.chartData)) : {
+      layout: 'vertical',
+      title: '',
+      nodes: [
+        { id: 'n1', label: 'Langkah 1', sublabel: '', parentId: '', tone: 'blue' },
+        { id: 'n2', label: 'Langkah 2', sublabel: '', parentId: 'n1', tone: 'emerald' }
+      ]
+    };
+    return {
+      id: q.id,
+      originalSubject: q.subject || 'Umum',
+      originalClassLevel: q.classLevel || 'Semua Kelas',
+      originalIsTrial: Boolean(window.cbtAdmin?.isTrialQuestion?.(q)),
+      type: q.type || 'single',
+      question: q.question || '',
+      optA: optsMap['A'] || '',
+      optB: optsMap['B'] || '',
+      optC: optsMap['C'] || '',
+      optD: optsMap['D'] || '',
+      correctSingle: Array.isArray(q.correctAnswer) ? (q.correctAnswer[0] || 'A') : (String(q.correctAnswer || 'A').toUpperCase()),
+      correctMulti: Array.isArray(q.correctAnswer)
+        ? q.correctAnswer.map(k => String(k).toUpperCase())
+        : [String(q.correctAnswer || 'A').toUpperCase()],
+      tfStmts,
+      weight: Math.max(1, parseInt(q.weight, 10) || 10),
+      hasTable: Boolean(q.tableData),
+      tableData: clonedTable,
+      hasChart: Boolean(q.chartData),
+      chartData: clonedChart,
+      hasImage: Boolean(q.image),
+      hasOptionTables: Boolean(q.optionTables && Object.keys(q.optionTables).length > 0),
+      passageGroupId: q.passageGroupId || '',
+      passageTitle: q.passageTitle || '',
+      passageText: q.passageText || '',
+      passageOrder: q.passageOrder || 0,
+      passageGroupSize: q.passageGroupSize || 0
+    };
+  }
+
+  function openBulkEditQuestionsModal(explicitList = null) {
+    if (!modalBulkQuestionForm) return;
+    const targetList = Array.isArray(explicitList) ? explicitList : getTargetQuestionsForBulkAction().questions;
+    if (!targetList || targetList.length === 0) {
+      alert('Tidak ada soal yang tampil atau dicentang untuk diedit massal.');
+      return;
+    }
+    const maxEditable = 50;
+    const slicedList = targetList.length > maxEditable ? targetList.slice(0, maxEditable) : targetList;
+    if (targetList.length > maxEditable) {
+      alert(`Untuk kenyamanan layar editor, maksimal ${maxEditable} soal dibuka sekaligus (${targetList.length - maxEditable} sisanya dapat difilter atau dicentang setelah ini).`);
+    }
+
+    bulkModalActionMode = 'edit_existing';
+    if (bulkInputMode) bulkInputMode.value = 'edit_existing';
+
+    const distinctSubjs = new Set(slicedList.map(q => (q.subject || 'Umum').trim()));
+    const onlyUmum = distinctSubjs.size === 1 && Array.from(distinctSubjs)[0].toLowerCase() === 'umum';
+    const singleSubj = distinctSubjs.size === 1 ? Array.from(distinctSubjs)[0] : '';
+
+    populateBulkHeaderControls({
+      subject: onlyUmum ? '' : singleSubj,
+      classLevel: slicedList.every(q => (q.classLevel || 'Semua Kelas') === (slicedList[0].classLevel || 'Semua Kelas'))
+        ? (slicedList[0].classLevel || 'Semua Kelas')
+        : 'ALL',
+      category: slicedList.every(q => Boolean(window.cbtAdmin?.isTrialQuestion?.(q)) === Boolean(window.cbtAdmin?.isTrialQuestion?.(slicedList[0])))
+        ? (window.cbtAdmin?.isTrialQuestion?.(slicedList[0]) ? 'trial' : 'exam')
+        : 'exam'
+    });
+
+    const applyHeaderMetaChk = document.getElementById('bulkEditApplyHeaderMeta');
+    if (applyHeaderMetaChk) applyHeaderMetaChk.checked = onlyUmum;
+
+    bulkRowsState = slicedList.map(mapQuestionToBulkEditRow);
+    updateBulkModalChromeForMode();
     renderBulkQuestionRows();
     modalBulkQuestionForm.classList.remove('hidden');
   }
 
   function closeBulkQuestionModal() {
     if (modalBulkQuestionForm) modalBulkQuestionForm.classList.add('hidden');
+    bulkModalActionMode = 'create';
   }
 
-  if (btnOpenBulkQuestion) btnOpenBulkQuestion.addEventListener('click', openBulkQuestionModal);
+  if (btnOpenBulkQuestion) btnOpenBulkQuestion.addEventListener('click', () => openBulkQuestionModal());
+  if (btnOpenBulkEditQuestions) btnOpenBulkEditQuestions.addEventListener('click', () => openBulkEditQuestionsModal());
+  if (btnQuickBulkEditFromBar) btnQuickBulkEditFromBar.addEventListener('click', () => openBulkEditQuestionsModal());
   if (btnCloseBulkQuestionForm) btnCloseBulkQuestionForm.addEventListener('click', closeBulkQuestionModal);
   if (btnCancelBulkQuestionForm) btnCancelBulkQuestionForm.addEventListener('click', closeBulkQuestionModal);
-  if (bulkInputMode) bulkInputMode.addEventListener('change', syncBulkModeUI);
+  if (bulkInputMode) {
+    bulkInputMode.addEventListener('change', () => {
+      if (bulkInputMode.value === 'edit_existing') {
+        if (bulkModalActionMode !== 'edit_existing') {
+          openBulkEditQuestionsModal();
+        }
+      } else {
+        if (bulkModalActionMode === 'edit_existing') {
+          openBulkQuestionModal({ mode: bulkInputMode.value });
+        } else {
+          updateBulkModalChromeForMode();
+          syncBulkModeUI();
+        }
+      }
+    });
+  }
 
   document.getElementById('btnBulkSyncCountAndWeight')?.addEventListener('click', () => {
     const targetCount = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
     const targetWeight = Math.max(1, parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25);
-    while (bulkRowsState.length < targetCount) bulkRowsState.push(createEmptyBulkRow(targetWeight));
-    if (bulkRowsState.length > targetCount) bulkRowsState = bulkRowsState.slice(0, targetCount);
+    if (bulkModalActionMode === 'create') {
+      while (bulkRowsState.length < targetCount) bulkRowsState.push(createEmptyBulkRow(targetWeight));
+      if (bulkRowsState.length > targetCount) bulkRowsState = bulkRowsState.slice(0, targetCount);
+    }
     bulkRowsState.forEach(r => { r.weight = targetWeight; });
     renderBulkQuestionRows();
   });
@@ -6840,6 +7327,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btnBulkAddOneRow')?.addEventListener('click', () => {
+    if (bulkModalActionMode === 'edit_existing') return;
     const w = parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25;
     bulkRowsState.push(createEmptyBulkRow(w));
     renderBulkQuestionRows();
@@ -6855,6 +7343,84 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = document.getElementById('bulkInputMode')?.value || 'passage';
       const passageTitle = (document.getElementById('bulkPassageTitle')?.value || '').trim();
       const passageText = (document.getElementById('bulkPassageText')?.value || '').trim();
+
+      if (bulkModalActionMode === 'edit_existing') {
+        const applyHeaderMeta = Boolean(document.getElementById('bulkEditApplyHeaderMeta')?.checked);
+        const updatesList = [];
+        for (let i = 0; i < bulkRowsState.length; i++) {
+          const r = bulkRowsState[i];
+          const qText = String(r.question || '').trim();
+          if (!qText) {
+            alert(`Teks pertanyaan pada Soal #${i + 1} tidak boleh kosong!`);
+            return;
+          }
+          const upd = {
+            id: r.id,
+            subject: applyHeaderMeta ? subject : (r.originalSubject || subject),
+            classLevel: applyHeaderMeta ? classLevel : (r.originalClassLevel || classLevel),
+            isTrial: applyHeaderMeta ? isTrial : Boolean(r.originalIsTrial),
+            type: r.type,
+            question: qText,
+            weight: Math.max(1, parseInt(r.weight, 10) || 10)
+          };
+          if (r.hasTable && r.tableData) upd.tableData = JSON.parse(JSON.stringify(r.tableData));
+          else if (!r.hasTable) upd.removeTable = true;
+
+          if (r.hasChart && r.chartData) upd.chartData = JSON.parse(JSON.stringify(r.chartData));
+          else if (!r.hasChart) upd.removeChart = true;
+
+          if (r.type === 'single') {
+            upd.options = [
+              { key: 'A', text: (r.optA || '').trim() },
+              { key: 'B', text: (r.optB || '').trim() },
+              { key: 'C', text: (r.optC || '').trim() },
+              { key: 'D', text: (r.optD || '').trim() }
+            ];
+            upd.correctAnswer = r.correctSingle || 'A';
+          } else if (r.type === 'multiple') {
+            if (!r.correctMulti || r.correctMulti.length === 0) {
+              alert(`Pilih minimal 1 kunci jawaban PG Kompleks pada Soal #${i + 1}!`);
+              return;
+            }
+            upd.options = [
+              { key: 'A', text: (r.optA || '').trim() },
+              { key: 'B', text: (r.optB || '').trim() },
+              { key: 'C', text: (r.optC || '').trim() },
+              { key: 'D', text: (r.optD || '').trim() }
+            ];
+            upd.correctAnswer = r.correctMulti;
+          } else if (r.type === 'true_false') {
+            const stmts = (r.tfStmts || [])
+              .map((s, si) => ({ id: `s${si + 1}`, text: String(s.text || '').trim(), correct: s.correct === 'S' ? 'S' : 'B' }))
+              .filter(s => s.text !== '');
+            if (stmts.length < 2) {
+              alert(`Soal #${i + 1} (Benar/Salah) harus memiliki minimal 2 pernyataan yang diisi!`);
+              return;
+            }
+            upd.statements = stmts;
+          }
+          updatesList.push(upd);
+        }
+
+        const res = window.cbtAdmin.updateQuestionsBatch(updatesList);
+        if (res && res.success) {
+          selectedQuestionIds.clear();
+          closeBulkQuestionModal();
+          setupQuestionBankFilters();
+          if (applyHeaderMeta) {
+            const subjFilterEl = document.getElementById('filterQuestionsSubject');
+            if (subjFilterEl && Array.from(subjFilterEl.options).some(o => o.value === subject)) {
+              subjFilterEl.value = subject;
+            }
+          }
+          renderAdminQuestionList();
+          renderAdminSchedulesList();
+          alert(`Berhasil memperbarui ${res.count} soal sekaligus!`);
+        } else {
+          alert(res?.message || 'Gagal memperbarui soal massal.');
+        }
+        return;
+      }
 
       if (mode === 'passage' && !passageText && !passageTitle) {
         alert('Pada mode Paket Wacana / Pernyataan, harap isi Teks Wacana / Stimulus Bersama terlebih dahulu!');
@@ -9446,7 +10012,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function triggerThrottledCloudResultsRefresh() {
     const now = Date.now();
     if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured()) return;
-    if (now - realtimeLastCloudResultPullAt < 3000) return;
+    if (now - realtimeLastCloudResultPullAt < 8000) return;
     realtimeLastCloudResultPullAt = now;
     window.supabaseSync.fetchCloudResults().then(res => {
       if (res && res.success) {
@@ -9639,16 +10205,17 @@ document.addEventListener('DOMContentLoaded', () => {
         stopAdminRealtimeNotifications();
         return;
       }
+      if (document.hidden) return;
       pollRealtimeStudentEvents(false);
 
-      // Cadangan polling bank soal otomatis (setiap 12 detik di tab Bank Soal, 30 detik di tab lain) jika WebSocket Realtime belum aktif
+      // Cadangan polling bank soal hemat egress (cek watermark ~120 byte tiap 30 detik di Bank Soal / 60 detik di tab lain)
       realtimeQuestionPollTick += 1;
       const tabQ = document.getElementById('tabQuestions');
       const isQuestionsTabOpen = Boolean(tabQ && !tabQ.classList.contains('hidden'));
-      if ((isQuestionsTabOpen && realtimeQuestionPollTick % 2 === 0) || realtimeQuestionPollTick % 5 === 0) {
+      if ((isQuestionsTabOpen && realtimeQuestionPollTick % 2 === 0) || realtimeQuestionPollTick % 4 === 0) {
         syncQuestionsFromCloud(true);
       }
-    }, 6000);
+    }, 15000);
   }
 
   function stopAdminRealtimeNotifications() {

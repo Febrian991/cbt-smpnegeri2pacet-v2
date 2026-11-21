@@ -1205,8 +1205,8 @@ DECLARE
   v_segs TEXT[];
 BEGIN
   IF v_clean = '' THEN RETURN v_res; END IF;
-  v_clean := regexp_replace(v_clean, '\bKELAS\b', '', 'gi');
-  v_clean := regexp_replace(v_clean, '\bTINGKAT\b', '', 'gi');
+  -- Gunakan \y (word boundary POSIX PostgreSQL — jangan \b karena di PostgreSQL \b bermakna backspace!)
+  v_clean := regexp_replace(v_clean, '\y(KELAS|TINGKAT|KLS)\y', '', 'gi');
   v_clean := regexp_replace(v_clean, '\s+(DAN|&)\s+', ',', 'gi');
   v_clean := regexp_replace(v_clean, '\s*(S/D|SD|TO)\s*', '-', 'gi');
   v_parts := regexp_split_to_array(v_clean, '[,;/]+');
@@ -1215,15 +1215,18 @@ BEGIN
     v_part := BTRIM(v_part);
     IF v_part = '' THEN CONTINUE; END IF;
 
-    -- Konversi angka romawi di depan segmen (termasuk 7-8-9 atau VII-IX atau VII-a)
-    v_part := regexp_replace(v_part, '^(XII)(?=[^A-Z]|$)', '12', 'i');
-    v_part := regexp_replace(v_part, '^(XI)(?=[^A-Z]|$)', '11', 'i');
-    v_part := regexp_replace(v_part, '^(VIII)(?=[^A-Z]|$)', '8', 'i');
-    v_part := regexp_replace(v_part, '^(VII)(?=[^A-Z]|$)', '7', 'i');
-    v_part := regexp_replace(v_part, '^(VI)(?=[^A-Z]|$)', '6', 'i');
-    v_part := regexp_replace(v_part, '^(IX)(?=[^A-Z]|$)', '9', 'i');
-    v_part := regexp_replace(v_part, '^(IV)(?=[^A-Z]|$)', '4', 'i');
-    v_part := regexp_replace(v_part, '^(X)(?=[^A-Z]|$)', '10', 'i');
+    -- Konversi awalan Kelas/Tingkat jika menempel tanpa spasi (misal "Kelas7" -> "7")
+    v_part := regexp_replace(v_part, '^(KELAS|TINGKAT|KLS)\s*', '', 'i');
+
+    -- Konversi angka romawi pada setiap segmen (misal "VII-IX" -> "7-9", "VII-A" -> "7-A")
+    v_part := regexp_replace(v_part, '\yXII\y', '12', 'gi');
+    v_part := regexp_replace(v_part, '\yXI\y', '11', 'gi');
+    v_part := regexp_replace(v_part, '\yVIII\y', '8', 'gi');
+    v_part := regexp_replace(v_part, '\yVII\y', '7', 'gi');
+    v_part := regexp_replace(v_part, '\yVI\y', '6', 'gi');
+    v_part := regexp_replace(v_part, '\yIX\y', '9', 'gi');
+    v_part := regexp_replace(v_part, '\yIV\y', '4', 'gi');
+    v_part := regexp_replace(v_part, '\yX\y', '10', 'gi');
 
     -- Cek rentang / daftar tingkat dipisah strip: misal 7-8-9 atau 7-9 atau VII-IX
     v_norm := regexp_replace(v_part, '\s+', '', 'g');
@@ -1245,8 +1248,9 @@ BEGIN
       CONTINUE;
     END IF;
 
-    -- Token tunggal seperti VII-a -> 7A, 8 B -> 8B, 9 -> 9
+    -- Token tunggal seperti VII-a -> 7A, 8 B -> 8B, 9 -> 9, VIIA -> 7A
     v_norm := regexp_replace(v_part, '[\s\-_]+', '', 'g');
+    v_norm := regexp_replace(v_norm, '^(KELAS|TINGKAT|KLS)', '', 'i');
     v_norm := regexp_replace(v_norm, '^XII', '12', 'i');
     v_norm := regexp_replace(v_norm, '^XI', '11', 'i');
     v_norm := regexp_replace(v_norm, '^VIII', '8', 'i');
@@ -1468,3 +1472,4 @@ GRANT EXECUTE ON FUNCTION cbt_grade_and_submit_exam(JSONB) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION cbt_get_public_exam_config() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_sync_token_vault(TEXT, TEXT, TEXT, JSONB, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_verify_exam_token(TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION cbt_matches_class_level(TEXT, TEXT) TO anon, authenticated;

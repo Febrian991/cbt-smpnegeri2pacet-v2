@@ -1,8 +1,9 @@
 // Supabase Cloud Client & Real-Time Sync Manager
 // Menyinkronkan Hasil Ujian, Pengaturan/Token, Jadwal, Bank Soal, Data Siswa & Guru lintas perangkat (Laptop & HP)
 
+const LEGACY_DIRECT_SUPABASE_URL = "https://ibmsfedjcathditbedpt.supabase.co";
 const DEFAULT_SUPABASE_CONFIG = {
-  supabaseUrl: "https://ibmsfedjcathditbedpt.supabase.co",
+  supabaseUrl: "https://cbt-supabase-proxy.febrebellion-92.workers.dev",
   supabaseKey: "sb_publishable_k_36nCyvisFcxpAN6okLHg_7076YXri",
   enabled: true
 };
@@ -24,6 +25,9 @@ class SupabaseSyncManager {
     this._flushPromise = null;
     this.inflightUpserts = new Map();
     this.inflightDeletes = new Set();
+    this._lastQuestionsRemoteStamp = '';
+    this._lastCloudResultsStamp = '';
+    this._lastSessionsCache = { at: 0, res: null };
     this.initClient();
   }
 
@@ -33,7 +37,15 @@ class SupabaseSyncManager {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.supabaseUrl && parsed.supabaseKey) {
-          return parsed;
+          const cleanUrl = String(parsed.supabaseUrl).trim().replace(/\/+$/, '');
+          if (cleanUrl === LEGACY_DIRECT_SUPABASE_URL && parsed.supabaseKey === DEFAULT_SUPABASE_CONFIG.supabaseKey) {
+            const migrated = { ...parsed, supabaseUrl: DEFAULT_SUPABASE_CONFIG.supabaseUrl };
+            try {
+              localStorage.setItem('cbt_supabase_config', JSON.stringify(migrated));
+            } catch (e) {}
+            return migrated;
+          }
+          return { ...parsed, supabaseUrl: cleanUrl };
         }
       } catch (e) {
         console.error("Gagal load supabase config", e);
@@ -50,20 +62,31 @@ class SupabaseSyncManager {
     return Boolean(this.config && this.config.supabaseUrl && this.config.supabaseKey && this.isConnected);
   }
 
+  isProxyUrl(customUrl = null) {
+    const raw = String(customUrl || this.config?.supabaseUrl || '').trim().toLowerCase();
+    if (!raw) return false;
+    return !raw.includes('.supabase.co') && !raw.includes('.supabase.in');
+  }
+
   getConfig() {
     return this.config || { ...DEFAULT_SUPABASE_CONFIG };
   }
 
   saveConfig(urlOrConfig, key) {
     if (typeof urlOrConfig === 'string') {
+      const cleanUrl = urlOrConfig.trim().replace(/\/+$/, '');
+      const cleanKey = (key || '').trim();
       this.config = {
         ...this.config,
-        supabaseUrl: urlOrConfig.trim(),
-        supabaseKey: (key || '').trim(),
-        enabled: Boolean(urlOrConfig && key)
+        supabaseUrl: cleanUrl,
+        supabaseKey: cleanKey,
+        enabled: Boolean(cleanUrl && cleanKey)
       };
     } else if (typeof urlOrConfig === 'object' && urlOrConfig !== null) {
-      this.config = { ...this.config, ...urlOrConfig };
+      const nextUrl = urlOrConfig.supabaseUrl !== undefined
+        ? String(urlOrConfig.supabaseUrl || '').trim().replace(/\/+$/, '')
+        : this.config?.supabaseUrl;
+      this.config = { ...this.config, ...urlOrConfig, supabaseUrl: nextUrl };
     }
     this.stateTableMissing = false;
     this.sessionTableMissing = false;
@@ -352,10 +375,12 @@ class SupabaseSyncManager {
       // Cek apakah RPC server-side (keamanan, validasi token & koreksi Postgres) sudah terpasang
       let rpcReady = false;
       let tokenRpcReady = false;
+      let classMatcherFixed = true;
       try {
-        const [rpcTest, tokRpcTest] = await Promise.all([
+        const [rpcTest, tokRpcTest, clsMatchTest] = await Promise.all([
           client.rpc('cbt_lookup_student_hint', { p_nisn: '__HEALTH_CHECK__' }),
-          client.rpc('cbt_verify_exam_token', { p_token: '', p_schedule_id: null, p_student_class: null })
+          client.rpc('cbt_verify_exam_token', { p_token: '', p_schedule_id: null, p_student_class: null }),
+          client.rpc('cbt_matches_class_level', { p_sched_class: 'Kelas 7', p_student_class: 'VII-a' })
         ]);
         if (!rpcTest.error) {
           rpcReady = true;
@@ -368,6 +393,9 @@ class SupabaseSyncManager {
         } else {
           const tMsg = String(tokRpcTest.error.message || '').toLowerCase();
           tokenRpcReady = !(tokRpcTest.error.code === 'PGRST202' || tMsg.includes('could not find the function'));
+        }
+        if (!clsMatchTest.error && clsMatchTest.data === false) {
+          classMatcherFixed = false;
         }
       } catch (e) {
         rpcReady = false;
@@ -385,11 +413,12 @@ class SupabaseSyncManager {
 
       return {
         success: true,
-        allOptimal: missingTables.length === 0 && rpcReady && tokenRpcReady,
+        allOptimal: missingTables.length === 0 && rpcReady && tokenRpcReady && classMatcherFixed,
         allDedicatedTablesReady: missingTables.length === 0,
         missingTables,
         rpcReady,
         tokenRpcReady,
+        classMatcherFixed,
         tables: results
       };
     } catch (err) {
@@ -462,19 +491,22 @@ class SupabaseSyncManager {
         };
       }
 
+      const viaProxy = this.isProxyUrl(url);
+      const proxyNote = viaProxy ? '\n• Mode Cloudflare Worker Proxy terdeteksi aktif (hemat kuota Egress Supabase).' : '';
+
       if (health.success && (!health.rpcReady || !health.tokenRpcReady)) {
         return {
           success: true,
           warning: true,
           health,
-          message: "Semua 6 tabel utama sudah aktif! Namun fungsi keamanan & validasi token server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru."
+          message: `Semua 6 tabel utama sudah aktif! Namun fungsi keamanan & validasi token server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru.${proxyNote}`
         };
       }
 
       return {
         success: true,
         health,
-        message: "Koneksi ke Supabase Cloud Berhasil! Semua 6 tabel khusus (cbt_exam_results, cbt_school_state, cbt_questions, cbt_student_sessions, cbt_question_keys, cbt_exam_tokens) & fungsi keamanan server sudah AKTIF dan OPTIMAL untuk 250 siswa serentak."
+        message: `Koneksi ke Supabase Cloud Berhasil! Semua 6 tabel khusus (cbt_exam_results, cbt_school_state, cbt_questions, cbt_student_sessions, cbt_question_keys, cbt_exam_tokens) & fungsi keamanan server sudah AKTIF dan OPTIMAL untuk 250 siswa serentak.${proxyNote}`
       };
     } catch (err) {
       return { success: false, message: "Error: " + err.message };
@@ -1511,14 +1543,58 @@ class SupabaseSyncManager {
     return { success: pushed > 0, count: pushed };
   }
 
+  // Cek watermark ringan (~120 byte) untuk memastikan apakah ada perubahan pada bank soal sebelum menarik payload penuh
+  async getQuestionsRemoteStamp(scopeKey = 'public') {
+    if (!this.client || !this.isConnected || this.questionTableMissing) return null;
+    try {
+      const { data, count, error } = await this.client
+        .from('cbt_questions')
+        .select('updated_at', { count: 'exact' })
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      if (error) {
+        if (this.isMissingQuestionsTableError(error)) this.questionTableMissing = true;
+        return null;
+      }
+      const maxTs = Array.isArray(data) && data[0] ? String(data[0].updated_at || '') : '';
+      return `${scopeKey}|${typeof count === 'number' ? count : -1}|${maxTs}`;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getCloudResultsRemoteStamp() {
+    if (!this.client || !this.isConnected) return null;
+    try {
+      const { data, count, error } = await this.client
+        .from('cbt_exam_results')
+        .select('id, completed_at', { count: 'exact' })
+        .neq('student_nisn', '__CBT_STATE__')
+        .neq('student_nisn', '__CBT_QUESTION_ROW__')
+        .neq('exam_title', '__CBT_LIVE_SESSION__')
+        .order('id', { ascending: false })
+        .limit(1);
+      if (error) return null;
+      const topId = Array.isArray(data) && data[0] ? String(data[0].id || '') : '';
+      const topAt = Array.isArray(data) && data[0] ? String(data[0].completed_at || '') : '';
+      return `${typeof count === 'number' ? count : -1}|${topId}|${topAt}`;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Ambil seluruh pengaturan, jadwal, soal, data siswa & guru terbaru dari Cloud Supabase
   // options.publicOnly = true: khusus layar login / siswa agar PIN guru, password 250 siswa & kunci soal tidak terbaca di browser siswa
+  // options.includeQuestions: default false saat publicOnly=true agar halaman login/pengawas tidak mengunduh semua soal berulang kali
   async pullAllSchoolState(options = {}) {
     if (!this.client || !this.isConnected) {
       return { success: false, state: {} };
     }
 
     const publicOnly = Boolean(options && options.publicOnly);
+    const includeQuestions = options && options.includeQuestions !== undefined
+      ? Boolean(options.includeQuestions)
+      : !publicOnly;
     const stateMap = {};
 
     try {
@@ -1600,18 +1676,24 @@ class SupabaseSyncManager {
         if (stateMap.cbt_exam_schedules) stateMap.cbt_exam_schedules = this.stripSensitiveStateFields('cbt_exam_schedules', stateMap.cbt_exam_schedules);
       }
 
-      // Ambil soal per-baris dari cbt_questions / brankas soal guru
-      const qRes = await this.fetchAllQuestionRows();
-      const hasMigrated = qRes && qRes.success && (qRes.rows.length > 0 || await this.isQuestionsMigrationCompleted());
+      // Ambil soal per-baris dari cbt_questions / brankas soal guru HANYA jika diminta (hemat Egress Supabase!)
+      if (includeQuestions) {
+        const creds = this.getPrivilegedCredentials();
+        const scopeKey = creds && creds.identifier ? `staff:${creds.identifier}` : 'public';
+        const qRes = await this.fetchAllQuestionRows();
+        const hasMigrated = qRes && qRes.success && (qRes.rows.length > 0 || await this.isQuestionsMigrationCompleted());
 
-      if (hasMigrated) {
-        stateMap.cbt_questions = qRes.rows;
-        stateMap.cbt_questions_migrated = true;
-      } else if (!publicOnly && Array.isArray(stateMap.cbt_questions) && stateMap.cbt_questions.length > 0) {
-        // Auto-migrasi dari penyimpanan lama 1-JSON ke per-baris (hanya oleh staf terautentikasi)
-        await this.upsertQuestionRows(stateMap.cbt_questions, { skipMigrationCheck: true, skipPendingMark: true });
-        await this.markQuestionsMigrationDoneRemote();
-        stateMap.cbt_questions_migrated = true;
+        if (hasMigrated) {
+          stateMap.cbt_questions = qRes.rows;
+          stateMap.cbt_questions_migrated = true;
+          const stamp = await this.getQuestionsRemoteStamp(scopeKey);
+          if (stamp) this._lastQuestionsRemoteStamp = stamp;
+        } else if (!publicOnly && Array.isArray(stateMap.cbt_questions) && stateMap.cbt_questions.length > 0) {
+          // Auto-migrasi dari penyimpanan lama 1-JSON ke per-baris (hanya oleh staf terautentikasi)
+          await this.upsertQuestionRows(stateMap.cbt_questions, { skipMigrationCheck: true, skipPendingMark: true });
+          await this.markQuestionsMigrationDoneRemote();
+          stateMap.cbt_questions_migrated = true;
+        }
       }
 
       return { success: true, state: stateMap };
@@ -1670,8 +1752,10 @@ class SupabaseSyncManager {
   async upsertStudentSession(sessionObj) {
     if (!sessionObj || !sessionObj.nisn) return { success: false };
     const sessionKey = this.buildSessionKey(sessionObj.nisn, sessionObj.subject);
+    const cappedLogs = Array.isArray(sessionObj.violationLogs) ? sessionObj.violationLogs.slice(-10) : undefined;
     const enriched = {
       ...sessionObj,
+      ...(cappedLogs ? { violationLogs: cappedLogs } : {}),
       sessionKey,
       updatedAt: sessionObj.updatedAt || new Date().toISOString()
     };
@@ -1767,10 +1851,16 @@ class SupabaseSyncManager {
     }
   }
 
-  async fetchStudentSessions() {
+  async fetchStudentSessions(options = {}) {
     const localList = this.getLocalStudentSessions();
     if (!this.client || !this.isConnected) {
       return { success: false, data: localList };
+    }
+
+    const forceFresh = Boolean(options && options.force);
+    const cacheMaxAgeMs = 4000;
+    if (!forceFresh && this._lastSessionsCache.res && (Date.now() - this._lastSessionsCache.at) < cacheMaxAgeMs) {
+      return this._lastSessionsCache.res;
     }
 
     const sessionMap = new Map();
@@ -1786,11 +1876,20 @@ class SupabaseSyncManager {
     try {
       let fetchedFromPrimary = false;
       if (!this.sessionTableMissing) {
-        const { data, error } = await this.client
+        let queryRes = await this.client
           .from('cbt_student_sessions')
-          .select('*')
+          .select('session_key, student_nisn, student_name, student_class, subject, status, attempt_number, answered_count, total_questions, remaining_seconds, cheat_count, final_score, login_at, started_at, completed_at, updated_at, last_violation_reason:raw_data->>lastViolationReason, last_violation_at:raw_data->>lastViolationAt, finish_reason:raw_data->>finishReason')
           .order('updated_at', { ascending: false });
 
+        if (queryRes.error && !this.isMissingSessionTableError(queryRes.error)) {
+          // Fallback ke select('*') bila versi PostgREST menolak path JSON
+          queryRes = await this.client
+            .from('cbt_student_sessions')
+            .select('*')
+            .order('updated_at', { ascending: false });
+        }
+
+        const { data, error } = queryRes;
         if (!error && Array.isArray(data)) {
           fetchedFromPrimary = true;
           data.forEach(row => {
@@ -1806,6 +1905,9 @@ class SupabaseSyncManager {
               remainingSeconds: row.remaining_seconds,
               cheatCount: row.cheat_count,
               finalScore: row.final_score,
+              lastViolationReason: row.last_violation_reason || '',
+              lastViolationAt: row.last_violation_at || '',
+              finishReason: row.finish_reason || '',
               loginAt: row.login_at,
               startedAt: row.started_at,
               completedAt: row.completed_at,
@@ -1821,13 +1923,13 @@ class SupabaseSyncManager {
       if (!fetchedFromPrimary) {
         const { data: fbData, error: fbErr } = await this.client
           .from('cbt_exam_results')
-          .select('*')
+          .select('student_nisn, student_name, student_class, subject, finish_reason, correct_count, total_questions, cheat_count, final_score, completed_at')
           .eq('exam_title', '__CBT_LIVE_SESSION__')
           .order('id', { ascending: false });
 
         if (!fbErr && Array.isArray(fbData)) {
           fbData.forEach(row => {
-            const obj = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {
+            putSession({
               nisn: row.student_nisn,
               name: row.student_name,
               class: row.student_class,
@@ -1836,15 +1938,17 @@ class SupabaseSyncManager {
               answeredCount: row.correct_count || 0,
               totalQuestions: row.total_questions || 0,
               cheatCount: row.cheat_count || 0,
+              finalScore: row.final_score,
               updatedAt: row.completed_at
-            };
-            putSession(obj);
+            });
           });
         }
       }
 
       localList.forEach(putSession);
-      return { success: true, data: Array.from(sessionMap.values()) };
+      const outRes = { success: true, data: Array.from(sessionMap.values()) };
+      this._lastSessionsCache = { at: Date.now(), res: outRes };
+      return outRes;
     } catch (err) {
       return { success: false, data: localList, message: err.message };
     }
@@ -2076,12 +2180,27 @@ class SupabaseSyncManager {
     }
   }
 
-  async fetchCloudResults() {
+  async fetchCloudResults(options = {}) {
+    const localCached = (() => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem('cbt_exam_results') || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    })();
+
     if (!this.client || !this.isConnected) {
-      return { success: false, message: "Klien Supabase belum terhubung.", data: JSON.parse(localStorage.getItem('cbt_exam_results') || '[]') };
+      return { success: false, message: "Klien Supabase belum terhubung.", data: localCached };
     }
 
     try {
+      const skipIfUnchanged = Boolean(options && options.skipIfUnchanged);
+      const stamp = await this.getCloudResultsRemoteStamp();
+      if (skipIfUnchanged && stamp && stamp === this._lastCloudResultsStamp && localCached.length > 0) {
+        return { success: true, count: localCached.length, data: localCached, cached: true };
+      }
+
       const { data, error } = await this.client
         .from('cbt_exam_results')
         .select('*')
@@ -2091,7 +2210,7 @@ class SupabaseSyncManager {
         .order('final_score', { ascending: false });
 
       if (error) {
-        return { success: false, message: error.message, data: JSON.parse(localStorage.getItem('cbt_exam_results') || '[]') };
+        return { success: false, message: error.message, data: localCached };
       }
 
       const deletedSigs = this._getDeletedResultSignatures();
@@ -2128,9 +2247,10 @@ class SupabaseSyncManager {
         });
 
       localStorage.setItem('cbt_exam_results', JSON.stringify(formatted));
+      if (stamp) this._lastCloudResultsStamp = stamp;
       return { success: true, count: formatted.length, data: formatted };
     } catch (err) {
-      return { success: false, message: err.message, data: JSON.parse(localStorage.getItem('cbt_exam_results') || '[]') };
+      return { success: false, message: err.message, data: localCached };
     }
   }
 
@@ -2138,6 +2258,10 @@ class SupabaseSyncManager {
   subscribeToRealtimeNotifications(onSessionEvent, onResultEvent, onQuestionEvent) {
     this.unsubscribeRealtimeNotifications();
     if (!this.client || !this.isConnected || typeof this.client.channel !== 'function') {
+      return null;
+    }
+    if (this.isProxyUrl()) {
+      // Saat memakai Cloudflare Worker Proxy, gunakan polling hemat egress tanpa membuka WebSocket persisten
       return null;
     }
 

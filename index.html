@@ -1342,6 +1342,9 @@
               <button id="btnRefreshQuestionsCloud" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 transition cursor-pointer" title="Ambil soal terbaru dari Cloud (per-baris)">
                 🔄 Segarkan Soal
               </button>
+              <button id="btnOpenBulkEditQuestions" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer flex items-center gap-1" title="Edit teks, pilihan jawaban, kunci, dan bobot beberapa soal sekaligus dalam satu layar">
+                <span>✏️ Edit Massal Soal</span>
+              </button>
               <button id="btnOpenBulkQuestion" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm cursor-pointer flex items-center gap-1" title="Input banyak soal sekaligus atau paket wacana 3-5 nomor soal">
                 <span>⚡ Input Massal / Paket Wacana</span>
               </button>
@@ -1375,23 +1378,64 @@
             </div>
           </div>
 
-          <!-- Bilah Pengaturan Bobot Nilai Massal (e.g. Bobot 25 per soal untuk 4 soal = 100) -->
-          <div id="questionBulkWeightBar" class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 font-bold">
-                ⚖️ Total Bobot Filter Aktif: <strong id="questionTotalWeightBadge">0</strong> Poin
-              </span>
-              <span class="text-[11px] text-slate-500">Nilai akhir otomatis dihitung proporsional (misal 4 soal × bobot 25 = 100 poin).</span>
+          <!-- Bilah Aksi & Edit Massal Soal (Checklist + Ubah Mapel/Kelas/Kategori/Bobot 1-Klik) -->
+          <div id="questionBulkWeightBar" class="pt-3 border-t border-slate-100 space-y-2.5 text-xs">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer select-none border border-slate-200">
+                  <input type="checkbox" id="chkSelectAllQuestions" class="rounded accent-blue-600 w-3.5 h-3.5 cursor-pointer">
+                  <span>Pilih Semua</span>
+                </label>
+                <span id="selectedQuestionsCountBadge" class="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                  Target: Semua soal tampil
+                </span>
+                <span class="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 font-bold">
+                  ⚖️ Total Bobot: <strong id="questionTotalWeightBadge">0</strong> Poin
+                </span>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button type="button" id="btnQuickBulkEditFromBar" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer transition shadow-2xs">
+                  ✏️ Edit Massal Teks &amp; Kunci
+                </button>
+              </div>
             </div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[11px] font-bold text-slate-600">Set Bobot Massal:</span>
-              <input type="number" id="bulkWeightValueInput" min="1" max="100" value="25" class="w-16 px-2 py-1 rounded-lg border border-slate-300 text-center font-bold text-blue-700 outline-none">
-              <button type="button" id="btnApplyBulkWeight" class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold cursor-pointer transition">
-                Terapkan ke Soal Tampil
-              </button>
-              <button type="button" id="btnRebalanceWeight100" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold cursor-pointer transition" title="Bagi rata bobot semua soal yang tampil agar total mendekati/tepat 100 poin">
-                ⚖️ Bagi Rata = 100
-              </button>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 bg-slate-50/90 p-2.5 rounded-2xl border border-slate-200">
+              <div class="flex items-center gap-1.5">
+                <select id="bulkPatchSubjectSelect" class="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-blue-700 outline-none"></select>
+                <button type="button" id="btnApplyBulkSubject" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold cursor-pointer transition shrink-0">
+                  Ubah Mapel
+                </button>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <select id="bulkPatchClassSelect" class="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-teal-800 outline-none">
+                  <option value="Semua Kelas">Semua Kelas (7, 8, 9)</option>
+                  <option value="Kelas 7">Kelas 7</option>
+                  <option value="Kelas 8">Kelas 8</option>
+                  <option value="Kelas 9">Kelas 9</option>
+                </select>
+                <button type="button" id="btnApplyBulkClass" class="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold cursor-pointer transition shrink-0">
+                  Ubah Kelas
+                </button>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <select id="bulkPatchCategorySelect" class="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-violet-800 outline-none">
+                  <option value="exam">📝 Soal Ujian Asli</option>
+                  <option value="trial">🧪 Soal Simulasi</option>
+                </select>
+                <button type="button" id="btnApplyBulkCategory" class="px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold cursor-pointer transition shrink-0">
+                  Ubah Kategori
+                </button>
+              </div>
+              <div class="flex items-center gap-1">
+                <input type="number" id="bulkWeightValueInput" min="1" max="100" value="25" class="w-14 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-white text-center text-[11px] font-bold text-blue-700 outline-none" title="Bobot poin per soal">
+                <button type="button" id="btnApplyBulkWeight" class="px-2 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer transition shrink-0">
+                  Set Bobot
+                </button>
+                <button type="button" id="btnRebalanceWeight100" class="px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer transition shrink-0" title="Bagi rata bobot soal target agar total = 100 poin">
+                  = 100
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2363,10 +2407,24 @@
   <!-- MODAL: TAMBAH / EDIT SOAL UJIAN (LENGKAP: BAGAN, TABEL, WACANA 3-5 SOAL, B/S 4 PERNYATAAN, BOBOT) -->
   <div id="modalQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
     <div class="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
         <h3 id="questionFormTitle" class="font-bold text-base text-slate-900">Tambah Soal Ujian Baru</h3>
         <button id="btnCloseQuestionForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
       </div>
+
+      <div id="singleToBulkBanner" class="mb-3.5 p-2.5 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span class="text-indigo-900 font-semibold">Ingin input atau edit banyak soal sekaligus tanpa mengisi satu per satu?</span>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" id="btnSwitchSingleToBulk" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer transition">
+            ⚡ Input Massal / Wacana
+          </button>
+          <button type="button" id="btnSwitchSingleToBulkEdit" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer transition">
+            ✏️ Edit Massal Soal
+          </button>
+        </div>
+      </div>
+
+      <div id="qSaveContinueNotice" class="hidden mb-3 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold"></div>
 
       <form id="formQuestionItem" class="space-y-3.5 text-xs sm:text-sm">
         <input type="hidden" id="editQuestionId" value="">
@@ -2674,9 +2732,12 @@
           <input type="number" id="qInputWeight" min="1" max="100" value="10" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-blue-700 outline-none">
         </div>
 
-        <div class="pt-3 border-t border-slate-100 flex gap-2">
+        <div class="pt-3 border-t border-slate-100 flex flex-wrap gap-2">
           <button type="button" id="btnCancelQuestionForm" class="px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
             Batal
+          </button>
+          <button type="button" id="btnSubmitAndContinueQuestion" class="px-4 py-2.5 rounded-xl font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer">
+            ➕ Simpan &amp; Tambah Soal Berikutnya
           </button>
           <button type="submit" id="btnSubmitQuestionForm" class="flex-1 py-2.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
             Simpan Soal Ujian
@@ -2686,13 +2747,13 @@
     </div>
   </div>
 
-  <!-- MODAL: INPUT SOAL LENGKAP SEKALIGUS (BULK INPUT & PAKET WACANA 3-5 SOAL) -->
+  <!-- MODAL: INPUT & EDIT SOAL SEKALIGUS (BULK INPUT, EDIT MASSAL, & PAKET WACANA 3-5 SOAL) -->
   <div id="modalBulkQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
     <div class="bg-white rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[94vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
         <div>
-          <h3 class="font-bold text-base sm:text-lg text-slate-900">⚡ Input Soal Lengkap Sekaligus (Bulk &amp; Paket Wacana 3–5 Soal)</h3>
-          <p class="text-xs text-slate-500">Buat beberapa butir soal atau 1 Wacana/Pernyataan untuk 3–5 nomor soal sekaligus dalam satu layar tanpa klik tambah satu per satu.</p>
+          <h3 id="bulkQuestionModalTitle" class="font-bold text-base sm:text-lg text-slate-900">⚡ Input Soal Lengkap Sekaligus (Bulk &amp; Paket Wacana 3–5 Soal)</h3>
+          <p id="bulkQuestionModalSubtitle" class="text-xs text-slate-500">Buat beberapa butir soal atau 1 Wacana/Pernyataan untuk 3–5 nomor soal sekaligus dalam satu layar tanpa klik tambah satu per satu.</p>
         </div>
         <button id="btnCloseBulkQuestionForm" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base p-1">✕</button>
       </div>
@@ -2719,28 +2780,40 @@
               <option value="trial">🧪 Soal Simulasi</option>
             </select>
           </div>
-          <div>
+          <div id="bulkModeSelectWrap">
             <label class="block font-bold text-slate-700 mb-1" for="bulkInputMode">Mode Pengisian</label>
             <select id="bulkInputMode" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-indigo-700 outline-none">
               <option value="passage">📖 Paket Wacana / Pernyataan (3–5 Soal)</option>
               <option value="batch">⚡ Input Massal Bebas (Banyak Soal)</option>
+              <option value="edit_existing">✏️ Edit Massal Soal yang Ada</option>
             </select>
           </div>
+        </div>
+
+        <!-- Opsi Terapkan Metadata Atas saat Edit Massal -->
+        <div id="bulkEditMetaOverrideBar" class="hidden flex-wrap items-center justify-between gap-2 bg-amber-50 p-3 rounded-2xl border border-amber-300 text-xs">
+          <label class="inline-flex items-center gap-2 font-bold text-amber-950 cursor-pointer select-none">
+            <input type="checkbox" id="bulkEditApplyHeaderMeta" class="rounded accent-amber-600 w-4 h-4 cursor-pointer">
+            <span>Terapkan Mapel, Kelas &amp; Kategori di atas ke seluruh soal yang sedang diedit (cocok untuk mengubah soal "Umum" sekaligus)</span>
+          </label>
+          <span class="text-[11px] font-semibold text-amber-800">Jika tidak dicentang, Mapel/Kelas asli masing-masing baris tetap dipertahankan.</span>
         </div>
 
         <!-- Pengaturan Jumlah & Bobot -->
         <div class="flex flex-wrap items-center justify-between gap-3 bg-amber-50/70 p-3 rounded-2xl border border-amber-200 text-xs">
           <div class="flex flex-wrap items-center gap-2">
-            <label class="font-bold text-slate-700" for="bulkInputCount">Jumlah Butir Soal:</label>
-            <select id="bulkInputCount" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
-              <option value="3">3 Soal</option>
-              <option value="4">4 Soal (Misal @ 25 Poin)</option>
-              <option value="5" selected>5 Soal (Paket Wacana)</option>
-              <option value="10">10 Soal</option>
-              <option value="15">15 Soal</option>
-              <option value="20">20 Soal</option>
-            </select>
-            <label class="font-bold text-slate-700 ml-2" for="bulkDefaultWeight">Bobot Tiap Soal:</label>
+            <div id="bulkCountControlGroup" class="flex items-center gap-2">
+              <label class="font-bold text-slate-700" for="bulkInputCount">Jumlah Butir Soal:</label>
+              <select id="bulkInputCount" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+                <option value="3">3 Soal</option>
+                <option value="4">4 Soal (Misal @ 25 Poin)</option>
+                <option value="5" selected>5 Soal (Paket Wacana)</option>
+                <option value="10">10 Soal</option>
+                <option value="15">15 Soal</option>
+                <option value="20">20 Soal</option>
+              </select>
+            </div>
+            <label class="font-bold text-slate-700 ml-1" for="bulkDefaultWeight">Bobot Tiap Soal:</label>
             <input type="number" id="bulkDefaultWeight" min="1" max="100" value="25" class="w-16 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
             <button type="button" id="btnBulkSyncCountAndWeight" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer transition">
               Terapkan ke Semua Baris
@@ -2771,7 +2844,7 @@
           <button type="button" id="btnBulkAddOneRow" class="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer transition">
             + Tambah 1 Baris Soal Lagi
           </button>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 ml-auto">
             <button type="button" id="btnCancelBulkQuestionForm" class="px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
               Batal
             </button>
@@ -3161,10 +3234,10 @@
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.58"></script>
-  <script src="js/supabase-config.js?v=3.61"></script>
-  <script src="js/exam-engine.js?v=3.61"></script>
-  <script src="js/admin.js?v=3.61"></script>
-  <script src="js/app.js?v=3.61"></script>
+  <script src="js/supabase-config.js?v=3.65"></script>
+  <script src="js/exam-engine.js?v=3.65"></script>
+  <script src="js/admin.js?v=3.65"></script>
+  <script src="js/app.js?v=3.65"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

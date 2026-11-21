@@ -1093,6 +1093,142 @@ class CBTAdmin {
     return { success: true, count: updatedRows.length, baseWeight };
   }
 
+  updateQuestionsBatch(questionUpdates = []) {
+    if (!Array.isArray(questionUpdates) || questionUpdates.length === 0) {
+      return { success: false, count: 0, skippedCount: 0, message: 'Tidak ada data pembaruan soal.' };
+    }
+    const existingList = [...window.examEngine.questions];
+    const indexById = new Map();
+    existingList.forEach((q, idx) => {
+      if (q && q.id !== undefined && q.id !== null) indexById.set(String(q.id), idx);
+    });
+
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const nowIso = new Date().toISOString();
+    const updatedRows = [];
+    let skippedCount = 0;
+
+    questionUpdates.forEach(upd => {
+      if (!upd || upd.id === undefined || upd.id === null) return;
+      const idx = indexById.get(String(upd.id));
+      if (idx === undefined) {
+        skippedCount += 1;
+        return;
+      }
+      const existing = existingList[idx];
+      if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(existing, cur)) {
+        skippedCount += 1;
+        return;
+      }
+      const mergedInput = { ...existing, ...upd };
+      if (upd.removeTable === true) delete mergedInput.tableData;
+      if (upd.removeChart === true) delete mergedInput.chartData;
+      if (upd.removePassage === true) {
+        delete mergedInput.passageGroupId;
+        delete mergedInput.passageTitle;
+        delete mergedInput.passageText;
+        delete mergedInput.passageTable;
+        delete mergedInput.passageChart;
+        delete mergedInput.passageOrder;
+        delete mergedInput.passageGroupSize;
+      }
+      const rebuilt = this._buildQuestionEntity(mergedInput, existing.id, cur, nowIso, existing);
+      existingList[idx] = rebuilt;
+      updatedRows.push(rebuilt);
+    });
+
+    if (updatedRows.length === 0) {
+      return {
+        success: false,
+        count: 0,
+        skippedCount,
+        message: skippedCount > 0
+          ? 'Tidak ada soal yang dapat diperbarui (soal tidak ditemukan atau milik guru lain).'
+          : 'Tidak ada perubahan soal.'
+      };
+    }
+
+    window.examEngine.saveQuestions(existingList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.upsertQuestionRows === 'function') {
+        window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: existingList });
+      } else if (typeof window.supabaseSync.upsertQuestionRow === 'function') {
+        updatedRows.forEach(q => window.supabaseSync.upsertQuestionRow(q, existingList));
+      }
+    }
+    return { success: true, count: updatedRows.length, skippedCount, questions: updatedRows };
+  }
+
+  bulkPatchQuestions(questionIds = [], patch = {}) {
+    const idSet = new Set((Array.isArray(questionIds) ? questionIds : []).map(String));
+    if (idSet.size === 0) {
+      return { success: false, count: 0, skippedCount: 0, message: 'Belum ada soal yang dipilih.' };
+    }
+    const hasSubj = typeof patch.subject === 'string' && patch.subject.trim() !== '';
+    const hasCls = typeof patch.classLevel === 'string' && patch.classLevel.trim() !== '';
+    const hasTrial = patch.isTrial !== undefined;
+    const hasWeight = patch.weight !== undefined && !Number.isNaN(parseInt(patch.weight, 10));
+    const hasPassagePatch = patch.clearPassage === true || (typeof patch.passageGroupId === 'string' && patch.passageGroupId.trim() !== '');
+
+    if (!hasSubj && !hasCls && !hasTrial && !hasWeight && !hasPassagePatch) {
+      return { success: false, count: 0, skippedCount: 0, message: 'Tidak ada atribut yang diubah.' };
+    }
+
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const nowIso = new Date().toISOString();
+    const updatedRows = [];
+    let skippedCount = 0;
+
+    const nextList = [...window.examEngine.questions].map(q => {
+      if (!q || !idSet.has(String(q.id))) return q;
+      if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(q, cur)) {
+        skippedCount += 1;
+        return q;
+      }
+      const u = { ...q, updatedAt: nowIso };
+      if (hasSubj) u.subject = patch.subject.trim();
+      if (hasCls) u.classLevel = patch.classLevel.trim();
+      if (hasTrial) u.isTrial = Boolean(patch.isTrial);
+      if (hasWeight) u.weight = Math.max(1, Math.min(100, parseInt(patch.weight, 10) || 10));
+      if (patch.clearPassage === true) {
+        delete u.passageGroupId;
+        delete u.passageTitle;
+        delete u.passageText;
+        delete u.passageTable;
+        delete u.passageChart;
+        delete u.passageOrder;
+        delete u.passageGroupSize;
+      } else if (patch.passageGroupId) {
+        u.passageGroupId = String(patch.passageGroupId).trim();
+        if (patch.passageTitle !== undefined) u.passageTitle = String(patch.passageTitle).trim();
+        if (patch.passageText !== undefined) u.passageText = String(patch.passageText);
+      }
+      updatedRows.push(u);
+      return u;
+    });
+
+    if (updatedRows.length === 0) {
+      return {
+        success: false,
+        count: 0,
+        skippedCount,
+        message: skippedCount > 0 ? 'Soal milik guru lain tidak dapat diubah.' : 'Tidak ada soal yang cocok.'
+      };
+    }
+
+    window.examEngine.saveQuestions(nextList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.upsertQuestionRows === 'function') {
+        window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: nextList });
+      } else if (typeof window.supabaseSync.upsertQuestionRow === 'function') {
+        updatedRows.forEach(q => window.supabaseSync.upsertQuestionRow(q, nextList));
+      }
+    }
+    return { success: true, count: updatedRows.length, skippedCount, questions: updatedRows };
+  }
+
   updateQuestion(id, questionData) {
     const existingList = [...window.examEngine.questions];
     const targetIdx = existingList.findIndex(q => String(q.id) === String(id));
