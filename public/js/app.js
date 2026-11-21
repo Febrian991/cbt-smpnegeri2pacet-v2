@@ -9336,16 +9336,16 @@ document.addEventListener('DOMContentLoaded', () => {
       badge.innerText = `✅ ${readyCount}/${totalTables} Tabel + RPC Optimal`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800';
       banner.innerHTML = '<strong>🚀 Database Sudah Optimal untuk 250 Siswa Serentak!</strong> Semua 6 tabel khusus (termasuk brankas kunci &amp; brankas token server) serta validasi server-side sudah aktif &amp; terkunci aman.';
-    } else if (health.allDedicatedTablesReady && (!health.rpcReady || !health.tokenRpcReady)) {
+    } else if (health.allDedicatedTablesReady && (!health.rpcReady || !health.tokenRpcReady || health.classMatcherFixed === false)) {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
-      badge.innerText = `⚡ ${readyCount}/${totalTables} Tabel Aktif (Perbarui RPC)`;
+      badge.innerText = `⚡ ${readyCount}/${totalTables} Tabel Aktif (Perbarui SQL RPC)`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
-      banner.innerHTML = `<strong>Semua ${totalTables} tabel sudah ada</strong>, namun fungsi keamanan &amp; validasi token server (RPC terbaru) belum lengkap. Klik <strong>📋 Salin Script SQL Optimal</strong> lalu jalankan (<strong>Run</strong>) di <em>SQL Editor</em> Supabase untuk pembaruan lengkap.`;
+      banner.innerHTML = `<strong>Semua ${totalTables} tabel sudah ada</strong>, namun fungsi server (RPC validasi token / pencocokan kelas VII–IX) belum versi terbaru. Klik <strong>📋 Salin Script SQL Optimal</strong> lalu jalankan (<strong>Run</strong>) di <em>SQL Editor</em> Supabase untuk pembaruan lengkap.`;
     } else {
       badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-bold';
       badge.innerText = `⚠️ Mode Fallback (${health.missingTables.length} Tabel Belum Ada)`;
       banner.className = 'mt-3 p-3 rounded-2xl text-xs leading-relaxed bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800';
-      banner.innerHTML = `<strong>⚠️ Masih perlu pembaruan tabel khusus</strong> (tabel berikut belum dibuat: <code>${escapeHtmlSafe(health.missingTables.join(', '))}</code>).<br>Agar brankas token server &amp; ujian serentak <strong>250 siswa</strong> aman optimal: klik <strong>📋 Salin Script SQL Optimal</strong> → Paste &amp; klik <strong>Run</strong> di menu <em>SQL Editor</em> Supabase → lalu klik <strong>🚀 Pindahkan &amp; Sinkronkan Data ke Tabel Khusus</strong>.`;
+      banner.innerHTML = `<strong>⚠️ Masih perlu pembaruan tabel khusus</strong> (tabel berikut belum dibuat: <code>${escapeHtmlSafe(health.missingTables.join(', ') || '-')}</code>).<br>Agar brankas token server &amp; ujian serentak <strong>250 siswa</strong> aman optimal: klik <strong>📋 Salin Script SQL Optimal</strong> → Paste &amp; klik <strong>Run</strong> di menu <em>SQL Editor</em> Supabase → lalu klik <strong>🚀 Pindahkan &amp; Sinkronkan Data ke Tabel Khusus</strong>.`;
     }
 
     const cards = (health.tables || []).map(tbl => {
@@ -9395,7 +9395,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadSupabaseSchemaSqlText() {
-    const resp = await fetch('/supabase-schema.sql?v=3.52', { cache: 'no-store' });
+    const resp = await fetch('/supabase-schema.sql?v=3.67', { cache: 'no-store' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -9476,8 +9476,8 @@ document.addEventListener('DOMContentLoaded', () => {
       btnTestSupabase.disabled = false;
       btnTestSupabase.innerText = "⚡ Uji Koneksi Cloud";
       await refreshSupabaseTablesHealthUI(url, key);
-      alert(res.message);
       updateCloudBadge();
+      setTimeout(() => alert(res.message), 30);
     });
   }
 

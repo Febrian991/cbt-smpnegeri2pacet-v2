@@ -1473,3 +1473,4 @@ GRANT EXECUTE ON FUNCTION cbt_get_public_exam_config() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_sync_token_vault(TEXT, TEXT, TEXT, JSONB, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_verify_exam_token(TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cbt_matches_class_level(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION cbt_expand_class_tokens(TEXT) TO anon, authenticated;

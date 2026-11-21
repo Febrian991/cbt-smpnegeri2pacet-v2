@@ -494,12 +494,12 @@ class SupabaseSyncManager {
       const viaProxy = this.isProxyUrl(url);
       const proxyNote = viaProxy ? '\n• Mode Cloudflare Worker Proxy terdeteksi aktif (hemat kuota Egress Supabase).' : '';
 
-      if (health.success && (!health.rpcReady || !health.tokenRpcReady)) {
+      if (health.success && (!health.rpcReady || !health.tokenRpcReady || health.classMatcherFixed === false)) {
         return {
           success: true,
           warning: true,
           health,
-          message: `Semua 6 tabel utama sudah aktif! Namun fungsi keamanan & validasi token server (RPC) belum lengkap — disarankan jalankan ulang script supabase-schema.sql terbaru.${proxyNote}`
+          message: `Semua 6 tabel utama sudah aktif! Namun fungsi keamanan/validasi token & pencocokan kelas di server (SQL RPC) perlu diperbarui — klik "Salin Script SQL Optimal" lalu Run di SQL Editor Supabase.${proxyNote}`
         };
       }
 
