@@ -591,7 +591,10 @@ class ExamEngine {
       ['X', '10']
     ];
     for (const [rom, dig] of romanPrefixes) {
-      const m = s.match(new RegExp(`^${rom}(?=[^A-Z]|$)`, 'i'));
+      const pattern = rom === 'X'
+        ? new RegExp(`^${rom}(?=$|[^A-Z])`, 'i')
+        : new RegExp(`^${rom}(?=$|[^A-Z]|[A-Z]{1,2}$)`, 'i');
+      const m = s.match(pattern);
       if (m) {
         s = dig + s.slice(rom.length);
         break;
@@ -602,8 +605,10 @@ class ExamEngine {
 
   normalizeClassToken(rawToken) {
     let s = String(rawToken || '').trim().toUpperCase();
-    s = s.replace(/\bKELAS\b/gi, '').replace(/\bTINGKAT\b/gi, '').replace(/[\s\-_]+/g, '');
+    s = s.replace(/\b(?:KELAS|TINGKAT|KLS)\b/gi, '').trim();
     if (!s) return '';
+    s = this._replaceRomanPrefix(s);
+    s = s.replace(/[\s\-_]+/g, '');
     return this._replaceRomanPrefix(s);
   }
 

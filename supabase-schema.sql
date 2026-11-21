@@ -334,54 +334,65 @@ BEGIN
     v_cfg_pin := BTRIM(COALESCE(v_cfg->>'adminPin', ''));
   END IF;
 
-  IF v_id IN ('admin', 'proktor', 'superadmin', '198501012010011001') OR v_id LIKE '%admin%' OR v_id LIKE '%proktor%' THEN
+  -- Prioritaskan kecocokan identifier + PIN di seluruh daftar akun (termasuk Guru & Pengawas NIP kembar)
+  SELECT t INTO v_found
+  FROM jsonb_array_elements(v_teachers) t
+  WHERE LOWER(BTRIM(COALESCE(t->>'nip', ''))) = v_id
+    AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
+  LIMIT 1;
+
+  IF v_found IS NULL THEN
+    SELECT t INTO v_found
+    FROM jsonb_array_elements(v_teachers) t
+    WHERE LOWER(BTRIM(COALESCE(t->>'id', ''))) = v_id
+      AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
+    LIMIT 1;
+  END IF;
+
+  IF v_found IS NULL THEN
+    SELECT t INTO v_found
+    FROM jsonb_array_elements(v_teachers) t
+    WHERE LOWER(BTRIM(COALESCE(t->>'name', ''))) = v_id
+      AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
+    LIMIT 1;
+  END IF;
+
+  IF v_found IS NULL AND LENGTH(v_id) >= 3 THEN
+    SELECT t INTO v_found
+    FROM jsonb_array_elements(v_teachers) t
+    WHERE LOWER(COALESCE(t->>'name', '')) LIKE '%' || v_id || '%'
+      AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
+    LIMIT 1;
+  END IF;
+
+  IF v_found IS NULL AND (
+    v_id IN ('admin', 'proktor', 'superadmin', '198501012010011001')
+    OR (
+      (v_id LIKE '%admin%' OR v_id LIKE '%proktor%')
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_teachers) t
+        WHERE LOWER(BTRIM(COALESCE(t->>'nip', ''))) = v_id
+           OR LOWER(BTRIM(COALESCE(t->>'id', ''))) = v_id
+           OR LOWER(BTRIM(COALESCE(t->>'name', ''))) = v_id
+      )
+    )
+  ) THEN
     SELECT t INTO v_found
     FROM jsonb_array_elements(v_teachers) t
     WHERE (t->>'role' = 'admin' OR t->>'id' = 'admin')
     LIMIT 1;
     v_is_admin := true;
-  ELSE
-    -- Prioritaskan kecocokan identifier + PIN agar 1 NIP dapat memiliki akun Guru & Pengawas dengan PIN berbeda
+  END IF;
+
+  -- Fallback: cek apakah identifier memang terdaftar (untuk pesan PIN salah)
+  IF v_found IS NULL THEN
     SELECT t INTO v_found
     FROM jsonb_array_elements(v_teachers) t
     WHERE LOWER(BTRIM(COALESCE(t->>'nip', ''))) = v_id
-      AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
+       OR LOWER(BTRIM(COALESCE(t->>'id', ''))) = v_id
+       OR LOWER(BTRIM(COALESCE(t->>'name', ''))) = v_id
+       OR (LENGTH(v_id) >= 3 AND LOWER(COALESCE(t->>'name', '')) LIKE '%' || v_id || '%')
     LIMIT 1;
-
-    IF v_found IS NULL THEN
-      SELECT t INTO v_found
-      FROM jsonb_array_elements(v_teachers) t
-      WHERE LOWER(BTRIM(COALESCE(t->>'id', ''))) = v_id
-        AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
-      LIMIT 1;
-    END IF;
-
-    IF v_found IS NULL THEN
-      SELECT t INTO v_found
-      FROM jsonb_array_elements(v_teachers) t
-      WHERE LOWER(BTRIM(COALESCE(t->>'name', ''))) = v_id
-        AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
-      LIMIT 1;
-    END IF;
-
-    IF v_found IS NULL AND LENGTH(v_id) >= 3 THEN
-      SELECT t INTO v_found
-      FROM jsonb_array_elements(v_teachers) t
-      WHERE LOWER(COALESCE(t->>'name', '')) LIKE '%' || v_id || '%'
-        AND BTRIM(COALESCE(t->>'pin', '')) = v_pin
-      LIMIT 1;
-    END IF;
-
-    -- Fallback: cek apakah identifier memang terdaftar (untuk pesan PIN salah)
-    IF v_found IS NULL THEN
-      SELECT t INTO v_found
-      FROM jsonb_array_elements(v_teachers) t
-      WHERE LOWER(BTRIM(COALESCE(t->>'nip', ''))) = v_id
-         OR LOWER(BTRIM(COALESCE(t->>'id', ''))) = v_id
-         OR LOWER(BTRIM(COALESCE(t->>'name', ''))) = v_id
-         OR (LENGTH(v_id) >= 3 AND LOWER(COALESCE(t->>'name', '')) LIKE '%' || v_id || '%')
-      LIMIT 1;
-    END IF;
   END IF;
 
   IF v_found IS NULL THEN

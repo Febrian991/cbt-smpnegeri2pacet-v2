@@ -8551,10 +8551,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const btnToggleRole = tr.querySelector('.btn-toggle-teacher-role');
       if (btnToggleRole) {
-        btnToggleRole.addEventListener('click', () => {
+        btnToggleRole.addEventListener('click', async () => {
           const nextRole = isPengawas ? 'guru' : 'pengawas';
           const upRes = window.cbtAdmin.updateTeacherProfile(t.id, { role: nextRole });
           if (upRes.success) {
+            if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+              await window.supabaseSync.pushStateKey('cbt_teachers_list', window.cbtAdmin.teachers).catch(() => null);
+            }
             renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value || '');
             setupSubjectAndClassFilters();
             setupQuestionBankFilters();
@@ -8706,7 +8709,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnCancelEditTeacher) btnCancelEditTeacher.addEventListener('click', closeEditTeacherModal);
 
   if (formEditTeacher) {
-    formEditTeacher.addEventListener('submit', (e) => {
+    formEditTeacher.addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = document.getElementById('editTeacherId').value;
       const role = editTeacherRoleSelect && !editTeacherRoleSelect.disabled ? editTeacherRoleSelect.value : 'guru';
@@ -8723,33 +8726,61 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (!id) {
-        const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin, role });
-        if (res.success) {
-          alert(`Sukses! ${role === 'pengawas' ? 'Pengawas Ruang' : 'Guru'} "${name}" berhasil ditambahkan ke pangkalan data.`);
-          closeEditTeacherModal();
-          renderAdminTeachersList();
-          setupSubjectAndClassFilters();
-          setupQuestionBankFilters();
-          setupMonitoringControls();
-          renderAdminTeacherQuestionProgress();
+      const btnSub = document.getElementById('btnSubmitEditTeacher');
+      const prevBtnText = btnSub ? btnSub.innerText : '';
+      if (btnSub) {
+        btnSub.disabled = true;
+        btnSub.innerText = 'Menyimpan...';
+      }
+
+      try {
+        if (!id) {
+          const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin, role });
+          if (res.success) {
+            let cloudMsg = '';
+            if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+              const syncRes = await window.supabaseSync.pushStateKey('cbt_teachers_list', window.cbtAdmin.teachers).catch(() => ({ success: false }));
+              if (!syncRes || !syncRes.success) {
+                cloudMsg = '\n\n⚠️ Tersimpan di perangkat ini, namun sinkron ke Cloud tertunda. Klik "Kirim Semua Data ke Cloud" di Manajemen Database sebelum menguji login dari perangkat/tab lain.';
+              }
+            }
+            alert(`Sukses! ${role === 'pengawas' ? 'Pengawas Ruang' : 'Guru'} "${name}" berhasil ditambahkan ke pangkalan data.${cloudMsg}`);
+            closeEditTeacherModal();
+            renderAdminTeachersList();
+            setupSubjectAndClassFilters();
+            setupQuestionBankFilters();
+            setupMonitoringControls();
+            renderAdminTeacherQuestionProgress();
+          } else {
+            alert(`Gagal menambah akun: ${res.message}`);
+          }
         } else {
-          alert(`Gagal menambah akun: ${res.message}`);
+          const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin, role });
+          if (res.success) {
+            let cloudMsg = '';
+            if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+              const syncRes = await window.supabaseSync.pushStateKey('cbt_teachers_list', window.cbtAdmin.teachers).catch(() => ({ success: false }));
+              if (!syncRes || !syncRes.success) {
+                cloudMsg = '\n\n⚠️ Tersimpan di perangkat ini, namun sinkron ke Cloud tertunda. Klik "Kirim Semua Data ke Cloud" di Manajemen Database.';
+              }
+            }
+            alert(`Data akun "${name}" berhasil diperbarui!${cloudMsg}`);
+            closeEditTeacherModal();
+            renderAdminTeachersList();
+            setupSubjectAndClassFilters();
+            setupQuestionBankFilters();
+            setupMonitoringControls();
+            renderAdminTeacherQuestionProgress();
+            const cur = window.cbtAdmin.getCurrentTeacher();
+            if (cur && cur.id === id) renderAdminDashboard();
+          } else {
+            alert(`Gagal edit akun: ${res.message}`);
+          }
         }
-      } else {
-        const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin, role });
-        if (res.success) {
-          alert(`Data akun "${name}" berhasil diperbarui!`);
-          closeEditTeacherModal();
-          renderAdminTeachersList();
-          setupSubjectAndClassFilters();
-          setupQuestionBankFilters();
-          setupMonitoringControls();
-          renderAdminTeacherQuestionProgress();
-          const cur = window.cbtAdmin.getCurrentTeacher();
-          if (cur && cur.id === id) renderAdminDashboard();
-        } else {
-          alert(`Gagal edit akun: ${res.message}`);
+      } finally {
+        if (btnSub) {
+          btnSub.disabled = false;
+          btnSub.innerText = prevBtnText || 'Simpan';
         }
       }
     });
@@ -9400,7 +9431,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadSupabaseSchemaSqlText() {
-    const resp = await fetch('/supabase-schema.sql?v=3.68', { cache: 'no-store' });
+    const resp = await fetch('/supabase-schema.sql?v=3.70', { cache: 'no-store' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -9791,7 +9822,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const assignedClasses = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
     const clsUpper = String(className || '').trim().toUpperCase();
-    const clsOk = assignedClasses.length === 0 || assignedClasses.some(tc => clsUpper === tc || clsUpper.startsWith(tc));
+    const clsOk = assignedClasses.length === 0 || (
+      (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function')
+        ? window.examEngine.matchesClassLevel(assignedClasses.join(', '), className || '')
+        : assignedClasses.some(tc => clsUpper === tc || clsUpper.startsWith(tc))
+    );
 
     return subOk && clsOk;
   }

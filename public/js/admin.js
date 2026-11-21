@@ -628,30 +628,35 @@ class CBTAdmin {
       : (this.teachers && this.teachers.length > 0 ? this.teachers : this._getOfflineCandidateTeachers());
 
     let teacher = null;
-    if (
-      cleanId === 'admin' ||
-      cleanId === 'proktor' ||
-      cleanId === 'superadmin' ||
-      cleanId === '198501012010011001' ||
-      cleanId.includes('admin') ||
-      cleanId.includes('proktor')
-    ) {
-      teacher = pool.find(t => t.id === 'admin' || t.role === 'admin');
-    } else {
-      const matchBuckets = [
-        pool.filter(t => String(t.nip || '').trim().toLowerCase() === cleanId),
-        pool.filter(t => String(t.id || '').trim().toLowerCase() === cleanId),
-        pool.filter(t => String(t.name || '').trim().toLowerCase() === cleanId),
-        cleanId.length >= 3 ? pool.filter(t => String(t.name || '').toLowerCase().includes(cleanId)) : []
-      ];
+    const matchBuckets = [
+      pool.filter(t => String(t.nip || '').trim().toLowerCase() === cleanId),
+      pool.filter(t => String(t.id || '').trim().toLowerCase() === cleanId),
+      pool.filter(t => String(t.name || '').trim().toLowerCase() === cleanId),
+      cleanId.length >= 3 ? pool.filter(t => String(t.name || '').toLowerCase().includes(cleanId)) : []
+    ];
 
-      for (const candidates of matchBuckets) {
-        if (candidates.length > 0) {
-          const pinMatched = candidates.find(t => String(t.pin || '').trim() === cleanPin);
-          teacher = pinMatched || candidates[0];
+    for (const candidates of matchBuckets) {
+      if (candidates.length > 0) {
+        const pinMatched = candidates.find(t => String(t.pin || '').trim() === cleanPin);
+        if (pinMatched) {
+          teacher = pinMatched;
           break;
         }
+        if (!teacher) teacher = candidates[0];
       }
+    }
+
+    if (
+      !teacher && (
+        cleanId === 'admin' ||
+        cleanId === 'proktor' ||
+        cleanId === 'superadmin' ||
+        cleanId === '198501012010011001' ||
+        cleanId.includes('admin') ||
+        cleanId.includes('proktor')
+      )
+    ) {
+      teacher = pool.find(t => t.id === 'admin' || t.role === 'admin');
     }
 
     if (!teacher) {
