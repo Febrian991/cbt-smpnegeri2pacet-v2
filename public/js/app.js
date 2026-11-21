@@ -8443,7 +8443,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (result.guruCount > 0) parts.push(`${result.guruCount} Guru Mapel`);
           if (result.pengawasCount > 0) parts.push(`${result.pengawasCount} Pengawas Ruang`);
           const detailStr = parts.length > 0 ? ` (${parts.join(' • ')})` : '';
-          alert(`Sukses! Berhasil mengimpor / memperbarui ${result.count} akun${detailStr} dari file Excel.`);
+          const pinNote = result.pinAdjustedCount > 0
+            ? `\n\nCatatan: ${result.pinAdjustedCount} akun memiliki NIP sama dengan peran lain sehingga PIN-nya otomatis dibedakan (misal: pengawas123 / guru123) agar tidak bentrok saat login.`
+            : '';
+          alert(`Sukses! Berhasil mengimpor / memperbarui ${result.count} akun${detailStr} dari file Excel.${pinNote}`);
           renderAdminTeachersList();
           setupSubjectAndClassFilters();
         } else {
@@ -8557,6 +8560,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setupQuestionBankFilters();
             setupMonitoringControls();
             renderAdminTeacherQuestionProgress();
+          } else if (upRes && upRes.message) {
+            alert(upRes.message);
           }
         });
       }
@@ -9395,7 +9400,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadSupabaseSchemaSqlText() {
-    const resp = await fetch('/supabase-schema.sql?v=3.67', { cache: 'no-store' });
+    const resp = await fetch('/supabase-schema.sql?v=3.68', { cache: 'no-store' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }

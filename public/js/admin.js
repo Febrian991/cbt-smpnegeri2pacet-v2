@@ -141,7 +141,7 @@ class CBTAdmin {
       const cleanName = String(t.name || '').trim();
       const cleanRole = String(t.role || '').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru';
       const dedupKey = cleanNip
-        ? `NIP:${cleanNip.toLowerCase()}`
+        ? `NIP:${cleanNip.toLowerCase()}__${cleanRole}`
         : (cleanId ? `ID:${cleanId.toLowerCase()}` : `NAME:${cleanName.toLowerCase()}__${cleanRole}`);
 
       const prev = dedupMap.get(dedupKey);
@@ -406,9 +406,28 @@ class CBTAdmin {
       return { success: false, message: cleanRole === "pengawas" ? "Nama Pengawas dan NIP/ID Login wajib diisi!" : "Nama Guru, NIP, dan Mata Pelajaran wajib diisi!" };
     }
 
-    const existing = this.teachers.find(t => String(t.nip).trim().toLowerCase() === cleanNip.toLowerCase());
-    if (existing) {
-      return { success: false, message: `NIP ${cleanNip} sudah digunakan oleh ${existing.name}!` };
+    const existingSameRole = this.teachers.find(t =>
+      t.role !== 'admin' && t.id !== 'admin' &&
+      String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() &&
+      (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') === cleanRole
+    );
+    if (existingSameRole) {
+      const roleLbl = cleanRole === 'pengawas' ? 'Pengawas Ruang' : 'Guru Mapel';
+      return { success: false, message: `NIP/ID ${cleanNip} sudah terdaftar sebagai ${roleLbl} (${existingSameRole.name})!` };
+    }
+
+    const existingOtherRole = this.teachers.find(t =>
+      t.role !== 'admin' && t.id !== 'admin' &&
+      String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() &&
+      (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') !== cleanRole
+    );
+    if (existingOtherRole && String(existingOtherRole.pin || '').trim() === cleanPin) {
+      const otherLbl = cleanRole === 'pengawas' ? 'Guru Mapel' : 'Pengawas Ruang';
+      const suggestedPin = cleanRole === 'pengawas' ? 'pengawas123' : 'guru123';
+      return {
+        success: false,
+        message: `NIP ${cleanNip} juga digunakan akun ${otherLbl} dengan PIN yang sama. Gunakan PIN berbeda untuk akun baru ini (misal: ${suggestedPin}) agar akun Guru dan Pengawas tidak bentrok saat login!`
+      };
     }
 
     const newId = (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now();
@@ -442,14 +461,47 @@ class CBTAdmin {
   }
 
   updateTeacherProfile(teacherId, { name, nip, subject, classes, pin, role }) {
-    let found = false;
+    const target = this.teachers.find(t => t.id === teacherId);
+    if (!target) {
+      return { success: false, message: "Data guru tidak ditemukan!" };
+    }
+
+    const isSuperAdmin = target.role === 'admin' || target.id === 'admin';
+    const nextRole = isSuperAdmin
+      ? 'admin'
+      : (role !== undefined ? (String(role).trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') : (String(target.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru'));
+    const nextNip = nip ? String(nip).trim() : String(target.nip || '').trim();
+    const nextPin = pin ? String(pin).trim() : String(target.pin || '').trim();
+
+    if (!isSuperAdmin && nextNip) {
+      const sameRoleDup = this.teachers.find(t =>
+        t.id !== teacherId &&
+        t.role !== 'admin' && t.id !== 'admin' &&
+        String(t.nip || '').trim().toLowerCase() === nextNip.toLowerCase() &&
+        (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') === nextRole
+      );
+      if (sameRoleDup) {
+        const roleLbl = nextRole === 'pengawas' ? 'Pengawas Ruang' : 'Guru Mapel';
+        return { success: false, message: `NIP/ID ${nextNip} sudah dipakai akun ${roleLbl} lain (${sameRoleDup.name})!` };
+      }
+
+      const otherRoleDup = this.teachers.find(t =>
+        t.id !== teacherId &&
+        t.role !== 'admin' && t.id !== 'admin' &&
+        String(t.nip || '').trim().toLowerCase() === nextNip.toLowerCase() &&
+        (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') !== nextRole
+      );
+      if (otherRoleDup && String(otherRoleDup.pin || '').trim() === nextPin) {
+        const otherLbl = nextRole === 'pengawas' ? 'Guru Mapel' : 'Pengawas Ruang';
+        return {
+          success: false,
+          message: `NIP ${nextNip} juga memiliki akun ${otherLbl} dengan PIN yang sama. Gunakan PIN berbeda agar saat login Guru & Pengawas tidak tertukar!`
+        };
+      }
+    }
+
     this.teachers = this.teachers.map(t => {
       if (t.id === teacherId) {
-        found = true;
-        const isSuperAdmin = t.role === 'admin' || t.id === 'admin';
-        const nextRole = isSuperAdmin
-          ? 'admin'
-          : (role !== undefined ? (String(role).trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') : (t.role || 'guru'));
         let nextSubject = subject !== undefined ? String(subject).trim() : t.subject;
         if (nextRole === 'pengawas' && !nextSubject) {
           nextSubject = t.subject || "Semua Mapel Aktif (Pengawas Ruang)";
@@ -457,19 +509,15 @@ class CBTAdmin {
         return {
           ...t,
           name: name ? String(name).trim() : t.name,
-          nip: nip ? String(nip).trim() : t.nip,
+          nip: nextNip,
           subject: nextSubject,
           classes: classes !== undefined ? String(classes).trim().toUpperCase() : (t.classes || ""),
           role: nextRole,
-          pin: pin ? String(pin).trim() : t.pin
+          pin: nextPin
         };
       }
       return t;
     });
-
-    if (!found) {
-      return { success: false, message: "Data guru tidak ditemukan!" };
-    }
 
     this.saveTeachers(this.teachers);
 
@@ -590,20 +638,19 @@ class CBTAdmin {
     ) {
       teacher = pool.find(t => t.id === 'admin' || t.role === 'admin');
     } else {
-      teacher = pool.find(t => String(t.nip || '').trim().toLowerCase() === cleanId);
+      const matchBuckets = [
+        pool.filter(t => String(t.nip || '').trim().toLowerCase() === cleanId),
+        pool.filter(t => String(t.id || '').trim().toLowerCase() === cleanId),
+        pool.filter(t => String(t.name || '').trim().toLowerCase() === cleanId),
+        cleanId.length >= 3 ? pool.filter(t => String(t.name || '').toLowerCase().includes(cleanId)) : []
+      ];
 
-      if (!teacher) {
-        teacher = pool.find(t => String(t.id || '').trim().toLowerCase() === cleanId);
-      }
-
-      if (!teacher) {
-        teacher = pool.find(t => String(t.name || '').trim().toLowerCase() === cleanId);
-      }
-
-      if (!teacher && cleanId.length >= 3) {
-        teacher = pool.find(t =>
-          String(t.name || '').toLowerCase().includes(cleanId)
-        );
+      for (const candidates of matchBuckets) {
+        if (candidates.length > 0) {
+          const pinMatched = candidates.find(t => String(t.pin || '').trim() === cleanPin);
+          teacher = pinMatched || candidates[0];
+          break;
+        }
       }
     }
 
@@ -2600,7 +2647,7 @@ class CBTAdmin {
 
     const headers = [
       ["TEMPLATE DATA PENGAWAS RUANG UJIAN CBT - SMP NEGERI 2 PACET"],
-      ["Petunjuk: Jangan ubah judul kolom di baris ke-3. Isi daftar Pengawas mulai baris ke-4. Kolom Peran Akun otomatis 'pengawas' (dapat memantau semua mapel aktif di ruang/kelasnya tanpa akses soal & nilai)."],
+      ["Petunjuk: Jangan ubah judul kolom di baris ke-3. Isi daftar Pengawas mulai baris ke-4. Boleh memakai NIP Guru yang sama asal Password/PIN Pengawas berbeda dari PIN Guru (misal: pengawas123), atau pakai ID ruang (misal: pengawas_7a)."],
       [
         "ID / NIP Login Pengawas (Wajib)",
         "Nama Lengkap Pengawas / Ruang (Wajib)",
@@ -2678,6 +2725,7 @@ class CBTAdmin {
       let importedCount = 0;
       let guruCount = 0;
       let pengawasCount = 0;
+      let pinAdjustedCount = 0;
 
       dataRows.forEach(row => {
         if (!row || row.length === 0) return;
@@ -2698,16 +2746,32 @@ class CBTAdmin {
           const cleanSubject = rawSubject && cleanRole !== 'pengawas'
             ? String(rawSubject).trim()
             : "Semua Mapel Aktif (Pengawas Ruang)";
-          const cleanPin = rawPin ? String(rawPin).trim() : (cleanRole === 'pengawas' ? "pengawas123" : "guru123");
+          let cleanPin = rawPin ? String(rawPin).trim() : (cleanRole === 'pengawas' ? "pengawas123" : "guru123");
           const cleanClasses = rawClasses ? String(rawClasses).trim().toUpperCase() : "";
 
-          const dupNip = this.teachers.find(t => String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() && t.role !== 'admin');
-          if (dupNip) {
-            dupNip.name = cleanName;
-            dupNip.subject = cleanSubject;
-            dupNip.pin = cleanPin;
-            dupNip.role = cleanRole;
-            if (rawClasses !== undefined) dupNip.classes = cleanClasses;
+          // Cegah bentrok PIN jika 1 NIP yang sama memiliki akun Guru dan akun Pengawas sekaligus
+          const otherRoleDup = this.teachers.find(t =>
+            t.role !== 'admin' && t.id !== 'admin' &&
+            String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() &&
+            (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') !== cleanRole
+          );
+          if (otherRoleDup && String(otherRoleDup.pin || '').trim() === cleanPin) {
+            const altPin = cleanRole === 'pengawas' ? 'pengawas123' : 'guru123';
+            cleanPin = (altPin !== cleanPin) ? altPin : `${cleanPin}_2`;
+            pinAdjustedCount++;
+          }
+
+          const dupSameRole = this.teachers.find(t =>
+            t.role !== 'admin' && t.id !== 'admin' &&
+            String(t.nip || '').trim().toLowerCase() === cleanNip.toLowerCase() &&
+            (String(t.role || 'guru').trim().toLowerCase() === 'pengawas' ? 'pengawas' : 'guru') === cleanRole
+          );
+          if (dupSameRole) {
+            dupSameRole.name = cleanName;
+            dupSameRole.subject = cleanSubject;
+            dupSameRole.pin = cleanPin;
+            dupSameRole.role = cleanRole;
+            if (rawClasses !== undefined) dupSameRole.classes = cleanClasses;
             importedCount++;
             if (cleanRole === 'pengawas') pengawasCount++;
             else guruCount++;
@@ -2729,7 +2793,7 @@ class CBTAdmin {
       });
 
       this.saveTeachers(this.teachers);
-      return { success: true, count: importedCount, guruCount, pengawasCount };
+      return { success: true, count: importedCount, guruCount, pengawasCount, pinAdjustedCount };
 
     } catch (err) {
       console.error("Gagal parse Excel guru/pengawas:", err);
