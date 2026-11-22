@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.58">
+  <link rel="stylesheet" href="css/styles.css?v=3.71">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -1056,11 +1056,16 @@
         <div id="monitoringPengawasBanner" class="hidden bg-teal-50/80 dark:bg-teal-950/35 border border-teal-200 dark:border-teal-800 rounded-3xl p-4 sm:p-5 flex flex-col gap-3">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 class="text-xs sm:text-sm font-extrabold text-teal-950 dark:text-teal-200">👀 Mode Pengawas Ruang Aktif — Pantau Seluruh Mapel Ujian</h3>
+              <h3 class="text-xs sm:text-sm font-extrabold text-teal-950 dark:text-teal-200">👀 Mode Pengawas Ruang Aktif</h3>
               <p id="monitoringPengawasBannerDesc" class="text-[11px] text-teal-800 dark:text-teal-300 mt-0.5 leading-relaxed">
-                Anda dapat memantau seluruh mata pelajaran yang sedang diujikan di ruang/kelas pengawasan Anda, melihat pelanggaran pindah tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban, dan Rekap Nilai terkunci aman.
+                Anda dapat memantau mata pelajaran yang sedang diujikan di ruang/kelas pengawasan Anda, melihat pelanggaran pindah tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban, dan Rekap Nilai terkunci aman.
               </p>
             </div>
+          </div>
+          <div id="pengawasRoomPickerWrap" class="hidden pt-2.5 border-t border-teal-200/80 dark:border-teal-800/80 flex flex-wrap items-center gap-2.5">
+            <label for="pengawasRoomPickerSelect" class="text-[11px] font-extrabold text-teal-950 dark:text-teal-200">🏫 Pilih Ruang / Kelas Ujian Anda Hari Ini:</label>
+            <select id="pengawasRoomPickerSelect" class="px-3 py-1.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-900 text-xs font-bold text-teal-900 dark:text-teal-100 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"></select>
+            <span id="pengawasRoomPickerHint" class="text-[10px] font-semibold text-teal-700 dark:text-teal-300">Akun pengawas ini tidak dikunci 1 kelas, silakan pilih ruang yang sedang Anda awasi hari ini.</span>
           </div>
           <div id="pengawasActiveTokensWrap" class="pt-3 border-t border-teal-200/80 dark:border-teal-800/80 flex flex-col gap-2">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -1147,9 +1152,14 @@
             <input type="text" id="searchMonitoringInput" placeholder="Cari nama / NISN..." class="px-3 py-1.5 rounded-xl border border-slate-300 w-44 outline-none focus:ring-2 focus:ring-blue-500">
           </div>
 
-          <button id="btnRefreshMonitoring" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1.5">
-            <span>🔄 Refresh Pantauan</span>
-          </button>
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="btnOpenAttendanceFromMonitoring" type="button" class="hidden px-3.5 py-1.5 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition cursor-pointer flex items-center gap-1.5" title="Cetak & Edit Identitas Daftar Hadir Peserta (Khusus Admin)">
+              <span>📋 Daftar Hadir</span>
+            </button>
+            <button id="btnRefreshMonitoring" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition cursor-pointer flex items-center gap-1.5">
+              <span>🔄 Refresh Pantauan</span>
+            </button>
+          </div>
         </div>
 
         <!-- Tabel Status Login & Pengerjaan Siswa -->
@@ -1728,6 +1738,10 @@
               <span>🪪 Kartu Peserta Ujian</span>
             </button>
 
+            <button id="btnOpenAttendanceSheet" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 transition cursor-pointer flex items-center gap-1.5" title="Pratinjau, Edit Identitas, Download PDF/Word &amp; Cetak Daftar Hadir Peserta">
+              <span>📋 Daftar Hadir Peserta</span>
+            </button>
+
             <button id="btnResetAllStudentPasswords" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition cursor-pointer flex items-center gap-1.5" title="Reset password seluruh siswa ke 123">
               <span>🔄 Reset Password (123)</span>
             </button>
@@ -1787,6 +1801,10 @@
 
             <button id="btnDownloadPengawasTemplate" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 transition cursor-pointer flex items-center gap-1.5" title="Unduh template Excel khusus untuk akun Pengawas Ruang">
               <span>👀 Template Pengawas</span>
+            </button>
+
+            <button id="btnOpenPengawasWeeklyMatrix" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 transition cursor-pointer flex items-center gap-1.5" title="Atur jadwal ruang pengawas per hari Senin s.d. Jumat">
+              <span>🗓️ Jadwal Ruang (Senin–Jumat)</span>
             </button>
 
             <button id="btnTriggerImportTeachers" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5">
@@ -2303,6 +2321,9 @@
   <!-- TEMPLATE CETAK & PDF NASKAH SOAL UJIAN -->
   <div id="printableQuestionsArea" class="hidden"></div>
 
+  <!-- TEMPLATE CETAK & PDF DAFTAR HADIR PESERTA -->
+  <div id="printableAttendanceArea" class="hidden"></div>
+
   <!-- ======================== MODALS ======================== -->
 
   <!-- MODAL: KONFIRMASI SELESAI UJIAN -->
@@ -2404,7 +2425,7 @@
     </div>
   </div>
 
-  <!-- MODAL: TAMBAH / EDIT SOAL UJIAN (LENGKAP: BAGAN, TABEL, WACANA 3-5 SOAL, B/S 4 PERNYATAAN, BOBOT) -->
+  <!-- MODAL: TAMBAH / EDIT SOAL UJIAN (LENGKAP: TABEL, WACANA 3-5 SOAL, B/S 4 PERNYATAAN, BOBOT) -->
   <div id="modalQuestionForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
     <div class="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
@@ -2560,42 +2581,6 @@
               <button type="button" id="btnClearStemTable" class="hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-bold cursor-pointer">🗑️ Hapus Tabel</button>
             </div>
             <div id="qStemTableEditorGrid" class="hidden overflow-x-auto bg-white p-2 rounded-xl border border-slate-200"></div>
-          </div>
-        </details>
-
-        <!-- PANEL BAGAN / DIAGRAM BUILDER + LIVE SVG PREVIEW -->
-        <details id="qChartDetails" class="bg-cyan-50/50 dark:bg-cyan-950/30 p-3.5 rounded-2xl border border-cyan-200 dark:border-cyan-800">
-          <summary class="cursor-pointer font-bold text-xs text-cyan-900 dark:text-cyan-200 flex items-center justify-between">
-            <span>🗺️ Sisipkan Bagan / Diagram Alur / Pohon Hierarki (Opsional)</span>
-            <span class="text-[10px] font-semibold text-cyan-700" id="qChartStatusBadge">Belum ada bagan</span>
-          </summary>
-          <div class="mt-3 space-y-2.5 text-xs">
-            <div class="flex flex-wrap items-center gap-2">
-              <button type="button" id="btnToggleStemChart" class="px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold cursor-pointer">+ Aktifkan / Buat Bagan</button>
-              <button type="button" id="btnAddChartNode" class="hidden px-2.5 py-1.5 rounded-lg bg-white border border-cyan-300 hover:bg-cyan-50 text-cyan-800 font-bold cursor-pointer">+ Tambah Kotak Bagan</button>
-              <button type="button" id="btnClearStemChart" class="hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-bold cursor-pointer">🗑️ Hapus Bagan</button>
-            </div>
-            <div id="qChartBuilderBody" class="hidden space-y-2.5">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label class="block font-bold text-slate-700 mb-1" for="qChartLayoutSelect">Bentuk / Arah Bagan</label>
-                  <select id="qChartLayoutSelect" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none">
-                    <option value="vertical">⬇️ Alur Vertikal (Atas ke Bawah)</option>
-                    <option value="horizontal">➡️ Alur Horizontal (Kiri ke Kanan)</option>
-                    <option value="hierarchy">🌳 Pohon Hierarki / Struktur Organisasi</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block font-bold text-slate-700 mb-1" for="qChartTitleInput">Judul Bagan (Opsional)</label>
-                  <input type="text" id="qChartTitleInput" placeholder="Contoh: Rantai Makanan / Struktur Sel" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none">
-                </div>
-              </div>
-              <div id="qChartNodesEditor" class="space-y-1.5"></div>
-              <div class="p-2.5 bg-white rounded-xl border border-slate-200">
-                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pratinjau Bagan Langsung:</div>
-                <div id="qChartLivePreview" class="overflow-x-auto flex justify-center"></div>
-              </div>
-            </div>
           </div>
         </details>
 
@@ -2967,7 +2952,7 @@
 
   <!-- MODAL: EDIT DATA & PASSWORD GURU -->
   <div id="modalEditTeacher" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
         <div>
           <h3 id="modalEditTeacherTitle" class="font-bold text-base text-slate-900">Edit Data &amp; Password Guru</h3>
@@ -3005,8 +2990,44 @@
 
         <div>
           <label id="editTeacherClassesLabel" class="block font-bold text-slate-700 mb-1" for="editTeacherClasses">Kelas yang Diampu (Opsional)</label>
-          <input type="text" id="editTeacherClasses" placeholder="Contoh: 7A atau 7B, 7C (Kosongkan jika semua kelas)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 uppercase focus:ring-2 focus:ring-blue-500 outline-none">
+          <input type="text" id="editTeacherClasses" placeholder="Contoh: 7A atau 7B, 7C (Kosongkan jika fleksibel)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 uppercase focus:ring-2 focus:ring-blue-500 outline-none">
           <p id="editTeacherClassesHint" class="text-[11px] text-slate-500 mt-1">💡 Untuk mapel yang dibagi beberapa guru (misal IPA: <strong>7B, 7C</strong> atau <strong>8A, 8B</strong>). Kosongkan jika mengajar semua kelas.</p>
+        </div>
+
+        <div id="editTeacherRoomScheduleWrap" class="hidden p-3 rounded-2xl bg-teal-50/70 border border-teal-200 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-teal-950">🗓️ Jadwal Ruang Pengawas Senin–Sabtu (Opsional)</span>
+            <span class="text-[10px] font-semibold text-teal-700">Kosong = Fleksibel</span>
+          </div>
+          <p class="text-[11px] text-teal-800 leading-relaxed">
+            Isi jika pengawas berganti ruang tiap hari (misal Senin <strong>7A</strong>, Selasa <strong>8B</strong>). Kosongkan semua jika ingin <strong>Pengawas memilih sendiri ruangnya saat login</strong>.
+          </p>
+          <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomSenin">Senin</label>
+              <input type="text" id="editTeacherRoomSenin" placeholder="7A" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomSelasa">Selasa</label>
+              <input type="text" id="editTeacherRoomSelasa" placeholder="8B" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomRabu">Rabu</label>
+              <input type="text" id="editTeacherRoomRabu" placeholder="9C" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomKamis">Kamis</label>
+              <input type="text" id="editTeacherRoomKamis" placeholder="7B" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomJumat">Jumat</label>
+              <input type="text" id="editTeacherRoomJumat" placeholder="8A" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomSabtu">Sabtu</label>
+              <input type="text" id="editTeacherRoomSabtu" placeholder="-" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+          </div>
         </div>
 
         <div>
@@ -3023,6 +3044,49 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: JADWAL RUANG PENGAWAS MINGGUAN (SENIN S.D. SABTU) -->
+  <div id="modalPengawasWeeklySchedule" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-5xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+        <div>
+          <h3 class="font-bold text-base text-slate-900">🗓️ Jadwal Ruang Pengawas Mingguan (Senin – Sabtu)</h3>
+          <p class="text-xs text-slate-500">Atur ruang/kelas berbeda tiap hari untuk setiap akun Pengawas, atau kosongkan agar Pengawas memilih ruang sendiri saat login.</p>
+        </div>
+        <button id="btnClosePengawasWeeklyMatrix" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
+      </div>
+      <div class="p-3 rounded-2xl bg-teal-50/80 border border-teal-200 text-[11px] text-teal-900 mb-3 leading-relaxed">
+        <strong>💡 Cara Kerja:</strong><br>
+        • Jika kolom <strong>Senin s.d. Jumat</strong> diisi (misal: Senin <code>7A</code>, Selasa <code>8B</code>), maka saat Pengawas login pada hari tersebut ruangnya <strong>otomatis terkunci</strong> sesuai jadwal harinya.<br>
+        • Jika <strong>Ruang Tetap &amp; Jadwal Senin–Sabtu dikosongkan</strong>, akun bersifat <strong>Fleksibel</strong>: Pengawas memilih sendiri ruang yang diawasi ketika login di hari ujian.
+      </div>
+      <div class="overflow-auto flex-1 border border-slate-200 rounded-2xl">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider sticky top-0 z-10">
+            <tr>
+              <th class="p-2.5 min-w-[170px]">Nama Pengawas &amp; NIP/ID</th>
+              <th class="p-2.5 w-24 text-center">Ruang Tetap</th>
+              <th class="p-2.5 w-20 text-center">Senin</th>
+              <th class="p-2.5 w-20 text-center">Selasa</th>
+              <th class="p-2.5 w-20 text-center">Rabu</th>
+              <th class="p-2.5 w-20 text-center">Kamis</th>
+              <th class="p-2.5 w-20 text-center">Jumat</th>
+              <th class="p-2.5 w-20 text-center">Sabtu</th>
+            </tr>
+          </thead>
+          <tbody id="pengawasWeeklyMatrixTbody"></tbody>
+        </table>
+      </div>
+      <div class="pt-3 mt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+        <button id="btnCancelPengawasWeeklyMatrix" type="button" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+          Tutup
+        </button>
+        <button id="btnSavePengawasWeeklyMatrix" type="button" class="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition shadow-sm cursor-pointer">
+          💾 Simpan Semua Jadwal &amp; Kirim ke Cloud
+        </button>
+      </div>
     </div>
   </div>
 
@@ -3213,6 +3277,208 @@
     </div>
   </div>
 
+  <!-- MODAL: PRATINJAU, EDIT IDENTITAS, DOWNLOAD PDF/WORD & CETAK DAFTAR HADIR PESERTA -->
+  <div id="modalAttendanceSheet" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-6xl w-full max-h-[95vh] flex flex-col shadow-2xl border border-slate-200">
+
+      <!-- Modal Header -->
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center text-xl">📋</div>
+          <div>
+            <h3 class="font-bold text-sm sm:text-base text-slate-900">Daftar Hadir Peserta Ujian</h3>
+            <p class="text-[11px] sm:text-xs text-slate-500">Format Resmi &bull; Menyesuaikan Upload Kop Surat &bull; Edit Identitas &amp; Tanda Tangan Kepala Sekolah / Pengawas</p>
+          </div>
+        </div>
+        <button id="btnCloseAttendanceSheet" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <!-- Bar Kontrol Filter, Kop Surat, & Tombol Edit Identitas -->
+      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50/90 flex flex-wrap items-end justify-between gap-2.5 text-xs">
+        <div class="flex flex-wrap items-end gap-2.5">
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="attClassFilter">Kelas / Ruang</label>
+            <select id="attClassFilter" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"></select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="attScheduleSelect">Jadwal / Mapel</label>
+            <select id="attScheduleSelect" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500 max-w-[230px]"></select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="attPaperSize">Kertas</label>
+            <select id="attPaperSize" class="px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="F4">F4 (21 x 33 cm)</option>
+              <option value="A4">A4 (21 x 29,7 cm)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="attRowsPerPage">Baris / Hal</label>
+            <select id="attRowsPerPage" class="px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="25">25 / Halaman (Standar)</option>
+              <option value="15">15 / Halaman (ANBK)</option>
+              <option value="20">20 / Halaman</option>
+              <option value="30">30 / Halaman</option>
+              <option value="35">35 / Halaman (Muat 1 F4)</option>
+              <option value="0">Semua di 1 Halaman</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1">Kop Surat Upload</label>
+            <input type="file" id="attKopImageFile" accept="image/*" class="hidden">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" id="btnUploadAttKopImage" class="px-2.5 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs cursor-pointer transition flex items-center gap-1 shadow-xs">
+                <span>🖼️ Upload Kop Surat</span>
+              </button>
+              <button type="button" id="btnRemoveAttKopImage" class="hidden px-2 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer transition" title="Hapus gambar kop surat &amp; kembali ke kop otomatis">
+                ✕ Hapus
+              </button>
+              <span id="attKopImageStatus" class="text-[11px] font-semibold text-slate-500 truncate max-w-[140px]">Kop Otomatis Sekolah</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnToggleAttIdentityEditor" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+            <span>✏️ Edit Identitas</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Menu Edit Identitas Daftar Hadir (Dapat Dibuka / Tutup & Disimpan ke Cloud) -->
+      <div id="attIdentityEditorPanel" class="hidden border-b border-indigo-200 bg-indigo-50/45 px-4 py-3.5 overflow-y-auto max-h-[42vh] text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-indigo-200/70">
+          <div>
+            <h4 class="font-extrabold text-indigo-950 text-xs sm:text-sm">✏️ Menu Edit Identitas Daftar Hadir</h4>
+            <p class="text-[11px] text-indigo-700">Ubah identitas sekolah, ruang, waktu, kepala sekolah &amp; pengawas. Perubahan langsung tampil di pratinjau bawah.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnSaveAttIdentity" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition cursor-pointer shadow-xs flex items-center gap-1.5">
+              <span>💾 Simpan Identitas</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attDocTitle">Judul Dokumen</label>
+            <input type="text" id="attDocTitle" value="DAFTAR HADIR PESERTA" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-slate-700 mb-1" for="attExamTitle">Nama Ujian / Subjudul</label>
+            <input type="text" id="attExamTitle" value="ASESMEN SUMATIF AKHIR SEMESTER (ASAS)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attAcademicYear">Tahun Pelajaran</label>
+            <input type="text" id="attAcademicYear" value="TAHUN PELAJARAN 2026/2027" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attCityRegency">KOTA / KABUPATEN</label>
+            <input type="text" id="attCityRegency" placeholder="Contoh: KABUPATEN CIANJUR" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attCityCode">KODE Kota/Kab</label>
+            <input type="text" id="attCityCode" placeholder="Contoh: 15" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attSchoolName">SEKOLAH / MADRASAH</label>
+            <input type="text" id="attSchoolName" placeholder="SMP NEGERI 2 PACET" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attSchoolCode">KODE Sekolah</label>
+            <input type="text" id="attSchoolCode" placeholder="Contoh: 1031" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attServerRoom">ID SERVER / RUANG</label>
+            <input type="text" id="attServerRoom" placeholder="Contoh: Ruang Ujian 7A" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attSession">SESI</label>
+            <input type="text" id="attSession" value="1" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attDayText">HARI</label>
+            <input type="text" id="attDayText" placeholder="Contoh: Senin" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attDateText">TANGGAL</label>
+            <input type="text" id="attDateText" placeholder="Contoh: 7 Desember 2026" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attTimeRange">PUKUL</label>
+            <input type="text" id="attTimeRange" value="07.30 - 09.30" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attSubjectName">MATA PELAJARAN</label>
+            <input type="text" id="attSubjectName" placeholder="Otomatis sesuai jadwal / isi manual" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-800 outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attHeadmasterName">Nama Kepala Sekolah &amp; Gelar</label>
+            <input type="text" id="attHeadmasterName" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attHeadmasterNip">NIP Kepala Sekolah</label>
+            <input type="text" id="attHeadmasterNip" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attPengawasPreset">Pilih Akun Pengawas</label>
+            <select id="attPengawasPreset" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white font-bold text-teal-800 outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="">-- Isi Manual / Kosongkan --</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attPengawasName">Nama Pengawas &amp; Gelar</label>
+            <input type="text" id="attPengawasName" placeholder="Kosongkan untuk diisi tanda tangan manual" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="attPengawasNip">NIP Pengawas</label>
+            <input type="text" id="attPengawasNip" placeholder="Kosongkan jika titik-titik (....)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+              <input type="checkbox" id="attAutoTotalStudents" checked class="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer">
+              <span>Isi otomatis jumlah peserta seharusnya hadir</span>
+            </label>
+          </div>
+
+          <div class="sm:col-span-2 lg:col-span-4">
+            <label class="block font-bold text-slate-700 mb-1" for="attNotes">Keterangan Bawah Daftar Hadir (1 baris per poin)</label>
+            <textarea id="attNotes" rows="2" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] leading-snug outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Area Pratinjau Daftar Hadir (Kertas Putih Tajam) -->
+      <div class="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/80" id="attendancePreviewContainer"></div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+        <div class="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap">
+          <span>Total: <span id="attendancePreviewCountBadge" class="font-bold text-teal-800">0 Peserta</span></span>
+          <span id="attendancePaperBadge" class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold text-[11px]">Kertas F4 (21 &times; 33 cm)</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnCancelAttendanceSheet" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+          <button id="btnDownloadAttendanceDoc" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>📝 Download Word (.doc)</span>
+          </button>
+          <button id="btnDownloadAttendancePdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF (.pdf)</span>
+          </button>
+          <button id="btnExecuteDirectPrintAttendance" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>🖨️ Cetak Langsung</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- LAYAR PELINDUNG ANTI-SCREENSHOT & KUNCI FOKUS -->
   <div id="examPrivacyShield" class="hidden fixed inset-0 z-[60] bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none">
     <div class="w-16 h-16 rounded-3xl bg-red-600/20 border border-red-500/40 text-red-400 flex items-center justify-center mb-4">
@@ -3236,8 +3502,8 @@
   <script src="js/default-students.js?v=3.58"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
   <script src="js/exam-engine.js?v=3.70"></script>
-  <script src="js/admin.js?v=3.70"></script>
-  <script src="js/app.js?v=3.70"></script>
+  <script src="js/admin.js?v=3.73"></script>
+  <script src="js/app.js?v=3.73"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

@@ -375,6 +375,72 @@ class CBTAdmin {
     return [...new Set(result)];
   }
 
+  normalizePengawasRoomSchedule(rawSchedule) {
+    const validDays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const out = {};
+    if (!rawSchedule || typeof rawSchedule !== 'object') return out;
+    validDays.forEach(day => {
+      const matchKey = Object.keys(rawSchedule).find(k => String(k).trim().toLowerCase() === day.toLowerCase());
+      const val = matchKey ? String(rawSchedule[matchKey] || '').trim().toUpperCase() : '';
+      if (val) out[day] = val;
+    });
+    return out;
+  }
+
+  hasPengawasWeeklySchedule(teacher = null) {
+    const t = teacher || this.getCurrentTeacher();
+    const norm = this.normalizePengawasRoomSchedule(t && t.roomSchedule);
+    return Object.keys(norm).length > 0;
+  }
+
+  getLocalDateIso() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  getPengawasSessionRoomKey(teacher = null) {
+    const t = teacher || this.getCurrentTeacher();
+    const tid = String((t && (t.id || t.nip)) || 'unknown').trim();
+    return `cbt_pengawas_room_${tid}_${this.getLocalDateIso()}`;
+  }
+
+  getPengawasSessionRoom(teacher = null) {
+    try {
+      const key = this.getPengawasSessionRoomKey(teacher);
+      return String(sessionStorage.getItem(key) || '').trim().toUpperCase();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  setPengawasSessionRoom(roomVal, teacher = null) {
+    try {
+      const key = this.getPengawasSessionRoomKey(teacher);
+      const clean = String(roomVal || '').trim().toUpperCase();
+      if (clean) sessionStorage.setItem(key, clean);
+      else sessionStorage.removeItem(key);
+    } catch (e) {}
+  }
+
+  getPengawasActiveDayName(teacher = null, activeSchedules = null) {
+    const t = teacher || this.getCurrentTeacher();
+    const normSched = this.normalizePengawasRoomSchedule(t && t.roomSchedule);
+    const todayDay = this.getIndonesianDayName(this.getLocalDateIso()) || 'Senin';
+    if (normSched[todayDay]) return todayDay;
+    const activeList = Array.isArray(activeSchedules)
+      ? activeSchedules
+      : (this.getActiveSchedules ? this.getActiveSchedules() : []);
+    const matchedActiveDay = activeList
+      .map(s => String(s && s.day || '').trim())
+      .find(d => d && normSched[d]);
+    if (matchedActiveDay) return matchedActiveDay;
+    const firstActiveDay = activeList.map(s => String(s && s.day || '').trim()).find(Boolean);
+    return (todayDay === 'Minggu' && firstActiveDay) ? firstActiveDay : todayDay;
+  }
+
   searchTeachers(query = "", roleFilter = "ALL") {
     const q = String(query || "").trim().toLowerCase();
     const rf = String(roleFilter || "ALL").trim().toLowerCase();
@@ -384,14 +450,16 @@ class CBTAdmin {
       const roleVal = isAdm ? 'admin' : (String(t.role || '').toLowerCase() === 'pengawas' ? 'pengawas' : 'guru');
       if (rf !== 'all' && roleVal !== rf) return false;
       if (!q) return true;
+      const roomSchedText = t.roomSchedule ? Object.values(t.roomSchedule).join(' ').toLowerCase() : '';
       return (t.name && t.name.toLowerCase().includes(q)) ||
         (t.nip && String(t.nip).toLowerCase().includes(q)) ||
         (t.subject && t.subject.toLowerCase().includes(q)) ||
-        (t.classes && String(t.classes).toLowerCase().includes(q));
+        (t.classes && String(t.classes).toLowerCase().includes(q)) ||
+        (roomSchedText && roomSchedText.includes(q));
     });
   }
 
-  addTeacher({ name, nip, subject, classes, pin, role = "guru" }) {
+  addTeacher({ name, nip, subject, classes, pin, role = "guru", roomSchedule = null }) {
     const cleanName = String(name || "").trim();
     const cleanNip = String(nip || "").trim();
     const cleanRole = String(role || "guru").trim().toLowerCase() === "pengawas" ? "pengawas" : "guru";
@@ -431,6 +499,7 @@ class CBTAdmin {
     }
 
     const newId = (cleanRole === 'pengawas' ? 'pengawas_' : 'guru_') + Date.now();
+    const cleanRoomSchedule = cleanRole === 'pengawas' ? this.normalizePengawasRoomSchedule(roomSchedule) : {};
     const newTeacher = {
       id: newId,
       nip: cleanNip,
@@ -440,6 +509,9 @@ class CBTAdmin {
       role: cleanRole,
       pin: cleanPin
     };
+    if (Object.keys(cleanRoomSchedule).length > 0) {
+      newTeacher.roomSchedule = cleanRoomSchedule;
+    }
 
     this.teachers.push(newTeacher);
     this.saveTeachers(this.teachers);
@@ -460,7 +532,7 @@ class CBTAdmin {
     return { success: true, message: `Akun ${teacher.name} berhasil dihapus.` };
   }
 
-  updateTeacherProfile(teacherId, { name, nip, subject, classes, pin, role }) {
+  updateTeacherProfile(teacherId, { name, nip, subject, classes, pin, role, roomSchedule }) {
     const target = this.teachers.find(t => t.id === teacherId);
     if (!target) {
       return { success: false, message: "Data guru tidak ditemukan!" };
@@ -506,7 +578,7 @@ class CBTAdmin {
         if (nextRole === 'pengawas' && !nextSubject) {
           nextSubject = t.subject || "Semua Mapel Aktif (Pengawas Ruang)";
         }
-        return {
+        const nextTeacherObj = {
           ...t,
           name: name ? String(name).trim() : t.name,
           nip: nextNip,
@@ -515,6 +587,15 @@ class CBTAdmin {
           role: nextRole,
           pin: nextPin
         };
+        if (nextRole === 'pengawas') {
+          const nextSchedRaw = roomSchedule !== undefined ? roomSchedule : t.roomSchedule;
+          const normSched = this.normalizePengawasRoomSchedule(nextSchedRaw);
+          if (Object.keys(normSched).length > 0) nextTeacherObj.roomSchedule = normSched;
+          else delete nextTeacherObj.roomSchedule;
+        } else {
+          delete nextTeacherObj.roomSchedule;
+        }
+        return nextTeacherObj;
       }
       return t;
     });
@@ -2504,6 +2585,7 @@ class CBTAdmin {
         { key: 'admin_btn_delete_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: 🗑️ Hapus Siswa', selector: '.btn-delete-student' },
         { key: 'admin_btn_import_export_students', group: 'Data Siswa Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Siswa', selector: '#btnDownloadStudentTemplate, #btnTriggerImportStudents' },
         { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
+        { key: 'admin_btn_print_attendance', group: 'Data Siswa Admin', label: 'Tombol: 📋 Daftar Hadir Peserta', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
         { key: 'admin_btn_reset_student_passwords', group: 'Data Siswa Admin', label: 'Tombol: 🔄 Reset Password Siswa (123)', selector: '#btnResetAllStudentPasswords' },
         { key: 'admin_btn_demo_students', group: 'Data Siswa Admin', label: 'Tombol: 🎲 Isi 250 Siswa Demo', selector: '#btnGenerate250Demo' },
         { key: 'admin_btn_clear_students', group: 'Data Siswa Admin', label: 'Tombol: 🗑️ Hapus Semua Siswa', selector: '#btnClearStudents' },
@@ -2543,12 +2625,46 @@ class CBTAdmin {
   }
 
   // ===================== KONFIGURASI SEKOLAH & TITI MANGSA =====================
+  getDefaultAttendanceIdentity(schoolCfg = null) {
+    const cfg = schoolCfg || {};
+    const schoolSub = String(cfg.schoolSubtitle || '').toUpperCase();
+    let inferredCity = 'KABUPATEN CIANJUR';
+    if (schoolSub.includes('MOJOKERTO')) inferredCity = 'KABUPATEN MOJOKERTO';
+    else if (cfg.city && String(cfg.city).trim()) {
+      const c = String(cfg.city).trim().toUpperCase();
+      inferredCity = c.startsWith('KABUPATEN') || c.startsWith('KOTA') ? c : `KABUPATEN ${c}`;
+    }
+    return {
+      docTitle: 'DAFTAR HADIR PESERTA',
+      examTitle: 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)',
+      academicYear: 'TAHUN PELAJARAN 2026/2027',
+      cityRegency: inferredCity,
+      cityCode: '15',
+      schoolName: String(cfg.schoolName || 'SMP NEGERI 2 PACET').toUpperCase(),
+      schoolCode: '1031',
+      serverRoom: '',
+      session: '1',
+      dayText: '',
+      dateText: '',
+      timeRange: '07.30 - 09.30',
+      subjectName: '',
+      headmasterName: cfg.headmasterName || 'Drs. H. Mulyono, M.Pd.',
+      headmasterNip: cfg.headmasterNip || '19680512 199403 1 004',
+      pengawasName: '',
+      pengawasNip: '',
+      notes: '1. Dibuat rangkap 2 (dua), masing-masing untuk arsip sekolah dan panitia ujian.\n2. Pengawas ruang menyilang Nama Peserta yang tidak hadir.\n3. Daftar hadir diserahkan kepada panitia ujian setelah sesi selesai.',
+      autoTotalStudents: true,
+      paperSize: 'F4',
+      rowsPerPage: 25
+    };
+  }
+
   getSchoolConfig() {
     try {
       const saved = localStorage.getItem('cbt_school_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return {
+        const baseCfg = {
           schoolName: parsed.schoolName || "SMP NEGERI 2 PACET",
           schoolSubtitle: parsed.schoolSubtitle || "PEMERINTAH KABUPATEN MOJOKERTO — DINAS PENDIDIKAN",
           schoolAddress: parsed.schoolAddress || "Jl. Raya Pacet, Kec. Pacet, Kab. Mojokerto, Jawa Timur",
@@ -2562,9 +2678,14 @@ class CBTAdmin {
           kopSuratImage: parsed.kopSuratImage || "",
           buttonPermissions: this.normalizeButtonPermissions(parsed.buttonPermissions)
         };
+        const defAtt = this.getDefaultAttendanceIdentity(baseCfg);
+        baseCfg.attendanceIdentity = (parsed.attendanceIdentity && typeof parsed.attendanceIdentity === 'object')
+          ? { ...defAtt, ...parsed.attendanceIdentity }
+          : defAtt;
+        return baseCfg;
       }
     } catch (e) {}
-    return {
+    const fallback = {
       schoolName: "SMP NEGERI 2 PACET",
       schoolSubtitle: "PEMERINTAH KABUPATEN MOJOKERTO — DINAS PENDIDIKAN",
       schoolAddress: "Jl. Raya Pacet, Kec. Pacet, Kab. Mojokerto, Jawa Timur",
@@ -2578,13 +2699,19 @@ class CBTAdmin {
       kopSuratImage: "",
       buttonPermissions: this.getDefaultButtonPermissions()
     };
+    fallback.attendanceIdentity = this.getDefaultAttendanceIdentity(fallback);
+    return fallback;
   }
 
   saveSchoolConfig(cfg, skipCloudPush = false) {
     try {
+      const existing = this.getSchoolConfig();
       const normalizedCfg = {
         ...(cfg && typeof cfg === 'object' ? cfg : {}),
-        buttonPermissions: this.normalizeButtonPermissions(cfg?.buttonPermissions || this.getSchoolConfig().buttonPermissions)
+        buttonPermissions: this.normalizeButtonPermissions(cfg?.buttonPermissions || existing.buttonPermissions),
+        attendanceIdentity: (cfg?.attendanceIdentity && typeof cfg.attendanceIdentity === 'object')
+          ? { ...this.getDefaultAttendanceIdentity(cfg), ...cfg.attendanceIdentity }
+          : existing.attendanceIdentity
       };
       localStorage.setItem('cbt_school_config', JSON.stringify(normalizedCfg));
       if (!skipCloudPush && typeof window !== 'undefined' && window.supabaseSync) {
@@ -2817,6 +2944,93 @@ class CBTAdmin {
     if (!cur) return false;
     if (cur.role === 'admin' || cur.id === 'admin') return false;
     return String(cur.role || '').trim().toLowerCase() === 'pengawas';
+  }
+
+  getPengawasScope(teacher = null) {
+    const cur = teacher || this.getCurrentTeacher();
+    const staticClasses = (cur && cur.classes) ? this.parseTeacherClasses(cur.classes) : [];
+    const weeklySchedule = this.normalizePengawasRoomSchedule(cur && cur.roomSchedule);
+    const hasWeekly = Object.keys(weeklySchedule).length > 0;
+    const explicitSubjects = cur ? this.getTeacherSubjectsList(cur) : [];
+    const activeSchedules = this.getActiveSchedules ? this.getActiveSchedules() : [];
+    const activeDay = this.getPengawasActiveDayName(cur, activeSchedules);
+    const cfg = (typeof window !== 'undefined' && window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
+
+    let mode = 'flexible';
+    let assignedClasses = [];
+    let sessionSelectedRoom = '';
+
+    if (hasWeekly) {
+      mode = 'weekly';
+      assignedClasses = weeklySchedule[activeDay] ? this.parseTeacherClasses(weeklySchedule[activeDay]) : [];
+    } else if (staticClasses.length > 0) {
+      mode = 'fixed';
+      assignedClasses = staticClasses;
+    } else {
+      mode = 'flexible';
+      sessionSelectedRoom = this.getPengawasSessionRoom(cur);
+      assignedClasses = sessionSelectedRoom ? this.parseTeacherClasses(sessionSelectedRoom) : [];
+    }
+
+    const matchesRoom = (schedTargetClass) => {
+      if (assignedClasses.length === 0) return false;
+      const clsStr = String(schedTargetClass || '').trim();
+      if (!clsStr || clsStr.toLowerCase().includes('semua')) return true;
+      if (typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+        return window.examEngine.matchesClassLevel(clsStr, assignedClasses.join(', '));
+      }
+      return true;
+    };
+
+    const matchesExplicitSubject = (schedSubj) => {
+      if (explicitSubjects.length === 0) return true;
+      if (typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.matchesSubject === 'function') {
+        return explicitSubjects.some(es => window.examEngine.matchesSubject(schedSubj, es));
+      }
+      return explicitSubjects.some(es => String(es).toLowerCase() === String(schedSubj || '').toLowerCase());
+    };
+
+    const roomMatchedActiveSchedules = assignedClasses.length > 0
+      ? activeSchedules.filter(s => matchesRoom(s.classLevel || s.targetClass) && matchesExplicitSubject(s.subject))
+      : [];
+
+    const subjectMap = new Map();
+    if (assignedClasses.length > 0) {
+      if (explicitSubjects.length > 0) {
+        if (roomMatchedActiveSchedules.length > 0) {
+          roomMatchedActiveSchedules.forEach(s => {
+            const nm = String(s.subject || '').trim();
+            if (nm && !subjectMap.has(nm.toLowerCase())) subjectMap.set(nm.toLowerCase(), nm);
+          });
+        } else {
+          explicitSubjects.forEach(nm => {
+            const clean = String(nm || '').trim();
+            if (clean && !subjectMap.has(clean.toLowerCase())) subjectMap.set(clean.toLowerCase(), clean);
+          });
+        }
+      } else if (roomMatchedActiveSchedules.length > 0) {
+        roomMatchedActiveSchedules.forEach(s => {
+          const nm = String(s.subject || '').trim();
+          if (nm && !subjectMap.has(nm.toLowerCase())) subjectMap.set(nm.toLowerCase(), nm);
+        });
+      } else if (activeSchedules.length === 0 && cfg.subject) {
+        const cfgSub = String(cfg.subject || '').trim();
+        if (cfgSub && !cfgSub.toLowerCase().includes('semua') && matchesRoom(cfg.targetClass)) {
+          subjectMap.set(cfgSub.toLowerCase(), cfgSub);
+        }
+      }
+    }
+
+    return {
+      classes: assignedClasses,
+      mode,
+      activeDay,
+      weeklySchedule,
+      sessionSelectedRoom,
+      subjects: Array.from(subjectMap.values()),
+      explicitSubjects,
+      matchedSchedules: roomMatchedActiveSchedules
+    };
   }
 
   formatIndonesianDate(dateIso) {
@@ -5100,6 +5314,519 @@ class CBTAdmin {
     } finally {
       window.scrollTo(prevScrollX, prevScrollY);
     }
+  }
+
+  // ===================== CETAK & DOWNLOAD DAFTAR HADIR PESERTA RESMI =====================
+  buildAttendanceSheetHtml(studentsList = [], options = {}) {
+    const cfg = this.getSchoolConfig();
+    const savedAtt = cfg.attendanceIdentity || this.getDefaultAttendanceIdentity(cfg);
+    const examCfg = (typeof window !== 'undefined' && window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
+
+    const list = Array.isArray(studentsList) ? studentsList : [];
+    const docTitle = String(options.docTitle || savedAtt.docTitle || 'DAFTAR HADIR PESERTA').trim().toUpperCase();
+    const examTitle = String(options.examTitle || savedAtt.examTitle || examCfg.examTitle || 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)').trim().toUpperCase();
+    const academicYear = String(options.academicYear || savedAtt.academicYear || 'TAHUN PELAJARAN 2026/2027').trim().toUpperCase();
+
+    const cityRegency = String(options.cityRegency || savedAtt.cityRegency || 'KABUPATEN CIANJUR').trim();
+    const cityCode = String(options.cityCode !== undefined ? options.cityCode : (savedAtt.cityCode || '')).trim();
+    const schoolName = String(options.schoolName || savedAtt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    const schoolCode = String(options.schoolCode !== undefined ? options.schoolCode : (savedAtt.schoolCode || '')).trim();
+    const classLabel = String(options.classLabel || '').trim();
+    const serverRoom = String(options.serverRoom || savedAtt.serverRoom || (classLabel ? `Ruang Ujian ${classLabel}` : 'Ruang Ujian 1')).trim();
+    const session = String(options.session !== undefined ? options.session : (savedAtt.session || '1')).trim();
+    const dayText = String(options.dayText !== undefined ? options.dayText : (savedAtt.dayText || '')).trim() || '....................';
+    const dateText = String(options.dateText !== undefined ? options.dateText : (savedAtt.dateText || '')).trim() || '..............................';
+    const timeRange = String(options.timeRange !== undefined ? options.timeRange : (savedAtt.timeRange || '07.30 - 09.30')).trim();
+    const subjectName = String(options.subjectName !== undefined ? options.subjectName : (savedAtt.subjectName || examCfg.subject || '')).trim() || 'Semua Mata Pelajaran';
+
+    const headmasterName = String(options.headmasterName || savedAtt.headmasterName || cfg.headmasterName || 'Kepala Sekolah').trim();
+    const headmasterNip = String(options.headmasterNip !== undefined ? options.headmasterNip : (savedAtt.headmasterNip || cfg.headmasterNip || '')).trim();
+    const pengawasName = String(options.pengawasName !== undefined ? options.pengawasName : (savedAtt.pengawasName || '')).trim();
+    const pengawasNip = String(options.pengawasNip !== undefined ? options.pengawasNip : (savedAtt.pengawasNip || '')).trim();
+
+    const notesRaw = String(options.notes !== undefined ? options.notes : (savedAtt.notes || '')).trim();
+    const notesLines = notesRaw
+      ? notesRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      : [
+          '1. Dibuat rangkap 2 (dua), masing-masing untuk arsip sekolah dan panitia ujian.',
+          '2. Pengawas ruang menyilang Nama Peserta yang tidak hadir.',
+          '3. Daftar hadir diserahkan kepada panitia ujian setelah sesi selesai.'
+        ];
+    const autoTotalStudents = options.autoTotalStudents !== undefined ? Boolean(options.autoTotalStudents) : Boolean(savedAtt.autoTotalStudents);
+    const paperSize = String(options.paperSize || savedAtt.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const reqRowsPerPage = parseInt(options.rowsPerPage || savedAtt.rowsPerPage || 25, 10);
+    const rowsPerPage = (!isNaN(reqRowsPerPage) && reqRowsPerPage > 0) ? reqRowsPerPage : Math.max(list.length, 15);
+
+    const customKopImg = options.kopSuratImage !== undefined ? options.kopSuratImage : (cfg.kopSuratImage || '');
+    const logoLeftHtml = cfg.logoLeft
+      ? `<img src="${cfg.logoLeft}" alt="Logo Dinas" style="width:62px; height:62px; object-fit:contain; display:block;">`
+      : '';
+    const logoRightHtml = cfg.logoRight
+      ? `<img src="${cfg.logoRight}" alt="Logo Sekolah" style="width:62px; height:62px; object-fit:contain; display:block; margin-left:auto;">`
+      : '';
+
+    const kopHtml = (customKopImg && String(customKopImg).trim() !== '')
+      ? `
+        <div style="width:100%; margin:0 0 6px 0; padding:0; text-align:center;">
+          <img src="${customKopImg}" alt="Kop Surat Sekolah" style="width:100%; max-height:110px; height:auto; object-fit:contain; display:block; margin:0 auto;">
+        </div>
+      `
+      : `
+        <table style="width:100%; border-collapse:collapse; margin:0 0 2px 0;">
+          <tbody>
+            <tr>
+              <td style="width:70px; vertical-align:middle; text-align:left; padding-bottom:4px;">
+                ${logoLeftHtml || '<div style="width:56px;height:56px;"></div>'}
+              </td>
+              <td style="vertical-align:middle; text-align:center; padding-bottom:4px;">
+                <div style="font-size:11.5px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; line-height:1.2;">${this.escapePrintHtml(cfg.schoolSubtitle || 'PEMERINTAH KABUPATEN CIANJUR — DINAS PENDIDIKAN')}</div>
+                <div style="font-size:16.5px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; line-height:1.2; margin-top:1px;">${this.escapePrintHtml(schoolName)}</div>
+                <div style="font-size:9.5px; line-height:1.25; margin-top:2px;">${this.escapePrintHtml(cfg.schoolAddress || '')}</div>
+              </td>
+              <td style="width:70px; vertical-align:middle; text-align:right; padding-bottom:4px;">
+                ${logoRightHtml || '<div style="width:56px;height:56px;"></div>'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="border-top:2.2px solid #000000; border-bottom:1px solid #000000; height:2px; margin-bottom:7px;"></div>
+      `;
+
+    const buildHeaderAndMeta = (pageIdx, totalPages) => `
+      ${kopHtml}
+      <div style="text-align:center; font-weight:700; font-size:12px; line-height:1.3; text-transform:uppercase; margin-bottom:8px;">
+        <div>${this.escapePrintHtml(docTitle)}</div>
+        <div>${this.escapePrintHtml(examTitle)}</div>
+        <div>${this.escapePrintHtml(academicYear)}${totalPages > 1 ? ` <span style="font-weight:normal; font-size:10px;">(Hal. ${pageIdx + 1}/${totalPages})</span>` : ''}</div>
+      </div>
+
+      <table style="width:100%; border-collapse:collapse; font-size:10.5px; line-height:1.35; margin-bottom:7px;">
+        <tbody>
+          <tr>
+            <td style="width:20%; padding:1.5px 4px 1.5px 0; font-weight:600; vertical-align:bottom;">KOTA/KABUPATEN</td>
+            <td style="width:2%; padding:1.5px 3px; vertical-align:bottom;">:</td>
+            <td style="width:41%; padding:1.5px 8px 1.5px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(cityRegency)}</div>
+            </td>
+            <td style="width:4%;"></td>
+            <td style="width:11%; padding:1.5px 4px 1.5px 0; font-weight:600; vertical-align:bottom;">KODE</td>
+            <td style="width:2%; padding:1.5px 3px; vertical-align:bottom;">:</td>
+            <td style="width:20%; padding:1.5px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(cityCode) || '&nbsp;'}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">SEKOLAH/MADRASAH</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(schoolName)}</div>
+            </td>
+            <td></td>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">KODE</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(schoolCode) || '&nbsp;'}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">ID SERVER / RUANG</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(serverRoom)}</div>
+            </td>
+            <td></td>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">SESI</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(session) || '&nbsp;'}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">HARI</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+              <table style="width:100%; border-collapse:collapse;">
+                <tbody>
+                  <tr>
+                    <td style="width:36%; border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(dayText)}</td>
+                    <td style="width:24%; padding:0 4px 1px 8px; font-weight:600; white-space:nowrap;">TANGGAL :</td>
+                    <td style="width:40%; border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(dateText)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+            <td></td>
+            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">PUKUL</td>
+            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="padding:2px 0; vertical-align:bottom;">
+              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(timeRange)}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const totalExpectedText = autoTotalStudents ? String(list.length) : '_____';
+    const pengawasDisplay = pengawasName ? `(${this.escapePrintHtml(pengawasName)})` : '(................................................)';
+    const pengawasNipDisplay = pengawasNip ? `NIP. ${this.escapePrintHtml(pengawasNip)}` : 'NIP. ........................................';
+    const headmasterDisplay = headmasterName ? `(${this.escapePrintHtml(headmasterName)})` : '(................................................)';
+    const headmasterNipDisplay = headmasterNip ? `NIP. ${this.escapePrintHtml(headmasterNip)}` : 'NIP. ........................................';
+
+    const footerHtml = `
+      <div style="margin-top:6px; font-size:10px; line-height:1.35; break-inside:avoid; page-break-inside:avoid;">
+        <div style="font-weight:700; font-style:italic; margin-bottom:2px;">Keterangan :</div>
+        <div style="margin-bottom:8px;">
+          ${notesLines.map(line => `<div>${this.escapePrintHtml(line)}</div>`).join('')}
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-top:4px;">
+          <tbody>
+            <tr>
+              <td style="width:46%; vertical-align:top; padding-right:10px;">
+                <table style="width:100%; border-collapse:collapse; border:1.2px solid #000000; font-size:10px;">
+                  <tbody>
+                    <tr>
+                      <td style="padding:3px 5px; border-bottom:1px solid #000000;">Jumlah Peserta yang Seharusnya Hadir</td>
+                      <td style="padding:3px 2px; border-bottom:1px solid #000000; width:10px; text-align:center;">:</td>
+                      <td style="padding:3px 6px; border-bottom:1px solid #000000; width:78px; white-space:nowrap;"><strong>${this.escapePrintHtml(totalExpectedText)}</strong> peserta</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:3px 5px; border-bottom:1px solid #000000;">Jumlah Peserta yang Tidak Hadir</td>
+                      <td style="padding:3px 2px; border-bottom:1px solid #000000; text-align:center;">:</td>
+                      <td style="padding:3px 6px; border-bottom:1px solid #000000; white-space:nowrap;">_____ peserta</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:3px 5px;">Jumlah Peserta Hadir</td>
+                      <td style="padding:3px 2px; text-align:center;">:</td>
+                      <td style="padding:3px 6px; white-space:nowrap;">_____ peserta</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+              <td style="width:27%; vertical-align:top; text-align:center; padding:0 6px;">
+                <div style="font-weight:600; font-size:10.5px;">Kepala Sekolah</div>
+                <div style="height:44px;"></div>
+                <div style="font-weight:700; font-size:10.5px;">${headmasterDisplay}</div>
+                <div style="font-size:10px; margin-top:2px;">${headmasterNipDisplay}</div>
+              </td>
+              <td style="width:27%; vertical-align:top; text-align:center; padding:0 4px;">
+                <div style="font-weight:600; font-size:10.5px;">Pengawas</div>
+                <div style="height:44px;"></div>
+                <div style="font-weight:700; font-size:10.5px;">${pengawasDisplay}</div>
+                <div style="font-size:10px; margin-top:2px;">${pengawasNipDisplay}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Bagi peserta ke beberapa halaman sesuai rowsPerPage
+    const chunks = [];
+    if (list.length === 0) {
+      chunks.push([]);
+    } else {
+      for (let i = 0; i < list.length; i += rowsPerPage) {
+        chunks.push(list.slice(i, i + rowsPerPage));
+      }
+    }
+
+    const totalPages = chunks.length;
+    const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
+    const isDense = rowsPerPage >= 30;
+    const cellPad = isDense ? '3px 5px' : '4.5px 6px';
+    const rowFontSize = isDense ? '10px' : '10.5px';
+
+    let globalIndex = 0;
+    const pagesHtml = chunks.map((chunk, pageIdx) => {
+      const rowsHtml = chunk.length > 0
+        ? chunk.map((st) => {
+            globalIndex++;
+            const no = globalIndex;
+            const isEven = no % 2 === 0;
+            const sigHtml = isEven
+              ? `<div style="display:flex; width:100%; align-items:center;"><span style="display:inline-block; width:50%;"></span><span style="display:inline-block; width:50%; text-align:left; font-size:${rowFontSize};">${no}.</span></div>`
+              : `<div style="display:flex; width:100%; align-items:center;"><span style="display:inline-block; width:50%; text-align:left; font-size:${rowFontSize};">${no}.</span><span style="display:inline-block; width:50%;"></span></div>`;
+
+            return `
+              <tr>
+                <td style="border:1px solid #000000; padding:${cellPad}; text-align:center; font-size:${rowFontSize};">${no}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize}; white-space:nowrap;">${this.escapePrintHtml(st.nisn || '-')}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(st.name || '-')}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; vertical-align:middle;">${sigHtml}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(subjectName)}</td>
+              </tr>
+            `;
+          }).join('')
+        : `
+          <tr>
+            <td colspan="5" style="border:1px solid #000000; padding:18px; text-align:center; font-size:11px; color:#475569;">
+              Tidak ada data peserta pada filter kelas ini.
+            </td>
+          </tr>
+        `;
+
+      const pageBreakClass = pageIdx > 0 ? ' attendance-page-break' : '';
+      const showFooter = pageIdx === totalPages - 1;
+
+      return `
+        <div class="attendance-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:10mm 12mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+          ${buildHeaderAndMeta(pageIdx, totalPages)}
+          <table style="width:100%; border-collapse:collapse; border:1.2px solid #000000;">
+            <thead>
+              <tr style="background:#ffffff;">
+                <th style="border:1.2px solid #000000; padding:5px 4px; text-align:center; font-size:10.5px; font-weight:700; width:34px;">No.</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700; width:112px;">Username</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700;">Nama Peserta</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700; width:190px;">Tanda Tangan</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700; width:150px;">Mata Pelajaran</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          ${showFooter ? footerHtml : ''}
+        </div>
+      `;
+    }).join('');
+
+    return pagesHtml;
+  }
+
+  async downloadAttendancePDF(studentsList = [], options = {}) {
+    if (!studentsList || studentsList.length === 0) {
+      alert("Tidak ada data peserta untuk di-download daftar hadirnya.");
+      return;
+    }
+    if (typeof html2pdf === 'undefined') {
+      alert("Library pembuat PDF belum termuat. Silakan muat ulang halaman dan coba lagi.");
+      return;
+    }
+
+    const btnPdf = document.getElementById('btnDownloadAttendancePdf');
+    const prevBtnHtml = btnPdf ? btnPdf.innerHTML : '';
+    if (btnPdf) {
+      btnPdf.disabled = true;
+      btnPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+    }
+
+    const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const pdfHeightMm = paperSize === 'A4' ? 297 : 330;
+    const prevScrollY = window.scrollY || window.pageYOffset || 0;
+    const prevScrollX = window.scrollX || window.pageXOffset || 0;
+    const roomSlug = String(options.classLabel || options.serverRoom || 'Semua_Kelas').replace(/[^a-z0-9]+/gi, '_');
+    const filename = `Daftar_Hadir_${roomSlug}_${Date.now()}.pdf`;
+
+    try {
+      window.scrollTo(0, 0);
+      const tempWrapper = document.createElement('div');
+      tempWrapper.innerHTML = this.buildAttendanceSheetHtml(studentsList, options);
+      const sheets = Array.from(tempWrapper.querySelectorAll('.attendance-paper-sheet'));
+      if (sheets.length === 0) {
+        throw new Error('Tidak ada halaman daftar hadir untuk diekspor.');
+      }
+
+      const sheetOpt = {
+        margin: [0, 0, 0, 0],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
+            const container = clonedDoc.querySelector('.html2pdf__container');
+            if (container) {
+              container.style.left = '0px';
+              container.style.right = 'auto';
+              container.style.top = '0px';
+              container.style.margin = '0px';
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: [210, pdfHeightMm], orientation: 'portrait' }
+      };
+
+      const seedHtml = '<div style="width:10px;height:10px;background:#ffffff;"></div>';
+      const pdfDoc = await html2pdf().set(sheetOpt).from(seedHtml).toPdf().get('pdf');
+
+      for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i];
+        sheet.classList.remove('attendance-page-break');
+        sheet.style.margin = '0';
+        sheet.style.boxShadow = 'none';
+        sheet.style.pageBreakBefore = 'auto';
+        sheet.style.breakBefore = 'auto';
+        sheet.style.width = '210mm';
+        sheet.style.maxWidth = '210mm';
+        sheet.style.minHeight = 'auto';
+        sheet.style.padding = '8mm 12mm';
+        sheet.style.background = '#ffffff';
+        sheet.style.color = '#000000';
+
+        const canvas = await html2pdf().set(sheetOpt).from(sheet.outerHTML).toCanvas().get('canvas');
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+        if (i > 0) {
+          pdfDoc.addPage([210, pdfHeightMm], 'portrait');
+        }
+
+        const pageW = 210;
+        const maxPageH = pdfHeightMm - 2;
+        const naturalH = (canvas.height * pageW) / canvas.width;
+        if (naturalH > maxPageH) {
+          const ratio = maxPageH / naturalH;
+          const fitW = pageW * ratio;
+          const offsetX = (pageW - fitW) / 2;
+          pdfDoc.addImage(imgData, 'JPEG', offsetX, 0, fitW, maxPageH);
+        } else {
+          pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageW, naturalH);
+        }
+      }
+
+      pdfDoc.save(filename);
+    } catch (err) {
+      console.error("Gagal export Daftar Hadir PDF:", err);
+      alert("Gagal mengunduh file PDF: " + (err && err.message ? err.message : "Terjadi kesalahan saat memproses PDF."));
+    } finally {
+      window.scrollTo(prevScrollX, prevScrollY);
+      if (btnPdf) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = prevBtnHtml;
+      }
+    }
+  }
+
+  async downloadAttendanceDOC(studentsList = [], options = {}) {
+    if (!studentsList || studentsList.length === 0) {
+      alert("Tidak ada data peserta untuk di-download daftar hadirnya.");
+      return;
+    }
+
+    const btnDoc = document.getElementById('btnDownloadAttendanceDoc');
+    const prevBtnHtml = btnDoc ? btnDoc.innerHTML : '';
+    if (btnDoc) {
+      btnDoc.disabled = true;
+      btnDoc.innerHTML = '<span>⏳ Membuat Word...</span>';
+    }
+
+    try {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = this.buildAttendanceSheetHtml(studentsList, options);
+      const sheets = Array.from(tempDiv.querySelectorAll('.attendance-paper-sheet'));
+      sheets.forEach((sheet, idx) => {
+        sheet.style.width = '100%';
+        sheet.style.maxWidth = '100%';
+        sheet.style.margin = '0';
+        sheet.style.padding = '0';
+        sheet.style.boxShadow = 'none';
+        sheet.style.minHeight = 'auto';
+        sheet.style.background = '#ffffff';
+        if (idx > 0) {
+          sheet.style.pageBreakBefore = 'always';
+          sheet.style.breakBefore = 'page';
+        }
+      });
+
+      const imgs = Array.from(tempDiv.querySelectorAll('img'));
+      for (const img of imgs) {
+        const alt = String(img.getAttribute('alt') || '');
+        const src = img.getAttribute('src') || '';
+        const dims = await this.measureImageDimensions(src);
+        const natW = dims.width || 800;
+        const natH = dims.height || 200;
+        if (alt === 'Kop Surat Sekolah') {
+          const ratio = Math.min(665 / natW, 105 / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+        } else {
+          img.setAttribute('width', '60');
+          img.setAttribute('height', '60');
+          img.style.width = '60px';
+          img.style.height = '60px';
+        }
+      }
+
+      const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+      const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
+      const wordDocHtml = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:w="urn:schemas-microsoft-com:office:word"
+              xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <title>Daftar Hadir Peserta</title>
+          <style>
+            @page Section1 {
+              size: ${sizeCss};
+              mso-page-orientation: portrait;
+              margin: 0.9cm 1.2cm 0.9cm 1.2cm;
+            }
+            div.Section1 { page: Section1; }
+            body { font-family: Arial, Helvetica, sans-serif; color: #000000; margin: 0; padding: 0; }
+            .attendance-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
+            .attendance-page-break { page-break-before: always; break-before: page; }
+          </style>
+        </head>
+        <body><div class="Section1">${tempDiv.innerHTML}</div></body>
+        </html>
+      `;
+
+      const roomSlug = String(options.classLabel || options.serverRoom || 'Semua_Kelas').replace(/[^a-z0-9]+/gi, '_');
+      const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Daftar_Hadir_${roomSlug}_${Date.now()}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Gagal export Daftar Hadir Word:", err);
+      alert("Gagal mengunduh file Word: " + (err && err.message ? err.message : "Terjadi kesalahan."));
+    } finally {
+      if (btnDoc) {
+        btnDoc.disabled = false;
+        btnDoc.innerHTML = prevBtnHtml;
+      }
+    }
+  }
+
+  printAttendanceDirect(studentsList = [], options = {}) {
+    if (!studentsList || studentsList.length === 0) {
+      alert("Tidak ada data peserta untuk dicetak daftar hadirnya.");
+      return;
+    }
+    const printArea = document.getElementById('printableAttendanceArea');
+    if (!printArea) {
+      window.print();
+      return;
+    }
+    printArea.innerHTML = this.buildAttendanceSheetHtml(studentsList, options);
+    printArea.classList.remove('hidden');
+    document.body.classList.add('printing-attendance');
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        printArea.classList.add('hidden');
+        document.body.classList.remove('printing-attendance');
+      }, 1000);
+    }, 250);
   }
 }
 

@@ -2344,6 +2344,103 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  function updateStaffHeaderAndPengawasBanner(currentTeacher) {
+    if (!currentTeacher || !window.cbtAdmin) return;
+    const isAdmin = currentTeacher.role === 'admin' || currentTeacher.id === 'admin';
+    const isPengawas = Boolean(!isAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser(currentTeacher));
+    const pengawasScope = isPengawas && typeof window.cbtAdmin.getPengawasScope === 'function'
+      ? window.cbtAdmin.getPengawasScope(currentTeacher)
+      : { classes: [], subjects: [], mode: 'fixed', activeDay: 'Senin', weeklySchedule: {}, sessionSelectedRoom: '' };
+
+    const roomPickerWrap = document.getElementById('pengawasRoomPickerWrap');
+    const roomPickerSelect = document.getElementById('pengawasRoomPickerSelect');
+    if (roomPickerWrap && roomPickerSelect) {
+      if (isPengawas && pengawasScope.mode === 'flexible') {
+        const stuClasses = (window.studentManager && typeof window.studentManager.getAllClasses === 'function')
+          ? window.studentManager.getAllClasses()
+          : [];
+        const roomChoices = stuClasses.length > 0 ? stuClasses : ['7A', '7B', '8A', '8B', '9A', '9B'];
+        roomPickerSelect.innerHTML = '<option value="">-- Pilih Ruang / Kelas Ujian --</option>' +
+          roomChoices.map(c => `<option value="${escapeHtmlSafe(c)}">Ruang / Kelas ${escapeHtmlSafe(c)}</option>`).join('');
+        const currentPicked = pengawasScope.sessionSelectedRoom || '';
+        if (currentPicked && Array.from(roomPickerSelect.options).some(o => o.value === currentPicked)) {
+          roomPickerSelect.value = currentPicked;
+        } else if (currentPicked) {
+          const extraOpt = document.createElement('option');
+          extraOpt.value = currentPicked;
+          extraOpt.innerText = `Ruang / Kelas ${currentPicked}`;
+          roomPickerSelect.appendChild(extraOpt);
+          roomPickerSelect.value = currentPicked;
+        } else {
+          roomPickerSelect.value = '';
+        }
+        roomPickerWrap.classList.remove('hidden');
+        roomPickerSelect.onchange = () => {
+          const picked = roomPickerSelect.value || '';
+          if (typeof window.cbtAdmin.setPengawasSessionRoom === 'function') {
+            window.cbtAdmin.setPengawasSessionRoom(picked, currentTeacher);
+          }
+          updateStaffHeaderAndPengawasBanner(currentTeacher);
+          setupMonitoringControls();
+          renderMonitoringDashboard(false);
+        };
+      } else {
+        roomPickerWrap.classList.add('hidden');
+        roomPickerSelect.onchange = null;
+      }
+    }
+
+    const pengawasBannerDesc = document.getElementById('monitoringPengawasBannerDesc');
+    if (pengawasBannerDesc && isPengawas) {
+      const clsList = pengawasScope.classes || [];
+      const subjList = pengawasScope.subjects || [];
+      if (clsList.length > 0) {
+        const dayPrefix = pengawasScope.mode === 'weekly' && pengawasScope.activeDay
+          ? `Jadwal Hari ${escapeHtmlSafe(pengawasScope.activeDay)} &bull; `
+          : '';
+        const clsPart = `${dayPrefix}<strong>Kelas/Ruang: ${escapeHtmlSafe(clsList.join(', '))}</strong>`;
+        const subjPart = subjList.length > 0 ? `Mata Pelajaran: <strong>${escapeHtmlSafe(subjList.join(', '))}</strong>` : '';
+        const scopeJoined = [clsPart, subjPart].filter(Boolean).join(' &bull; ');
+        pengawasBannerDesc.innerHTML = `Ruang lingkup pantauan Anda: ${scopeJoined}. Anda dapat memantau status login, progres soal, pelanggaran tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban &amp; Rekap Nilai terkunci aman.`;
+      } else if (pengawasScope.mode === 'flexible') {
+        pengawasBannerDesc.innerHTML = `Akun Pengawas ini bersifat <strong>fleksibel</strong> (tidak dikunci di 1 kelas). Silakan pilih <strong>Ruang / Kelas</strong> yang sedang Anda awasi hari ini pada pilihan di bawah agar token ujian &amp; daftar siswa ruangan tersebut tampil.`;
+      } else {
+        pengawasBannerDesc.innerHTML = `Pada jadwal mingguan Anda, hari <strong>${escapeHtmlSafe(pengawasScope.activeDay || 'ini')}</strong> belum memiliki ruang pengawasan. Hubungi Proktor / Admin jika terjadi perubahan jadwal ruang.`;
+      }
+    }
+
+    const nameDisp = document.getElementById('adminTeacherNameDisplay');
+    const roleBadge = document.getElementById('adminRoleBadge');
+    const subjDisp = document.getElementById('adminSubjectDisplay');
+    if (nameDisp) {
+      nameDisp.innerText = isAdmin
+        ? 'Selamat Datang, Admin!'
+        : `Hallo, ${currentTeacher.name}! 👋`;
+    }
+    if (roleBadge) {
+      roleBadge.className = 'hidden';
+    }
+    if (subjDisp) {
+      const parsedClasses = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
+      if (isAdmin) {
+        subjDisp.innerText = 'Administrator Sistem';
+      } else if (isPengawas) {
+        const parts = ['Pengawas Ruang Ujian'];
+        if (pengawasScope.classes.length > 0) {
+          if (pengawasScope.subjects.length > 0) parts.push(pengawasScope.subjects.join(', '));
+          parts.push(`Ruang/Kelas: ${pengawasScope.classes.join(', ')}`);
+        } else if (pengawasScope.mode === 'flexible') {
+          parts.push('Pilih Ruang Pengawasan Hari Ini');
+        } else {
+          parts.push(`Hari ${pengawasScope.activeDay || 'Ini'}: Tidak Ada Jadwal Mengawas`);
+        }
+        subjDisp.innerText = parts.join(' • ');
+      } else {
+        subjDisp.innerText = `Guru Mata Pelajaran • ${currentTeacher.subject}${parsedClasses.length > 0 ? ` • Kelas: ${parsedClasses.join(', ')}` : ''}`;
+      }
+    }
+  }
+
   function renderAdminDashboard() {
     const currentTeacher = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const tabDashboardBtn = document.getElementById('adminTabBtnDashboard');
@@ -2372,7 +2469,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const attemptRuleCard = document.getElementById('monitoringAttemptRuleCard');
     const pengawasBanner = document.getElementById('monitoringPengawasBanner');
-    const pengawasBannerDesc = document.getElementById('monitoringPengawasBannerDesc');
     if (attemptRuleCard) {
       if (isPengawas) attemptRuleCard.classList.add('hidden');
       else attemptRuleCard.classList.remove('hidden');
@@ -2380,11 +2476,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pengawasBanner) {
       if (isPengawas) {
         pengawasBanner.classList.remove('hidden');
-        if (pengawasBannerDesc && window.cbtAdmin) {
-          const pCls = currentTeacher.classes ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
-          const scopeLabel = pCls.length > 0 ? `<strong>Kelas/Ruang: ${escapeHtmlSafe(pCls.join(', '))}</strong>` : '<strong>Semua Kelas</strong>';
-          pengawasBannerDesc.innerHTML = `Ruang lingkup pantauan Anda: ${scopeLabel} (untuk <strong>semua mata pelajaran aktif</strong>). Anda dapat memantau status login, progres soal, pelanggaran tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban &amp; Rekap Nilai terkunci aman.`;
-        }
         renderPengawasActiveTokens(currentTeacher);
       } else {
         pengawasBanner.classList.add('hidden');
@@ -2394,26 +2485,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (currentTeacher) {
-      const nameDisp = document.getElementById('adminTeacherNameDisplay');
-      const roleBadge = document.getElementById('adminRoleBadge');
-      const subjDisp = document.getElementById('adminSubjectDisplay');
-      if (nameDisp) {
-        nameDisp.innerText = isAdmin
-          ? 'Selamat Datang, Admin!'
-          : `Hallo, ${currentTeacher.name}! 👋`;
-      }
-      if (roleBadge) {
-        roleBadge.className = 'hidden';
-      }
-      if (subjDisp) {
-        const parsedClasses = currentTeacher.classes && window.cbtAdmin ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes) : [];
-        const classInfo = parsedClasses.length > 0 ? ` • Ruang/Kelas: ${parsedClasses.join(', ')}` : (isPengawas ? ' • Semua Kelas' : '');
-        subjDisp.innerText = isAdmin
-          ? 'Administrator Sistem'
-          : (isPengawas
-            ? `Pengawas Ruang Ujian • Semua Mapel Aktif${classInfo}`
-            : `Guru Mata Pelajaran • ${currentTeacher.subject}${parsedClasses.length > 0 ? ` • Kelas: ${parsedClasses.join(', ')}` : ''}`);
-      }
+      updateStaffHeaderAndPengawasBanner(currentTeacher);
 
       if (tabMonitoringBtn) tabMonitoringBtn.classList.remove('hidden');
 
@@ -2470,6 +2542,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
         switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
       }
+    }
+    const btnOpenAttMon = document.getElementById('btnOpenAttendanceFromMonitoring');
+    if (btnOpenAttMon) {
+      if (isAdmin) btnOpenAttMon.classList.remove('hidden');
+      else btnOpenAttMon.classList.add('hidden');
     }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
     if (btnResetQs) {
@@ -3805,8 +3882,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const monSearchEl = document.getElementById('searchMonitoringInput');
     const btnRefreshMon = document.getElementById('btnRefreshMonitoring');
 
+    const pengawasScope = isPengawas && typeof window.cbtAdmin.getPengawasScope === 'function'
+      ? window.cbtAdmin.getPengawasScope(currentTeacher)
+      : null;
+
     const allSubjects = window.cbtAdmin.getAllSubjects();
-    const ownedSubjects = (isAdmin || isPengawas) ? allSubjects : teacherSubjects;
+    const ownedSubjects = isAdmin
+      ? allSubjects
+      : (isPengawas ? (pengawasScope ? pengawasScope.subjects : []) : teacherSubjects);
+    const effectiveClasses = isPengawas
+      ? (pengawasScope ? pengawasScope.classes : [])
+      : assignedClasses;
 
     if (ruleSubjEl && !isPengawas) {
       const prevRuleSub = ruleSubjEl.value;
@@ -3857,11 +3943,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (monSubjEl) {
       const prevMonSub = monSubjEl.value;
-      monSubjEl.innerHTML = (isAdmin || isPengawas)
-        ? '<option value="ALL">Semua Mata Pelajaran Aktif</option>'
-        : (ownedSubjects.length > 1
-            ? `<option value="ALL">Semua Mapel Diampu</option>`
-            : (ownedSubjects.length === 0 ? '<option value="ALL">Belum Ada Mapel Diampu</option>' : ''));
+      if (isAdmin) {
+        monSubjEl.innerHTML = '<option value="ALL">Semua Mata Pelajaran Aktif</option>';
+      } else if (isPengawas) {
+        if (effectiveClasses.length === 0) {
+          monSubjEl.innerHTML = `<option value="__NO_SUBJECT__">${pengawasScope && pengawasScope.mode === 'flexible' ? 'Pilih Ruang Dulu' : 'Belum Ada Mapel Aktif'}</option>`;
+        } else if (ownedSubjects.length === 0) {
+          monSubjEl.innerHTML = '<option value="__NO_SUBJECT__">Belum Ada Mapel Aktif</option>';
+        } else if (ownedSubjects.length > 1) {
+          monSubjEl.innerHTML = `<option value="ALL">Mapel Diawasi (${escapeHtmlSafe(ownedSubjects.join(', '))})</option>`;
+        } else {
+          monSubjEl.innerHTML = '';
+        }
+      } else {
+        monSubjEl.innerHTML = ownedSubjects.length > 1
+          ? '<option value="ALL">Semua Mapel Diampu</option>'
+          : (ownedSubjects.length === 0 ? '<option value="ALL">Belum Ada Mapel Diampu</option>' : '');
+      }
       ownedSubjects.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s;
@@ -3870,8 +3968,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (prevMonSub && Array.from(monSubjEl.options).some(o => o.value === prevMonSub)) {
         monSubjEl.value = prevMonSub;
-      } else if (!isAdmin && !isPengawas && ownedSubjects.length === 1) {
+      } else if (!isAdmin && ownedSubjects.length === 1) {
         monSubjEl.value = ownedSubjects[0];
+      } else if (isPengawas && ownedSubjects.length === 0) {
+        monSubjEl.value = '__NO_SUBJECT__';
       } else {
         monSubjEl.value = 'ALL';
       }
@@ -3881,26 +3981,54 @@ document.addEventListener('DOMContentLoaded', () => {
     if (monClassEl) {
       const prevMonCls = monClassEl.value;
       const studentClasses = window.studentManager ? window.studentManager.getAllClasses() : [];
-      const matchedStudentClasses = assignedClasses.length > 0
-        ? studentClasses.filter(c => window.examEngine.matchesClassLevel(assignedClasses.join(', '), c))
+      const matchedStudentClasses = effectiveClasses.length > 0
+        ? studentClasses.filter(c => window.examEngine.matchesClassLevel(effectiveClasses.join(', '), c))
         : studentClasses;
-      const classesToShow = assignedClasses.length > 0
-        ? (matchedStudentClasses.length > 0 ? matchedStudentClasses : assignedClasses)
+      const classesToShow = effectiveClasses.length > 0
+        ? (matchedStudentClasses.length > 0 ? matchedStudentClasses : effectiveClasses)
         : studentClasses;
 
-      monClassEl.innerHTML = assignedClasses.length > 0
-        ? `<option value="ALL">Kelas Diampu (${assignedClasses.join(', ')})</option>`
-        : '<option value="ALL">Semua Kelas</option>';
-      classesToShow.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.innerText = `Kelas ${c}`;
-        monClassEl.appendChild(opt);
-      });
-      if (prevMonCls && Array.from(monClassEl.options).some(o => o.value === prevMonCls)) {
-        monClassEl.value = prevMonCls;
+      if (isPengawas) {
+        if (effectiveClasses.length === 0) {
+          const emptyRoomLbl = (pengawasScope && pengawasScope.mode === 'flexible')
+            ? 'Pilih Ruang di Atas'
+            : 'Belum Ada Ruang Hari Ini';
+          monClassEl.innerHTML = `<option value="__NO_ROOM__">${emptyRoomLbl}</option>`;
+        } else if (classesToShow.length === 1) {
+          monClassEl.innerHTML = `<option value="${escapeHtmlSafe(classesToShow[0])}">Kelas ${escapeHtmlSafe(classesToShow[0])}</option>`;
+        } else {
+          monClassEl.innerHTML = `<option value="ALL">Ruang Diawasi (${escapeHtmlSafe(classesToShow.join(', '))})</option>`;
+          classesToShow.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.innerText = `Kelas ${c}`;
+            monClassEl.appendChild(opt);
+          });
+        }
+        if (prevMonCls && Array.from(monClassEl.options).some(o => o.value === prevMonCls)) {
+          monClassEl.value = prevMonCls;
+        } else if (effectiveClasses.length === 0) {
+          monClassEl.value = '__NO_ROOM__';
+        } else if (classesToShow.length === 1) {
+          monClassEl.value = classesToShow[0];
+        } else {
+          monClassEl.value = 'ALL';
+        }
       } else {
-        monClassEl.value = 'ALL';
+        monClassEl.innerHTML = effectiveClasses.length > 0
+          ? `<option value="ALL">Kelas Diampu (${effectiveClasses.join(', ')})</option>`
+          : '<option value="ALL">Semua Kelas</option>';
+        classesToShow.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.innerText = `Kelas ${c}`;
+          monClassEl.appendChild(opt);
+        });
+        if (prevMonCls && Array.from(monClassEl.options).some(o => o.value === prevMonCls)) {
+          monClassEl.value = prevMonCls;
+        } else {
+          monClassEl.value = 'ALL';
+        }
       }
       monClassEl.onchange = () => renderMonitoringDashboard(false);
     }
@@ -3931,36 +4059,49 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const pCls = cur.classes ? window.cbtAdmin.parseTeacherClasses(cur.classes) : [];
+    const pengawasScope = typeof window.cbtAdmin.getPengawasScope === 'function'
+      ? window.cbtAdmin.getPengawasScope(cur)
+      : { classes: cur.classes ? window.cbtAdmin.parseTeacherClasses(cur.classes) : [], subjects: [], matchedSchedules: [] };
+    const pCls = pengawasScope.classes || [];
+    if (pCls.length === 0) {
+      const msg = pengawasScope.mode === 'flexible'
+        ? '🏫 Pilih terlebih dahulu <strong>Ruang / Kelas</strong> yang Anda awasi pada dropdown di atas untuk menampilkan token ujian dan daftar siswa ruangan tersebut.'
+        : `🗓️ Tidak ada jadwal ruang pengawasan untuk Anda pada hari <strong>${escapeHtmlSafe(pengawasScope.activeDay || 'ini')}</strong>.`;
+      listEl.innerHTML = `<div class="text-xs font-semibold text-teal-800 dark:text-teal-300 bg-white/80 dark:bg-slate-900/60 border border-teal-200 dark:border-teal-800 rounded-2xl px-3.5 py-2.5">${msg}</div>`;
+      return;
+    }
+
     const activeSchedules = window.cbtAdmin.getActiveSchedules ? window.cbtAdmin.getActiveSchedules() : [];
     const cfg = (window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
 
-    const matchesRoom = (schedTargetClass) => {
-      if (pCls.length === 0) return true;
-      const clsStr = String(schedTargetClass || '').trim();
-      if (!clsStr || clsStr.toLowerCase().includes('semua')) return true;
-      if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
-        return window.examEngine.matchesClassLevel(clsStr, pCls.join(', '));
-      }
-      return true;
-    };
-
-    const roomMatchedSchedules = activeSchedules.filter(s => matchesRoom(s.classLevel || s.targetClass));
-    const schedulesToShow = roomMatchedSchedules.length > 0 ? roomMatchedSchedules : activeSchedules;
-
-    const items = schedulesToShow.length > 0
-      ? schedulesToShow.map(s => ({
+    const schedulesToShow = pengawasScope.matchedSchedules || [];
+    let items = [];
+    if (schedulesToShow.length > 0) {
+      items = schedulesToShow.map(s => {
+        const rawTarget = String(s.classLevel || s.targetClass || '').trim();
+        const displayTarget = (pCls.length > 0 && (!rawTarget || rawTarget.toLowerCase().includes('semua')))
+          ? `Ruang/Kelas ${pCls.join(', ')}`
+          : (rawTarget || (pCls.length > 0 ? `Ruang/Kelas ${pCls.join(', ')}` : 'Ruang Ujian'));
+        return {
           subject: s.subject || 'Ujian Sekolah',
-          targetClass: s.classLevel || s.targetClass || 'Semua Kelas',
+          targetClass: displayTarget,
           token: String(s.token || cfg.examToken || 'CBT80M').trim().toUpperCase(),
-          timeLabel: [s.day, s.time].filter(Boolean).join(' • ')
-        }))
-      : [{
-          subject: cfg.subject || 'Ujian Sekolah (Mode Manual)',
-          targetClass: cfg.targetClass || 'Semua Kelas',
-          token: String(cfg.examToken || 'CBT80M').trim().toUpperCase(),
-          timeLabel: 'Jadwal Manual'
-        }];
+          timeLabel: [s.day, s.timeRange || s.time].filter(Boolean).join(' • ')
+        };
+      });
+    } else if (activeSchedules.length === 0 && cfg.subject && pengawasScope.subjects.length > 0) {
+      items = [{
+        subject: pengawasScope.subjects[0],
+        targetClass: pCls.length > 0 ? `Ruang/Kelas ${pCls.join(', ')}` : (cfg.targetClass || 'Ruang Ujian'),
+        token: String(cfg.examToken || 'CBT80M').trim().toUpperCase(),
+        timeLabel: 'Jadwal Manual'
+      }];
+    }
+
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="text-xs font-semibold text-teal-800 dark:text-teal-300 bg-white/80 dark:bg-slate-900/60 border border-teal-200 dark:border-teal-800 rounded-2xl px-3.5 py-2.5">Belum ada jadwal ujian aktif yang sesuai dengan ruang/mapel pengawasan Anda saat ini.</div>`;
+      return;
+    }
 
     listEl.innerHTML = items.map((item, idx) => `
       <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-700 shadow-xs min-w-[230px] flex-1 sm:flex-initial">
@@ -4032,6 +4173,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (stateRes && stateRes.success && stateRes.state) {
         applyCloudState(stateRes.state);
+        if (isPengawas) {
+          updateStaffHeaderAndPengawasBanner(currentTeacher);
+          setupMonitoringControls();
+        }
       }
     } else if (window.supabaseSync) {
       const localS = window.supabaseSync.getLocalStudentSessions();
@@ -4044,9 +4189,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (isPengawas) {
+      updateStaffHeaderAndPengawasBanner(currentTeacher);
       renderPengawasActiveTokens(currentTeacher);
     }
 
+    const pengawasScope = isPengawas && typeof window.cbtAdmin.getPengawasScope === 'function'
+      ? window.cbtAdmin.getPengawasScope(currentTeacher)
+      : { classes: [], subjects: [] };
     const subjFilter = document.getElementById('filterMonitoringSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterMonitoringClass')?.value || 'ALL';
     const statusFilter = document.getElementById('filterMonitoringStatus')?.value || 'ACTIVE';
@@ -4161,15 +4310,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const scopedRows = Array.from(rowMap.values()).filter(row => {
       if (!isAdmin) {
-        if (!isPengawas) {
+        if (isPengawas) {
+          if (pengawasScope.classes.length === 0) return false;
+          const stuCls = String(row.class || '').trim();
+          if (!stuCls || !window.examEngine.matchesClassLevel(pengawasScope.classes.join(', '), stuCls)) return false;
+          if (pengawasScope.subjects.length === 0) return false;
+          const pSubOk = pengawasScope.subjects.some(ps => window.examEngine.matchesSubject(row.subject, ps));
+          if (!pSubOk) return false;
+        } else {
           const subOk = teacherSubjects.length > 0 && teacherSubjects.some(ts => window.examEngine.matchesSubject(row.subject, ts));
           if (!subOk) return false;
-        }
-        if (assignedClasses.length > 0) {
-          const stuCls = String(row.class || '').trim();
-          if (!stuCls || !window.examEngine.matchesClassLevel(assignedClasses.join(', '), stuCls)) return false;
+          if (assignedClasses.length > 0) {
+            const stuCls = String(row.class || '').trim();
+            if (!stuCls || !window.examEngine.matchesClassLevel(assignedClasses.join(', '), stuCls)) return false;
+          }
         }
       }
+      if (subjFilter === '__NO_SUBJECT__' || classFilter === '__NO_ROOM__') return false;
       if (subjFilter !== 'ALL' && !window.examEngine.matchesSubject(row.subject, subjFilter)) return false;
       if (classFilter !== 'ALL' && !window.examEngine.matchesClassLevel(classFilter, row.class || '')) return false;
       return true;
@@ -6252,106 +6409,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function renderChartLivePreview() {
-    const prevEl = document.getElementById('qChartLivePreview');
-    if (!prevEl) return;
-    if (!singleChartState || !window.cbtAdmin || typeof window.cbtAdmin.renderChartSvgHtml !== 'function') {
-      prevEl.innerHTML = '';
-      return;
-    }
-    const html = window.cbtAdmin.renderChartSvgHtml(singleChartState, { isPrint: false, compact: false });
-    prevEl.innerHTML = html || '<span class="text-slate-400 italic text-xs">Isi minimal 1 label kotak bagan untuk melihat pratinjau...</span>';
-  }
-
-  function syncStemChartBuilderUI() {
-    const bodyEl = document.getElementById('qChartBuilderBody');
-    const badgeEl = document.getElementById('qChartStatusBadge');
-    const btnToggle = document.getElementById('btnToggleStemChart');
-    const btnAdd = document.getElementById('btnAddChartNode');
-    const btnClear = document.getElementById('btnClearStemChart');
-    const layoutSel = document.getElementById('qChartLayoutSelect');
-    const titleInp = document.getElementById('qChartTitleInput');
-    const nodesEditor = document.getElementById('qChartNodesEditor');
-
-    if (!singleChartState) {
-      if (badgeEl) badgeEl.innerText = 'Belum ada bagan';
-      btnToggle?.classList.remove('hidden');
-      btnAdd?.classList.add('hidden');
-      btnClear?.classList.add('hidden');
-      bodyEl?.classList.add('hidden');
-      if (nodesEditor) nodesEditor.innerHTML = '';
-      renderChartLivePreview();
-      return;
-    }
-
-    if (badgeEl) badgeEl.innerText = `✓ Aktif (${singleChartState.nodes.length} kotak • ${singleChartState.layout})`;
-    btnToggle?.classList.add('hidden');
-    btnAdd?.classList.remove('hidden');
-    btnClear?.classList.remove('hidden');
-    bodyEl?.classList.remove('hidden');
-    if (layoutSel) layoutSel.value = singleChartState.layout || 'vertical';
-    if (titleInp) titleInp.value = singleChartState.title || '';
-
-    if (nodesEditor) {
-      const nodeOptions = singleChartState.nodes;
-      nodesEditor.innerHTML = singleChartState.nodes.map((n, idx) => {
-        const parentOpts = `<option value="">-- Akar / Atas --</option>` + nodeOptions
-          .filter(p => p.id !== n.id)
-          .map(p => `<option value="${escapeHtmlSafe(p.id)}" ${n.parentId === p.id ? 'selected' : ''}>Induk: ${escapeHtmlSafe(p.label || p.id)}</option>`)
-          .join('');
-        return `
-          <div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 items-center p-2 bg-white rounded-xl border border-cyan-200">
-            <div class="sm:col-span-4">
-              <input type="text" data-node-idx="${idx}" data-node-field="label" value="${escapeHtmlSafe(n.label || '')}" placeholder="Judul Kotak ${idx + 1}" class="w-full px-2 py-1 rounded-lg border border-slate-300 font-bold text-xs outline-none">
-            </div>
-            <div class="sm:col-span-3">
-              <input type="text" data-node-idx="${idx}" data-node-field="sublabel" value="${escapeHtmlSafe(n.sublabel || '')}" placeholder="Subteks (opsional)" class="w-full px-2 py-1 rounded-lg border border-slate-300 text-xs outline-none">
-            </div>
-            <div class="sm:col-span-2 ${singleChartState.layout === 'hierarchy' ? '' : 'hidden'}">
-              <select data-node-idx="${idx}" data-node-field="parentId" class="w-full px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] outline-none">${parentOpts}</select>
-            </div>
-            <div class="sm:col-span-2">
-              <select data-node-idx="${idx}" data-node-field="tone" class="w-full px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-bold outline-none">
-                <option value="blue" ${n.tone === 'blue' ? 'selected' : ''}>Biru</option>
-                <option value="emerald" ${n.tone === 'emerald' ? 'selected' : ''}>Hijau</option>
-                <option value="amber" ${n.tone === 'amber' ? 'selected' : ''}>Kuning</option>
-                <option value="rose" ${n.tone === 'rose' ? 'selected' : ''}>Merah</option>
-                <option value="violet" ${n.tone === 'violet' ? 'selected' : ''}>Ungu</option>
-                <option value="slate" ${n.tone === 'slate' ? 'selected' : ''}>Abu</option>
-              </select>
-            </div>
-            <div class="sm:col-span-1 text-right">
-              <button type="button" data-del-node="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs cursor-pointer" title="Hapus Kotak">✕</button>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      nodesEditor.querySelectorAll('[data-node-idx]').forEach(el => {
-        const evtName = el.tagName === 'SELECT' ? 'change' : 'input';
-        el.addEventListener(evtName, () => {
-          const idx = parseInt(el.getAttribute('data-node-idx'), 10);
-          const field = el.getAttribute('data-node-field');
-          if (singleChartState && singleChartState.nodes[idx]) {
-            singleChartState.nodes[idx][field] = el.value;
-            renderChartLivePreview();
-          }
-        });
-      });
-
-      nodesEditor.querySelectorAll('[data-del-node]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt(btn.getAttribute('data-del-node'), 10);
-          if (singleChartState.nodes.length <= 1) return;
-          singleChartState.nodes.splice(idx, 1);
-          syncStemChartBuilderUI();
-        });
-      });
-    }
-    renderChartLivePreview();
-  }
-
-  // Bind controls untuk Tabel, Bagan, Wacana, & Bobot preset di Modal Soal Tunggal
+  // Bind controls untuk Tabel, Wacana, & Bobot preset di Modal Soal Tunggal
   document.getElementById('btnGenPassageGroupId')?.addEventListener('click', () => {
     const inp = document.getElementById('qInputPassageGroupId');
     if (inp) inp.value = `WACANA-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -6400,45 +6458,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.getElementById('btnToggleStemChart')?.addEventListener('click', () => {
-    singleChartState = {
-      layout: 'vertical',
-      title: '',
-      nodes: [
-        { id: 'n1', label: 'Langkah / Unsur 1', sublabel: '', parentId: '', tone: 'blue' },
-        { id: 'n2', label: 'Langkah / Unsur 2', sublabel: '', parentId: 'n1', tone: 'emerald' },
-        { id: 'n3', label: 'Langkah / Unsur 3', sublabel: '', parentId: 'n1', tone: 'amber' }
-      ]
-    };
-    syncStemChartBuilderUI();
-  });
-  document.getElementById('btnAddChartNode')?.addEventListener('click', () => {
-    if (!singleChartState) return;
-    const nextNum = singleChartState.nodes.length + 1;
-    const firstId = singleChartState.nodes[0]?.id || '';
-    singleChartState.nodes.push({
-      id: `n${Date.now()}_${nextNum}`,
-      label: `Kotak ${nextNum}`,
-      sublabel: '',
-      parentId: firstId,
-      tone: 'blue'
-    });
-    syncStemChartBuilderUI();
-  });
-  document.getElementById('btnClearStemChart')?.addEventListener('click', () => {
-    singleChartState = null;
-    syncStemChartBuilderUI();
-  });
-  document.getElementById('qChartLayoutSelect')?.addEventListener('change', (e) => {
-    if (!singleChartState) return;
-    singleChartState.layout = e.target.value;
-    syncStemChartBuilderUI();
-  });
-  document.getElementById('qChartTitleInput')?.addEventListener('input', (e) => {
-    if (!singleChartState) return;
-    singleChartState.title = e.target.value;
-    renderChartLivePreview();
-  });
   document.querySelectorAll('.btn-q-weight-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       const wInp = document.getElementById('qInputWeight');
@@ -6484,13 +6503,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalSubjEl = document.getElementById('qInputSubject');
     const modalClassEl = document.getElementById('qInputClassLevel');
 
-    // Reset panel wacana
+    // Reset panel wacana & tabel
     const pDetails = document.getElementById('qPassageDetails');
     const tDetails = document.getElementById('qTableDetails');
-    const cDetails = document.getElementById('qChartDetails');
     if (pDetails) pDetails.open = false;
     if (tDetails) tDetails.open = false;
-    if (cDetails) cDetails.open = false;
     if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = '';
     if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = '1';
     if (document.getElementById('qInputPassageGroupSize')) document.getElementById('qInputPassageGroupSize').value = '5';
@@ -6561,10 +6578,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tDetails) tDetails.open = true;
       }
 
-      // Muat Bagan Pertanyaan
+      // Pertahankan chartData lama secara senyap jika soal terdahulu memilikinya
       if (question.chartData) {
         singleChartState = JSON.parse(JSON.stringify(question.chartData));
-        if (cDetails) cDetails.open = true;
       }
 
       // Muat Tabel Opsi A-D
@@ -6644,7 +6660,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     syncStemTableBuilderUI();
-    syncStemChartBuilderUI();
     ['A', 'B', 'C', 'D'].forEach(k => syncOptionTableBuilderUI(k));
 
     if (modalQuestionForm) modalQuestionForm.classList.remove('hidden');
@@ -6796,7 +6811,6 @@ document.addEventListener('DOMContentLoaded', () => {
       singleOptionTablesState = { A: null, B: null, C: null, D: null };
       singleChartState = null;
       syncStemTableBuilderUI();
-      syncStemChartBuilderUI();
       ['A', 'B', 'C', 'D'].forEach(k => syncOptionTableBuilderUI(k));
       if (qData.passageGroupId) {
         if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = qData.passageGroupId;
@@ -6873,16 +6887,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ],
       weight: Math.max(1, parseInt(defaultWeight, 10) || 25),
       hasTable: false,
-      tableData: { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] },
-      hasChart: false,
-      chartData: {
-        layout: 'vertical',
-        title: '',
-        nodes: [
-          { id: 'n1', label: 'Langkah 1', sublabel: '', parentId: '', tone: 'blue' },
-          { id: 'n2', label: 'Langkah 2', sublabel: '', parentId: 'n1', tone: 'emerald' }
-        ]
-      }
+      tableData: { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] }
     };
   }
 
@@ -6919,21 +6924,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       ` : '';
 
-      const chartHtml = row.hasChart ? `
-        <div class="p-2.5 rounded-xl bg-cyan-50/70 border border-cyan-200 space-y-1.5">
-          <div class="text-[11px] font-bold text-cyan-900">🗺️ Bagan Cepat Baris #${idx + 1}</div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-            <select data-b-idx="${idx}" data-b-chart="layout" class="px-2 py-1 rounded border border-cyan-200 bg-white font-bold text-xs outline-none">
-              <option value="vertical" ${row.chartData.layout === 'vertical' ? 'selected' : ''}>Alur Vertikal</option>
-              <option value="horizontal" ${row.chartData.layout === 'horizontal' ? 'selected' : ''}>Alur Horizontal</option>
-              <option value="hierarchy" ${row.chartData.layout === 'hierarchy' ? 'selected' : ''}>Pohon Hierarki</option>
-            </select>
-            <input type="text" data-b-idx="${idx}" data-b-chart="n0" value="${escapeHtmlSafe(row.chartData.nodes[0]?.label || '')}" placeholder="Kotak Bagan 1" class="px-2 py-1 rounded border border-cyan-200 bg-white text-xs outline-none">
-            <input type="text" data-b-idx="${idx}" data-b-chart="n1" value="${escapeHtmlSafe(row.chartData.nodes[1]?.label || '')}" placeholder="Kotak Bagan 2" class="px-2 py-1 rounded border border-cyan-200 bg-white text-xs outline-none">
-          </div>
-        </div>
-      ` : '';
-
       const rowMetaBadge = bulkModalActionMode === 'edit_existing'
         ? `<span class="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 text-[10px] font-bold">📚 ${escapeHtmlSafe(row.originalSubject || 'Umum')} • 🏫 ${escapeHtmlSafe(row.originalClassLevel || 'Semua Kelas')}${row.originalIsTrial ? ' • 🧪 Simulasi' : ''}${row.hasImage ? ' • 🖼️ Gambar' : ''}${row.hasOptionTables ? ' • 📊 Tabel Opsi' : ''}</span>`
         : '';
@@ -6956,7 +6946,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <button type="button" data-b-toggle-tbl="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasTable ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">📊 Tabel</button>
-              <button type="button" data-b-toggle-chart="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasChart ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">🗺️ Bagan</button>
               ${(bulkModalActionMode === 'create' && bulkRowsState.length > 1) ? `<button type="button" data-b-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
             </div>
           </div>
@@ -7075,26 +7064,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    bulkQuestionsListContainer.querySelectorAll('[data-b-toggle-chart]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.getAttribute('data-b-toggle-chart'), 10);
-        bulkRowsState[idx].hasChart = !bulkRowsState[idx].hasChart;
-        renderBulkQuestionRows();
-      });
-    });
-
-    bulkQuestionsListContainer.querySelectorAll('[data-b-chart]').forEach(el => {
-      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, () => {
-        const idx = parseInt(el.getAttribute('data-b-idx'), 10);
-        const key = el.getAttribute('data-b-chart');
-        const cd = bulkRowsState[idx].chartData;
-        if (key === 'layout') cd.layout = el.value;
-        else if (key === 'n0') cd.nodes[0].label = el.value;
-        else if (key === 'n1') cd.nodes[1].label = el.value;
-      });
-    });
-
     bulkQuestionsListContainer.querySelectorAll('[data-b-remove]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.getAttribute('data-b-remove'), 10);
@@ -7199,14 +7168,6 @@ document.addEventListener('DOMContentLoaded', () => {
       correct: stmts[i]?.correct === 'S' ? 'S' : (i % 2 === 1 ? 'S' : 'B')
     }));
     const clonedTable = q.tableData ? JSON.parse(JSON.stringify(q.tableData)) : { headers: ['Aspek', 'Nilai'], rows: [['', ''], ['', '']] };
-    const clonedChart = q.chartData ? JSON.parse(JSON.stringify(q.chartData)) : {
-      layout: 'vertical',
-      title: '',
-      nodes: [
-        { id: 'n1', label: 'Langkah 1', sublabel: '', parentId: '', tone: 'blue' },
-        { id: 'n2', label: 'Langkah 2', sublabel: '', parentId: 'n1', tone: 'emerald' }
-      ]
-    };
     return {
       id: q.id,
       originalSubject: q.subject || 'Umum',
@@ -7226,8 +7187,7 @@ document.addEventListener('DOMContentLoaded', () => {
       weight: Math.max(1, parseInt(q.weight, 10) || 10),
       hasTable: Boolean(q.tableData),
       tableData: clonedTable,
-      hasChart: Boolean(q.chartData),
-      chartData: clonedChart,
+      existingChartData: q.chartData ? JSON.parse(JSON.stringify(q.chartData)) : null,
       hasImage: Boolean(q.image),
       hasOptionTables: Boolean(q.optionTables && Object.keys(q.optionTables).length > 0),
       passageGroupId: q.passageGroupId || '',
@@ -7366,8 +7326,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (r.hasTable && r.tableData) upd.tableData = JSON.parse(JSON.stringify(r.tableData));
           else if (!r.hasTable) upd.removeTable = true;
 
-          if (r.hasChart && r.chartData) upd.chartData = JSON.parse(JSON.stringify(r.chartData));
-          else if (!r.hasChart) upd.removeChart = true;
+          if (r.existingChartData) upd.chartData = JSON.parse(JSON.stringify(r.existingChartData));
 
           if (r.type === 'single') {
             upd.options = [
@@ -7453,7 +7412,6 @@ document.addEventListener('DOMContentLoaded', () => {
           item.passageGroupSize = bulkRowsState.length;
         }
         if (r.hasTable && r.tableData) item.tableData = JSON.parse(JSON.stringify(r.tableData));
-        if (r.hasChart && r.chartData) item.chartData = JSON.parse(JSON.stringify(r.chartData));
 
         if (r.type === 'single') {
           item.options = [
@@ -8391,6 +8349,485 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPrintStudentCards = document.getElementById('btnPrintStudentCards');
   if (btnPrintStudentCards) btnPrintStudentCards.addEventListener('click', openCardPreviewModal);
 
+  // ===================== MODAL DAFTAR HADIR PESERTA RESMI (ADMIN + EDIT IDENTITAS) =====================
+  const modalAttendanceSheet = document.getElementById('modalAttendanceSheet');
+  const btnOpenAttendanceSheet = document.getElementById('btnOpenAttendanceSheet');
+  const btnOpenAttendanceFromMonitoring = document.getElementById('btnOpenAttendanceFromMonitoring');
+  const btnCloseAttendanceSheet = document.getElementById('btnCloseAttendanceSheet');
+  const btnCancelAttendanceSheet = document.getElementById('btnCancelAttendanceSheet');
+  const btnToggleAttIdentityEditor = document.getElementById('btnToggleAttIdentityEditor');
+  const attIdentityEditorPanel = document.getElementById('attIdentityEditorPanel');
+  const btnSaveAttIdentity = document.getElementById('btnSaveAttIdentity');
+  const attClassFilter = document.getElementById('attClassFilter');
+  const attScheduleSelect = document.getElementById('attScheduleSelect');
+  const attPaperSize = document.getElementById('attPaperSize');
+  const attRowsPerPage = document.getElementById('attRowsPerPage');
+  const attPengawasPreset = document.getElementById('attPengawasPreset');
+  const btnDownloadAttendancePdf = document.getElementById('btnDownloadAttendancePdf');
+  const btnDownloadAttendanceDoc = document.getElementById('btnDownloadAttendanceDoc');
+  const btnExecuteDirectPrintAttendance = document.getElementById('btnExecuteDirectPrintAttendance');
+  const attKopImageFile = document.getElementById('attKopImageFile');
+  const btnUploadAttKopImage = document.getElementById('btnUploadAttKopImage');
+  const btnRemoveAttKopImage = document.getElementById('btnRemoveAttKopImage');
+
+  function syncAttKopUi() {
+    const statusEl = document.getElementById('attKopImageStatus');
+    const cfg = window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : {};
+    const hasKop = Boolean(cfg.kopSuratImage && String(cfg.kopSuratImage).trim() !== '');
+    if (statusEl) {
+      statusEl.innerText = hasKop ? 'Kop Surat Upload Aktif' : 'Kop Otomatis Sekolah';
+      statusEl.className = hasKop
+        ? 'text-[11px] font-bold text-emerald-700 truncate max-w-[140px]'
+        : 'text-[11px] font-semibold text-slate-500 truncate max-w-[140px]';
+    }
+    if (btnRemoveAttKopImage) {
+      if (hasKop) btnRemoveAttKopImage.classList.remove('hidden');
+      else btnRemoveAttKopImage.classList.add('hidden');
+    }
+    syncNqKopUi();
+  }
+
+  function applyPengawasForSelectedClass(selectedClass) {
+    if (!window.cbtAdmin) return;
+    const allTeachers = window.cbtAdmin.getAllTeachers() || [];
+    const pengawasList = allTeachers.filter(t => t && window.cbtAdmin.isPengawasUser(t));
+    const attDayVal = String(document.getElementById('attDayText')?.value || '').trim();
+    if (attPengawasPreset) {
+      attPengawasPreset.innerHTML = '<option value="">-- Isi Manual / Kosongkan --</option>';
+      pengawasList.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
+        const hasWeekly = Object.keys(normSched).length > 0;
+        const clsLbl = hasWeekly
+          ? ' (Jadwal Sen–Sab)'
+          : (t.classes ? ` (${t.classes})` : ' (Fleksibel)');
+        opt.innerText = `${t.name}${clsLbl}`;
+        attPengawasPreset.appendChild(opt);
+      });
+    }
+
+    let matched = null;
+    if (selectedClass && selectedClass !== 'ALL' && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+      if (attDayVal) {
+        matched = pengawasList.find(t => {
+          const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
+          const dayKey = Object.keys(normSched).find(k => k.toLowerCase() === attDayVal.toLowerCase());
+          return dayKey && normSched[dayKey] && window.examEngine.matchesClassLevel(normSched[dayKey], selectedClass);
+        });
+      }
+      if (!matched) {
+        matched = pengawasList.find(t => {
+          if (t.classes && window.examEngine.matchesClassLevel(t.classes, selectedClass)) return true;
+          const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
+          return Object.values(normSched).some(rm => rm && window.examEngine.matchesClassLevel(rm, selectedClass));
+        });
+      }
+    }
+    if (!matched && pengawasList.length === 1) {
+      matched = pengawasList[0];
+    }
+
+    const nameEl = document.getElementById('attPengawasName');
+    const nipEl = document.getElementById('attPengawasNip');
+    if (matched) {
+      if (attPengawasPreset) attPengawasPreset.value = matched.id;
+      if (nameEl) nameEl.value = matched.name || '';
+      if (nipEl) {
+        const cleanNip = String(matched.nip || '').trim();
+        nipEl.value = /^\d[\d\s.\-]{5,}$/.test(cleanNip) ? cleanNip : '';
+      }
+    }
+  }
+
+  function applyScheduleToAttendanceFields(scheduleId) {
+    if (!window.cbtAdmin) return;
+    const schedules = window.cbtAdmin.getAllSchedules() || [];
+    const sch = schedules.find(s => String(s.id) === String(scheduleId));
+    if (!sch) return;
+    const subjEl = document.getElementById('attSubjectName');
+    const dayEl = document.getElementById('attDayText');
+    const dateEl = document.getElementById('attDateText');
+    const timeEl = document.getElementById('attTimeRange');
+    if (subjEl && sch.subject) subjEl.value = sch.subject;
+    if (dayEl && sch.day) dayEl.value = sch.day;
+    if (dateEl) {
+      const dStr = sch.dateFormatted || (sch.dateIso && window.cbtAdmin.formatIndonesianDate ? window.cbtAdmin.formatIndonesianDate(sch.dateIso) : '');
+      if (dStr) dateEl.value = dStr;
+    }
+    if (timeEl && sch.timeRange) timeEl.value = sch.timeRange;
+  }
+
+  function getAttendanceStudentsAndOptions() {
+    const selectedClass = attClassFilter ? attClassFilter.value : 'ALL';
+    let students = window.studentManager ? window.studentManager.getAllStudents() : [];
+    if (selectedClass && selectedClass !== 'ALL') {
+      students = students.filter(s => {
+        if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+          return window.examEngine.matchesClassLevel(s.class, selectedClass);
+        }
+        return String(s.class || '').trim().toUpperCase() === String(selectedClass).trim().toUpperCase();
+      });
+    }
+    students = [...students].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+
+    const paperVal = attPaperSize ? attPaperSize.value : 'F4';
+    const rowsVal = attRowsPerPage ? parseInt(attRowsPerPage.value, 10) : 25;
+    const options = {
+      classLabel: selectedClass && selectedClass !== 'ALL' ? selectedClass : '',
+      docTitle: document.getElementById('attDocTitle')?.value.trim() || 'DAFTAR HADIR PESERTA',
+      examTitle: document.getElementById('attExamTitle')?.value.trim() || 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)',
+      academicYear: document.getElementById('attAcademicYear')?.value.trim() || 'TAHUN PELAJARAN 2026/2027',
+      cityRegency: document.getElementById('attCityRegency')?.value.trim() || 'KABUPATEN CIANJUR',
+      cityCode: document.getElementById('attCityCode')?.value.trim() || '',
+      schoolName: document.getElementById('attSchoolName')?.value.trim() || 'SMP NEGERI 2 PACET',
+      schoolCode: document.getElementById('attSchoolCode')?.value.trim() || '',
+      serverRoom: document.getElementById('attServerRoom')?.value.trim() || (selectedClass && selectedClass !== 'ALL' ? `Ruang Ujian ${selectedClass}` : 'Ruang Ujian 1'),
+      session: document.getElementById('attSession')?.value.trim() || '1',
+      dayText: document.getElementById('attDayText')?.value.trim() || '',
+      dateText: document.getElementById('attDateText')?.value.trim() || '',
+      timeRange: document.getElementById('attTimeRange')?.value.trim() || '07.30 - 09.30',
+      subjectName: document.getElementById('attSubjectName')?.value.trim() || '',
+      headmasterName: document.getElementById('attHeadmasterName')?.value.trim() || '',
+      headmasterNip: document.getElementById('attHeadmasterNip')?.value.trim() || '',
+      pengawasName: document.getElementById('attPengawasName')?.value.trim() || '',
+      pengawasNip: document.getElementById('attPengawasNip')?.value.trim() || '',
+      notes: document.getElementById('attNotes')?.value || '',
+      autoTotalStudents: Boolean(document.getElementById('attAutoTotalStudents')?.checked),
+      paperSize: paperVal,
+      rowsPerPage: isNaN(rowsVal) ? 25 : rowsVal
+    };
+    return { students, options };
+  }
+
+  function refreshAttendancePreview() {
+    const container = document.getElementById('attendancePreviewContainer');
+    const countBadge = document.getElementById('attendancePreviewCountBadge');
+    const paperBadge = document.getElementById('attendancePaperBadge');
+    if (!window.cbtAdmin) return;
+    const { students, options } = getAttendanceStudentsAndOptions();
+    if (countBadge) {
+      const roomLbl = options.classLabel ? `Kelas ${options.classLabel}` : 'Semua Kelas';
+      countBadge.innerText = `${students.length} Peserta (${roomLbl})`;
+    }
+    if (paperBadge) {
+      paperBadge.innerText = options.paperSize === 'A4' ? 'Kertas A4 (21 × 29,7 cm)' : 'Kertas F4 (21 × 33 cm)';
+    }
+    if (container) {
+      container.innerHTML = window.cbtAdmin.buildAttendanceSheetHtml(students, options);
+    }
+  }
+
+  function openAttendanceSheetModal(preferredClass = null, preferredSubject = null) {
+    if (!modalAttendanceSheet || !window.cbtAdmin || !window.studentManager) return;
+    const allStudents = window.studentManager.getAllStudents();
+    if (!allStudents || allStudents.length === 0) {
+      alert("Belum ada data siswa. Silakan impor data siswa terlebih dahulu.");
+      return;
+    }
+
+    const cfg = window.cbtAdmin.getSchoolConfig();
+    const att = cfg.attendanceIdentity || window.cbtAdmin.getDefaultAttendanceIdentity(cfg);
+    const examCfg = window.examEngine ? window.examEngine.config : {};
+
+    // Isi dropdown kelas
+    const classes = window.studentManager.getAllClasses();
+    if (attClassFilter) {
+      attClassFilter.innerHTML = '';
+      classes.forEach(c => {
+        const count = allStudents.filter(s => String(s.class || '').trim().toUpperCase() === String(c).trim().toUpperCase()).length;
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.innerText = `Kelas ${c} (${count} Siswa)`;
+        attClassFilter.appendChild(opt);
+      });
+      const allOpt = document.createElement('option');
+      allOpt.value = 'ALL';
+      allOpt.innerText = `Semua Kelas (${allStudents.length} Siswa)`;
+      attClassFilter.appendChild(allOpt);
+
+      if (preferredClass && preferredClass !== 'ALL' && classes.some(c => String(c).toUpperCase() === String(preferredClass).toUpperCase())) {
+        attClassFilter.value = classes.find(c => String(c).toUpperCase() === String(preferredClass).toUpperCase());
+      } else if (classes.length > 0) {
+        attClassFilter.value = classes[0];
+      } else {
+        attClassFilter.value = 'ALL';
+      }
+    }
+
+    // Isi dropdown jadwal ujian
+    const schedules = window.cbtAdmin.getAllSchedules() || [];
+    if (attScheduleSelect) {
+      attScheduleSelect.innerHTML = '';
+      schedules.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.innerText = `${s.isActive ? '🟢 ' : ''}${s.subject}${s.classLevel ? ' • ' + s.classLevel : ''}`;
+        attScheduleSelect.appendChild(opt);
+      });
+      const manualOpt = document.createElement('option');
+      manualOpt.value = '__MANUAL__';
+      manualOpt.innerText = '-- Isi Mapel / Jadwal Manual --';
+      attScheduleSelect.appendChild(manualOpt);
+    }
+
+    // Isi nilai Edit Identitas dari konfigurasi tersimpan
+    const setVal = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.value = v !== undefined && v !== null ? String(v) : '';
+    };
+    setVal('attDocTitle', att.docTitle || 'DAFTAR HADIR PESERTA');
+    setVal('attExamTitle', att.examTitle || examCfg.examTitle || 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)');
+    setVal('attAcademicYear', att.academicYear || 'TAHUN PELAJARAN 2026/2027');
+    setVal('attCityRegency', att.cityRegency || 'KABUPATEN CIANJUR');
+    setVal('attCityCode', att.cityCode !== undefined ? att.cityCode : '15');
+    setVal('attSchoolName', att.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET');
+    setVal('attSchoolCode', att.schoolCode !== undefined ? att.schoolCode : '1031');
+    setVal('attSession', att.session || '1');
+    setVal('attDayText', att.dayText || '');
+    setVal('attDateText', att.dateText || cfg.date || '');
+    setVal('attTimeRange', att.timeRange || '07.30 - 09.30');
+    setVal('attSubjectName', att.subjectName || examCfg.subject || '');
+    setVal('attHeadmasterName', att.headmasterName || cfg.headmasterName || '');
+    setVal('attHeadmasterNip', att.headmasterNip || cfg.headmasterNip || '');
+    setVal('attPengawasName', att.pengawasName || '');
+    setVal('attPengawasNip', att.pengawasNip || '');
+    setVal('attNotes', att.notes || '');
+
+    const autoChk = document.getElementById('attAutoTotalStudents');
+    if (autoChk) autoChk.checked = att.autoTotalStudents !== false;
+    if (attPaperSize) attPaperSize.value = att.paperSize === 'A4' ? 'A4' : 'F4';
+    if (attRowsPerPage) attRowsPerPage.value = String(att.rowsPerPage !== undefined ? att.rowsPerPage : 25);
+
+    const chosenClass = attClassFilter ? attClassFilter.value : 'ALL';
+    setVal('attServerRoom', att.serverRoom || (chosenClass !== 'ALL' ? `Ruang Ujian ${chosenClass}` : 'Ruang Ujian 1'));
+
+    // Pilih jadwal paling relevan (aktif atau sesuai filter monitoring)
+    if (attScheduleSelect) {
+      let matchedSch = null;
+      if (preferredSubject && preferredSubject !== 'ALL' && window.examEngine) {
+        matchedSch = schedules.find(s => window.examEngine.matchesSubject(s.subject, preferredSubject));
+      }
+      if (!matchedSch) {
+        matchedSch = schedules.find(s => s.isActive) || schedules[0] || null;
+      }
+      if (matchedSch) {
+        attScheduleSelect.value = matchedSch.id;
+        applyScheduleToAttendanceFields(matchedSch.id);
+      } else {
+        attScheduleSelect.value = '__MANUAL__';
+      }
+    }
+
+    applyPengawasForSelectedClass(chosenClass);
+    syncAttKopUi();
+    refreshAttendancePreview();
+    modalAttendanceSheet.classList.remove('hidden');
+  }
+
+  function closeAttendanceSheetModal() {
+    if (modalAttendanceSheet) modalAttendanceSheet.classList.add('hidden');
+  }
+
+  if (btnOpenAttendanceSheet) {
+    btnOpenAttendanceSheet.addEventListener('click', () => openAttendanceSheetModal());
+  }
+  if (btnOpenAttendanceFromMonitoring) {
+    btnOpenAttendanceFromMonitoring.addEventListener('click', () => {
+      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
+      const monSubj = document.getElementById('filterMonitoringSubject')?.value || 'ALL';
+      openAttendanceSheetModal(monCls, monSubj);
+    });
+  }
+  if (btnCloseAttendanceSheet) btnCloseAttendanceSheet.addEventListener('click', closeAttendanceSheetModal);
+  if (btnCancelAttendanceSheet) btnCancelAttendanceSheet.addEventListener('click', closeAttendanceSheetModal);
+
+  if (btnToggleAttIdentityEditor && attIdentityEditorPanel) {
+    btnToggleAttIdentityEditor.addEventListener('click', () => {
+      const isHidden = attIdentityEditorPanel.classList.contains('hidden');
+      if (isHidden) {
+        attIdentityEditorPanel.classList.remove('hidden');
+        btnToggleAttIdentityEditor.innerHTML = '<span>🔼 Tutup Edit Identitas</span>';
+      } else {
+        attIdentityEditorPanel.classList.add('hidden');
+        btnToggleAttIdentityEditor.innerHTML = '<span>✏️ Edit Identitas</span>';
+      }
+    });
+  }
+
+  if (attClassFilter) {
+    attClassFilter.addEventListener('change', () => {
+      const cls = attClassFilter.value;
+      const roomEl = document.getElementById('attServerRoom');
+      if (roomEl) {
+        const curRoom = roomEl.value.trim();
+        if (!curRoom || /^Ruang\s+Ujian/i.test(curRoom) || curRoom.includes('/')) {
+          const basePrefix = curRoom.includes('/') ? curRoom.split('/')[0].trim() + ' / ' : '';
+          roomEl.value = cls && cls !== 'ALL' ? `${basePrefix}Ruang Ujian ${cls}` : `${basePrefix}Ruang Ujian 1`;
+        }
+      }
+      applyPengawasForSelectedClass(cls);
+      refreshAttendancePreview();
+    });
+  }
+
+  if (attScheduleSelect) {
+    attScheduleSelect.addEventListener('change', () => {
+      if (attScheduleSelect.value && attScheduleSelect.value !== '__MANUAL__') {
+        applyScheduleToAttendanceFields(attScheduleSelect.value);
+      }
+      refreshAttendancePreview();
+    });
+  }
+
+  if (attPengawasPreset) {
+    attPengawasPreset.addEventListener('change', () => {
+      const tid = attPengawasPreset.value;
+      const nameEl = document.getElementById('attPengawasName');
+      const nipEl = document.getElementById('attPengawasNip');
+      if (!tid || !window.cbtAdmin) {
+        if (nameEl) nameEl.value = '';
+        if (nipEl) nipEl.value = '';
+      } else {
+        const t = (window.cbtAdmin.getAllTeachers() || []).find(item => item.id === tid);
+        if (t) {
+          if (nameEl) nameEl.value = t.name || '';
+          if (nipEl) {
+            const cleanNip = String(t.nip || '').trim();
+            nipEl.value = /^\d[\d\s.\-]{5,}$/.test(cleanNip) ? cleanNip : '';
+          }
+        }
+      }
+      refreshAttendancePreview();
+    });
+  }
+
+  if (btnUploadAttKopImage && attKopImageFile) {
+    btnUploadAttKopImage.addEventListener('click', () => attKopImageFile.click());
+    attKopImageFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file || !file.type.startsWith('image/')) {
+        if (file) alert("Harap pilih file gambar (PNG, JPG, atau WEBP) untuk Kop Surat.");
+        return;
+      }
+      trimKopSuratWhitespace(file, 1600, (dataUrl) => {
+        if (window.cbtAdmin) {
+          const cfg = window.cbtAdmin.getSchoolConfig();
+          cfg.kopSuratImage = dataUrl;
+          window.cbtAdmin.saveSchoolConfig(cfg);
+        }
+        syncAttKopUi();
+        refreshAttendancePreview();
+      });
+      attKopImageFile.value = '';
+    });
+  }
+
+  if (btnRemoveAttKopImage) {
+    btnRemoveAttKopImage.addEventListener('click', () => {
+      if (window.cbtAdmin) {
+        const cfg = window.cbtAdmin.getSchoolConfig();
+        cfg.kopSuratImage = '';
+        window.cbtAdmin.saveSchoolConfig(cfg);
+      }
+      if (attKopImageFile) attKopImageFile.value = '';
+      syncAttKopUi();
+      refreshAttendancePreview();
+    });
+  }
+
+  [
+    'attPaperSize', 'attRowsPerPage', 'attDocTitle', 'attExamTitle', 'attAcademicYear',
+    'attCityRegency', 'attCityCode', 'attSchoolName', 'attSchoolCode',
+    'attServerRoom', 'attSession', 'attDayText', 'attDateText', 'attTimeRange',
+    'attSubjectName', 'attHeadmasterName', 'attHeadmasterNip',
+    'attPengawasName', 'attPengawasNip', 'attNotes', 'attAutoTotalStudents'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', refreshAttendancePreview);
+      el.addEventListener('change', refreshAttendancePreview);
+    }
+  });
+
+  if (btnSaveAttIdentity) {
+    btnSaveAttIdentity.addEventListener('click', async () => {
+      if (!window.cbtAdmin) return;
+      const { options } = getAttendanceStudentsAndOptions();
+      const cfg = window.cbtAdmin.getSchoolConfig();
+      const updatedCfg = {
+        ...cfg,
+        headmasterName: options.headmasterName || cfg.headmasterName,
+        headmasterNip: options.headmasterNip || cfg.headmasterNip,
+        attendanceIdentity: {
+          docTitle: options.docTitle,
+          examTitle: options.examTitle,
+          academicYear: options.academicYear,
+          cityRegency: options.cityRegency,
+          cityCode: options.cityCode,
+          schoolName: options.schoolName,
+          schoolCode: options.schoolCode,
+          serverRoom: options.serverRoom,
+          session: options.session,
+          dayText: options.dayText,
+          dateText: options.dateText,
+          timeRange: options.timeRange,
+          subjectName: options.subjectName,
+          headmasterName: options.headmasterName,
+          headmasterNip: options.headmasterNip,
+          pengawasName: options.pengawasName,
+          pengawasNip: options.pengawasNip,
+          notes: options.notes,
+          autoTotalStudents: options.autoTotalStudents,
+          paperSize: options.paperSize,
+          rowsPerPage: options.rowsPerPage
+        }
+      };
+
+      const prevText = btnSaveAttIdentity.innerHTML;
+      btnSaveAttIdentity.disabled = true;
+      btnSaveAttIdentity.innerHTML = '<span>⏳ Menyimpan...</span>';
+      try {
+        window.cbtAdmin.saveSchoolConfig(updatedCfg, true);
+        let cloudNote = '';
+        if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+          const syncRes = await window.supabaseSync.pushStateKey('cbt_school_config', window.cbtAdmin.getSchoolConfig()).catch(() => ({ success: false }));
+          if (!syncRes || !syncRes.success) {
+            cloudNote = '\n\n⚠️ Tersimpan di perangkat ini, namun sinkron ke Cloud tertunda.';
+          }
+        }
+        renderSchoolConfigForm();
+        renderConfigInfoOnLogin();
+        alert(`Identitas Daftar Hadir berhasil disimpan!${cloudNote}`);
+      } finally {
+        btnSaveAttIdentity.disabled = false;
+        btnSaveAttIdentity.innerHTML = prevText;
+      }
+    });
+  }
+
+  if (btnDownloadAttendancePdf) {
+    btnDownloadAttendancePdf.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { students, options } = getAttendanceStudentsAndOptions();
+      window.cbtAdmin.downloadAttendancePDF(students, options);
+    });
+  }
+  if (btnDownloadAttendanceDoc) {
+    btnDownloadAttendanceDoc.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { students, options } = getAttendanceStudentsAndOptions();
+      window.cbtAdmin.downloadAttendanceDOC(students, options);
+    });
+  }
+  if (btnExecuteDirectPrintAttendance) {
+    btnExecuteDirectPrintAttendance.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { students, options } = getAttendanceStudentsAndOptions();
+      window.cbtAdmin.printAttendanceDirect(students, options);
+    });
+  }
+
   const btnResetAllStudentPasswords = document.getElementById('btnResetAllStudentPasswords');
   if (btnResetAllStudentPasswords) {
     btnResetAllStudentPasswords.addEventListener('click', () => {
@@ -8485,11 +8922,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const isSuperAdmin = t.role === 'admin' || t.id === 'admin';
       const isPengawas = !isSuperAdmin && String(t.role || '').toLowerCase() === 'pengawas';
       const parsedClasses = window.cbtAdmin.parseTeacherClasses(t.classes);
-      const classBadgeHtml = isSuperAdmin
-        ? `<span class="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[11px]">Semua Kelas</span>`
-        : (parsedClasses.length > 0
-          ? `<span class="px-2 py-0.5 rounded-md ${isPengawas ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-emerald-50 text-emerald-700'} font-bold text-[11px]">${escapeHtmlSafe(parsedClasses.join(', '))}</span>`
-          : `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium text-[11px]">Semua Kelas</span>`);
+      const weeklySched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
+      const weeklyEntries = Object.entries(weeklySched);
+      let classBadgeHtml = '';
+      if (isSuperAdmin) {
+        classBadgeHtml = `<span class="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[11px]">Semua Kelas</span>`;
+      } else if (isPengawas) {
+        if (weeklyEntries.length > 0) {
+          const shortMap = { Senin: 'Sen', Selasa: 'Sel', Rabu: 'Rab', Kamis: 'Kam', Jumat: 'Jum', Sabtu: 'Sab' };
+          const summaryStr = weeklyEntries.map(([d, rm]) => `${shortMap[d] || d}:${rm}`).join(' • ');
+          classBadgeHtml = `<div class="flex flex-col gap-0.5"><span class="px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-800 border border-cyan-200 font-bold text-[11px] w-fit">🗓️ Senin–Jumat</span><span class="text-[10px] text-slate-600 font-semibold whitespace-normal max-w-[200px]">${escapeHtmlSafe(summaryStr)}</span></div>`;
+        } else if (parsedClasses.length > 0) {
+          classBadgeHtml = `<span class="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-bold text-[11px]">🔒 ${escapeHtmlSafe(parsedClasses.join(', '))}</span>`;
+        } else {
+          classBadgeHtml = `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[11px]">🔄 Fleksibel (Pilih Saat Mengawas)</span>`;
+        }
+      } else {
+        classBadgeHtml = parsedClasses.length > 0
+          ? `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[11px]">${escapeHtmlSafe(parsedClasses.join(', '))}</span>`
+          : `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium text-[11px]">Semua Kelas</span>`;
+      }
 
       const roleBadgeHtml = isSuperAdmin
         ? '<span class="text-[10px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full inline-block mt-0.5">Proktor Utama / Admin</span>'
@@ -8613,6 +9065,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnOpenAddTeacher = document.getElementById('btnOpenAddTeacher');
   const editTeacherRoleSelect = document.getElementById('editTeacherRole');
 
+  const PENGAWAS_WEEKLY_DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+  function readModalPengawasRoomSchedule() {
+    const out = {};
+    PENGAWAS_WEEKLY_DAYS.forEach(day => {
+      const el = document.getElementById(`editTeacherRoom${day}`);
+      const val = el ? el.value.trim().toUpperCase() : '';
+      if (val) out[day] = val;
+    });
+    return out;
+  }
+
+  function writeModalPengawasRoomSchedule(schedObj = null) {
+    const norm = (window.cbtAdmin && typeof window.cbtAdmin.normalizePengawasRoomSchedule === 'function')
+      ? window.cbtAdmin.normalizePengawasRoomSchedule(schedObj)
+      : {};
+    PENGAWAS_WEEKLY_DAYS.forEach(day => {
+      const el = document.getElementById(`editTeacherRoom${day}`);
+      if (el) el.value = norm[day] || '';
+    });
+  }
+
   function syncTeacherModalRoleUI() {
     const roleVal = editTeacherRoleSelect ? editTeacherRoleSelect.value : 'guru';
     const isPengawas = roleVal === 'pengawas';
@@ -8621,20 +9095,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const subjHint = document.getElementById('editTeacherSubjectHint');
     const clsLabel = document.getElementById('editTeacherClassesLabel');
     const clsHint = document.getElementById('editTeacherClassesHint');
+    const roomSchedWrap = document.getElementById('editTeacherRoomScheduleWrap');
     const pinInput = document.getElementById('editTeacherPin');
 
     if (subjInput) subjInput.required = !isPengawas;
-    if (subjLabel) subjLabel.innerText = isPengawas ? 'Mata Pelajaran (Otomatis Semua Mapel Aktif)' : 'Mata Pelajaran yang Diampu';
+    if (subjLabel) subjLabel.innerText = isPengawas ? 'Mata Pelajaran (Otomatis Mengikuti Jadwal Ruang)' : 'Mata Pelajaran yang Diampu';
     if (subjHint) {
       subjHint.innerHTML = isPengawas
-        ? '👀 Akun <strong>Pengawas Ruang</strong> otomatis memantau <strong>semua mata pelajaran aktif</strong> di hari ujian (kolom ini boleh dikosongkan atau diisi catatan mapel asal guru).'
+        ? '👀 Akun <strong>Pengawas Ruang</strong> otomatis menampilkan mapel yang sedang diujikan di ruangnya (kolom ini boleh dikosongkan).'
         : '💡 Jika mengampu 2 mapel, pisahkan dengan koma atau garis miring (Contoh: <strong>Informatika, Prakarya</strong>).';
     }
-    if (clsLabel) clsLabel.innerText = isPengawas ? 'Kelas / Ruang yang Diawasi (Sangat Disarankan)' : 'Kelas yang Diampu (Opsional)';
+    if (clsLabel) clsLabel.innerText = isPengawas ? 'Kelas / Ruang Tetap (Opsional — Kosongkan jika berganti tiap hari)' : 'Kelas yang Diampu (Opsional)';
     if (clsHint) {
       clsHint.innerHTML = isPengawas
-        ? '🏫 Isi kelas ruang ujian yang diawasi (contoh: <strong>7A</strong> atau <strong>8A, 8B</strong>). Kosongkan jika boleh memantau semua kelas.'
+        ? '🏫 <strong>Kosongkan</strong> agar akun tidak terkunci di 1 kelas saja (Pengawas memilih ruang saat login, atau atur jadwal Senin–Sabtu di bawah). Isi misal <strong>7A</strong> hanya jika tetap di 7A.'
         : '💡 Untuk mapel yang dibagi beberapa guru (misal IPA: <strong>7B, 7C</strong> atau <strong>8A, 8B</strong>). Kosongkan jika mengajar semua kelas.';
+    }
+    if (roomSchedWrap) {
+      roomSchedWrap.classList.toggle('hidden', !isPengawas);
     }
     if (pinInput && !document.getElementById('editTeacherId').value) {
       if (isPengawas && pinInput.value === 'guru123') pinInput.value = 'pengawas123';
@@ -8666,6 +9144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editTeacherNip').value = "";
     document.getElementById('editTeacherSubject').value = "";
     document.getElementById('editTeacherClasses').value = "";
+    writeModalPengawasRoomSchedule({});
     document.getElementById('editTeacherPin').value = "guru123";
     syncTeacherModalRoleUI();
 
@@ -8677,7 +9156,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modalEditTeacher) return;
     const isSuperAdmin = teacher.role === 'admin' || teacher.id === 'admin';
     document.getElementById('modalEditTeacherTitle').innerText = isSuperAdmin ? "Edit Akun Proktor / Admin" : "Edit Data & Peran Akun";
-    document.getElementById('modalEditTeacherSubtitle').innerText = "Perbarui peran (Guru/Pengawas), kelas diawasi, atau password/PIN akun";
+    document.getElementById('modalEditTeacherSubtitle').innerText = "Perbarui peran (Guru/Pengawas), jadwal ruang Senin–Sabtu, atau PIN akun";
     document.getElementById('btnSubmitEditTeacher').innerText = "Simpan Perubahan";
 
     const roleGroup = document.getElementById('editTeacherRoleGroup');
@@ -8695,6 +9174,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editTeacherNip').value = teacher.nip;
     document.getElementById('editTeacherSubject').value = teacher.subject || "";
     document.getElementById('editTeacherClasses').value = teacher.classes || "";
+    writeModalPengawasRoomSchedule(teacher.roomSchedule || {});
     document.getElementById('editTeacherPin').value = teacher.pin;
     syncTeacherModalRoleUI();
 
@@ -8717,6 +9197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const nip = document.getElementById('editTeacherNip').value.trim();
       const subject = document.getElementById('editTeacherSubject').value.trim();
       const classes = document.getElementById('editTeacherClasses').value.trim().toUpperCase();
+      const roomSchedule = role === 'pengawas' ? readModalPengawasRoomSchedule() : {};
       const pin = document.getElementById('editTeacherPin').value.trim();
 
       if (!name || !nip || (role !== 'pengawas' && !subject) || !pin) {
@@ -8735,7 +9216,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         if (!id) {
-          const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin, role });
+          const res = window.cbtAdmin.addTeacher({ name, nip, subject, classes, pin, role, roomSchedule });
           if (res.success) {
             let cloudMsg = '';
             if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
@@ -8755,7 +9236,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Gagal menambah akun: ${res.message}`);
           }
         } else {
-          const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin, role });
+          const res = window.cbtAdmin.updateTeacherProfile(id, { name, nip, subject, classes, pin, role, roomSchedule });
           if (res.success) {
             let cloudMsg = '';
             if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
@@ -8782,6 +9263,98 @@ document.addEventListener('DOMContentLoaded', () => {
           btnSub.disabled = false;
           btnSub.innerText = prevBtnText || 'Simpan';
         }
+      }
+    });
+  }
+
+  // Modal Matriks Jadwal Ruang Pengawas Senin - Sabtu
+  const modalPengawasWeekly = document.getElementById('modalPengawasWeeklySchedule');
+  const btnOpenPengawasWeekly = document.getElementById('btnOpenPengawasWeeklyMatrix');
+  const btnClosePengawasWeekly = document.getElementById('btnClosePengawasWeeklyMatrix');
+  const btnCancelPengawasWeekly = document.getElementById('btnCancelPengawasWeeklyMatrix');
+  const btnSavePengawasWeekly = document.getElementById('btnSavePengawasWeeklyMatrix');
+
+  function renderPengawasWeeklyMatrix() {
+    const tbody = document.getElementById('pengawasWeeklyMatrixTbody');
+    if (!tbody || !window.cbtAdmin) return;
+    const pengawasList = (window.cbtAdmin.getAllTeachers() || []).filter(t => window.cbtAdmin.isPengawasUser(t));
+    if (pengawasList.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-500">Belum ada akun dengan peran <strong>Pengawas Ruang</strong>. Klik <strong>+ Tambah Guru / Pengawas</strong> atau ubah peran guru dengan tombol <strong>👀 Jadi Pengawas</strong>.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = pengawasList.map(t => {
+      const sched = window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule);
+      const dayInputs = PENGAWAS_WEEKLY_DAYS.map(day => `
+        <td class="p-2 text-center">
+          <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-day="${day}" value="${escapeHtmlSafe(sched[day] || '')}" placeholder="-" class="w-16 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-white uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-teal-500">
+        </td>
+      `).join('');
+      return `
+        <tr class="border-b border-slate-100 hover:bg-slate-50/70">
+          <td class="p-2.5">
+            <div class="font-bold text-slate-900">${escapeHtmlSafe(t.name)}</div>
+            <div class="text-[10px] font-mono text-slate-500">${escapeHtmlSafe(t.nip)}</div>
+          </td>
+          <td class="p-2 text-center">
+            <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-fixed="1" value="${escapeHtmlSafe(t.classes || '')}" placeholder="Kosong" class="w-20 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-slate-50 uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-blue-500">
+          </td>
+          ${dayInputs}
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function closePengawasWeeklyModal() {
+    if (modalPengawasWeekly) modalPengawasWeekly.classList.add('hidden');
+  }
+
+  if (btnOpenPengawasWeekly) {
+    btnOpenPengawasWeekly.addEventListener('click', () => {
+      renderPengawasWeeklyMatrix();
+      if (modalPengawasWeekly) modalPengawasWeekly.classList.remove('hidden');
+    });
+  }
+  if (btnClosePengawasWeekly) btnClosePengawasWeekly.addEventListener('click', closePengawasWeeklyModal);
+  if (btnCancelPengawasWeekly) btnCancelPengawasWeekly.addEventListener('click', closePengawasWeeklyModal);
+  if (btnSavePengawasWeekly) {
+    btnSavePengawasWeekly.addEventListener('click', async () => {
+      const tbody = document.getElementById('pengawasWeeklyMatrixTbody');
+      if (!tbody || !window.cbtAdmin) return;
+      const pengawasList = (window.cbtAdmin.getAllTeachers() || []).filter(t => window.cbtAdmin.isPengawasUser(t));
+      if (pengawasList.length === 0) {
+        closePengawasWeeklyModal();
+        return;
+      }
+      const prevTxt = btnSavePengawasWeekly.innerText;
+      btnSavePengawasWeekly.disabled = true;
+      btnSavePengawasWeekly.innerText = 'Menyimpan...';
+      try {
+        pengawasList.forEach(t => {
+          const fixedInp = tbody.querySelector(`input[data-pw-id="${t.id}"][data-pw-fixed="1"]`);
+          const nextClasses = fixedInp ? fixedInp.value.trim().toUpperCase() : (t.classes || '');
+          const nextSched = {};
+          PENGAWAS_WEEKLY_DAYS.forEach(day => {
+            const dInp = tbody.querySelector(`input[data-pw-id="${t.id}"][data-pw-day="${day}"]`);
+            const val = dInp ? dInp.value.trim().toUpperCase() : '';
+            if (val) nextSched[day] = val;
+          });
+          window.cbtAdmin.updateTeacherProfile(t.id, { classes: nextClasses, roomSchedule: nextSched });
+        });
+
+        let cloudMsg = '';
+        if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+          const syncRes = await window.supabaseSync.pushStateKey('cbt_teachers_list', window.cbtAdmin.teachers).catch(() => ({ success: false }));
+          if (!syncRes || !syncRes.success) {
+            cloudMsg = '\n\n⚠️ Tersimpan di perangkat ini, namun sinkron ke Cloud tertunda. Klik "Kirim Semua Data ke Cloud" di Manajemen Database.';
+          }
+        }
+        renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value || '');
+        setupMonitoringControls();
+        closePengawasWeeklyModal();
+        alert(`Jadwal ruang pengawas Senin–Sabtu berhasil disimpan!${cloudMsg}`);
+      } finally {
+        btnSavePengawasWeekly.disabled = false;
+        btnSavePengawasWeekly.innerText = prevTxt;
       }
     });
   }
