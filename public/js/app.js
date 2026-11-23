@@ -3624,6 +3624,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el) el.innerText = String(val);
     };
     setTxt('consultScoreVal', activeRecord.finalScore ?? 0);
+    const consultPtsEl = document.getElementById('consultScorePoints');
+    if (consultPtsEl) {
+      const maxPts = Number(activeRecord.maxPossiblePoints || 0);
+      if (Number.isFinite(maxPts) && maxPts > 0) {
+        const earnedPts = Number(activeRecord.totalEarnedPoints ?? 0);
+        consultPtsEl.innerText = `Poin: ${earnedPts.toLocaleString('id-ID')} / ${maxPts.toLocaleString('id-ID')}`;
+        consultPtsEl.classList.remove('hidden');
+      } else {
+        consultPtsEl.classList.add('hidden');
+        consultPtsEl.innerText = '-';
+      }
+    }
     setTxt('consultCorrectVal', activeRecord.correctCount ?? 0);
     setTxt('consultWrongVal', activeRecord.incorrectCount ?? 0);
     setTxt('consultEmptyVal', activeRecord.unattemptedCount ?? 0);
@@ -4737,7 +4749,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeItemAnalysisMode === 'pre_exam') {
       const subtitleEl = document.getElementById('itemAnalysisSubtitle');
       if (subtitleEl) {
-        subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel} — Pemeriksaan teknis otomatis ${summary.totalQuestions} butir soal sebelum dikerjakan siswa.`;
+        const multiSubjNote = (subjFilter === 'ALL' && new Set(items.map(it => it.subject)).size > 1)
+          ? ' (gabungan beberapa mapel)'
+          : '';
+        subtitleEl.innerText = `Filter aktif: ${subjLabel} • ${clsLabel}${multiSubjNote} — Pemeriksaan teknis otomatis ${summary.totalQuestions} butir soal sebelum dikerjakan siswa.`;
       }
     }
 
@@ -4751,7 +4766,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (peReadyPct) peReadyPct.innerText = `${summary.readyPercent}% soal lolos cek teknis`;
     if (peWarn) peWarn.innerText = String(summary.warningCount);
     if (peErr) peErr.innerText = String(summary.errorCount);
-    if (peWeight) peWeight.innerText = String(summary.totalWeight);
+    if (peWeight) peWeight.innerText = Number(summary.totalWeight || 0).toLocaleString('id-ID');
 
     const tbody = document.getElementById('preExamAuditTbody');
     if (!tbody) return;
@@ -5554,12 +5569,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (questions.length === 0) {
           totalWeightFormulaEl.innerText = '';
         } else {
-          const allSame = weights.every(w => w === weights[0]);
-          totalWeightFormulaEl.innerText = allSame
-            ? `(${questions.length} soal × bobot ${weights[0]})`
-            : `(${questions.length} soal)`;
+          const uniqueWeights = Array.from(new Set(weights));
+          if (uniqueWeights.length === 1) {
+            totalWeightFormulaEl.innerText = `(${questions.length} soal × bobot ${uniqueWeights[0]})`;
+          } else {
+            const previewW = uniqueWeights.slice(0, 3).join(', ') + (uniqueWeights.length > 3 ? ', ...' : '');
+            totalWeightFormulaEl.innerText = `(${questions.length} soal • bobot: ${previewW})`;
+          }
         }
       }
+    }
+
+    const bulkWeightBarInp = document.getElementById('bulkWeightValueInput');
+    if (bulkWeightBarInp && document.activeElement !== bulkWeightBarInp && subjFilter !== 'ALL' && questions.length > 0) {
+      const recBarW = getRecommendedWeightForScope(subjFilter === 'UMUM' ? 'Umum' : subjFilter, classFilter, 25);
+      bulkWeightBarInp.value = String(recBarW);
     }
 
     const btnClearTrials = document.getElementById('btnClearTrialQuestions');
@@ -5998,10 +6022,72 @@ document.addEventListener('DOMContentLoaded', () => {
     qSubjectActiveIndex = -1;
   }
 
+  function getRecommendedWeightForScope(subject = '', classLevel = 'ALL', fallback = 25) {
+    if (!window.cbtAdmin || typeof window.cbtAdmin.getAllQuestions !== 'function') return fallback;
+    const allQs = window.cbtAdmin.getAllQuestions() || [];
+    const subjClean = String(subject || '').trim();
+    const clsClean = String(classLevel || '').trim();
+
+    let scoped = allQs;
+    if (subjClean && subjClean.toUpperCase() !== 'ALL') {
+      const bySubj = allQs.filter(q => {
+        const qs = String(q?.subject || '').trim();
+        if (window.examEngine && typeof window.examEngine.matchesSubject === 'function') {
+          return window.examEngine.matchesSubject(qs, subjClean);
+        }
+        return qs.toLowerCase() === subjClean.toLowerCase();
+      });
+      if (bySubj.length > 0) {
+        scoped = bySubj;
+        if (clsClean && clsClean.toUpperCase() !== 'ALL' && clsClean.toLowerCase() !== 'semua kelas') {
+          const byCls = bySubj.filter(q => {
+            const qc = String(q?.classLevel || 'Semua Kelas').trim();
+            if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+              return window.examEngine.matchesClassLevel(qc, clsClean);
+            }
+            return qc.toLowerCase() === clsClean.toLowerCase();
+          });
+          if (byCls.length > 0) scoped = byCls;
+        }
+      } else {
+        return fallback;
+      }
+    } else {
+      return fallback;
+    }
+
+    const nonTrial = scoped.filter(q => !(window.cbtAdmin.isTrialQuestion && window.cbtAdmin.isTrialQuestion(q)));
+    const pool = nonTrial.length > 0 ? nonTrial : scoped;
+    if (pool.length === 0) return fallback;
+
+    const freq = new Map();
+    let bestWeight = Math.max(1, parseInt(pool[pool.length - 1]?.weight, 10) || fallback);
+    let bestCount = 0;
+    for (let i = pool.length - 1; i >= 0; i--) {
+      const w = parseInt(pool[i]?.weight, 10);
+      if (!Number.isFinite(w) || w <= 0) continue;
+      const nextCount = (freq.get(w) || 0) + 1;
+      freq.set(w, nextCount);
+      if (nextCount > bestCount) {
+        bestCount = nextCount;
+        bestWeight = w;
+      }
+    }
+    return bestWeight;
+  }
+
   function selectQuestionSubjectOption(value) {
     const inputEl = document.getElementById('qInputSubject');
     if (inputEl) {
       inputEl.value = value;
+    }
+    const isCreateMode = !(document.getElementById('editQuestionId')?.value || '').trim();
+    if (isCreateMode) {
+      const weightEl = document.getElementById('qInputWeight');
+      const clsVal = document.getElementById('qInputClassLevel')?.value || 'ALL';
+      if (weightEl) {
+        weightEl.value = String(getRecommendedWeightForScope(value, clsVal, 25));
+      }
     }
     updateQuestionSubjectControlsUi();
     closeQuestionSubjectDropdown();
@@ -6304,10 +6390,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const val = Math.max(1, parseInt(document.getElementById('bulkWeightValueInput')?.value, 10) || 25);
       const totalPts = target.questions.length * val;
+      const distinctSubjects = Array.from(new Set(target.questions.map(q => String(q?.subject || 'Umum').trim()).filter(Boolean)));
+      const multiSubjectWarn = distinctSubjects.length > 1
+        ? `\n\n⚠️ PERHATIAN: Aksi ini mencakup ${distinctSubjects.length} mata pelajaran sekaligus (${distinctSubjects.join(', ')}). Jika bobot tiap mapel berbeda (misal 25 & 30), pilih 1 Mapel di filter atau centang soal tertentu dulu.`
+        : '';
       const scopeText = target.isExplicitSelection
         ? `${target.questions.length} soal yang dicentang`
         : `seluruh ${target.questions.length} soal yang sedang tampil`;
-      if (!confirm(`Terapkan bobot nilai ${val} poin per soal ke ${scopeText}?\n\nTotal bobot: ${target.questions.length} soal × ${val} = ${totalPts.toLocaleString('id-ID')} poin.`)) return;
+      if (!confirm(`Terapkan bobot nilai ${val} poin per soal ke ${scopeText}?\n\nTotal bobot: ${target.questions.length} soal × ${val} = ${totalPts.toLocaleString('id-ID')} poin.${multiSubjectWarn}`)) return;
       const res = window.cbtAdmin.updateQuestionsWeightBatch(target.questions.map(q => q.id), val);
       renderAdminQuestionList();
       alert(`Berhasil mengubah bobot ${res.count} soal menjadi ${res.weight} poin/soal (Total = ${(res.count * res.weight).toLocaleString('id-ID')} poin).`);
@@ -6678,6 +6768,13 @@ document.addEventListener('DOMContentLoaded', () => {
         syncQuestionCategoryHelper();
       }
 
+      const weightEl = document.getElementById('qInputWeight');
+      if (weightEl) {
+        const activeSubjVal = modalSubjEl ? modalSubjEl.value : '';
+        const activeClsVal = modalClassEl ? modalClassEl.value : 'ALL';
+        weightEl.value = String(getRecommendedWeightForScope(activeSubjVal, activeClsVal, 25));
+      }
+
       if (qInputType) qInputType.dispatchEvent(new Event('change'));
     }
 
@@ -6987,7 +7084,6 @@ document.addEventListener('DOMContentLoaded', () => {
           <textarea rows="2" data-b-idx="${idx}" data-b-field="question" placeholder="Tuliskan teks pertanyaan nomor ${idx + 1}..." class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500">${escapeHtmlSafe(row.question)}</textarea>
 
           ${tblHtml}
-          ${chartHtml}
 
           ${!isTf ? `
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -7180,8 +7276,12 @@ document.addEventListener('DOMContentLoaded', () => {
       bulkInputMode.value = preset.mode;
     }
     populateBulkHeaderControls(preset);
+    const activeSubj = document.getElementById('bulkInputSubject')?.value || preset.subject || '';
+    const activeCls = document.getElementById('bulkInputClassLevel')?.value || preset.classLevel || 'ALL';
+    const defWeight = getRecommendedWeightForScope(activeSubj, activeCls, parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25);
+    const bulkWeightEl = document.getElementById('bulkDefaultWeight');
+    if (bulkWeightEl) bulkWeightEl.value = String(defWeight);
     const countVal = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
-    const defWeight = parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25;
     bulkRowsState = Array.from({ length: countVal }, () => createEmptyBulkRow(defWeight));
     if (document.getElementById('bulkPassageTitle')) document.getElementById('bulkPassageTitle').value = '';
     if (document.getElementById('bulkPassageText')) document.getElementById('bulkPassageText').value = '';
@@ -7190,6 +7290,30 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBulkQuestionRows();
     modalBulkQuestionForm.classList.remove('hidden');
   }
+
+  ['bulkInputSubject', 'bulkInputClassLevel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.weightSyncBound !== '1') {
+      el.dataset.weightSyncBound = '1';
+      el.addEventListener('change', () => {
+        if (bulkModalActionMode !== 'create') return;
+        const s = document.getElementById('bulkInputSubject')?.value || '';
+        const c = document.getElementById('bulkInputClassLevel')?.value || 'ALL';
+        const recW = getRecommendedWeightForScope(s, c, 25);
+        const wInp = document.getElementById('bulkDefaultWeight');
+        const prevW = parseInt(wInp?.value, 10) || 25;
+        if (wInp) wInp.value = String(recW);
+        let changed = false;
+        bulkRowsState.forEach(r => {
+          if (!String(r.question || '').trim() || Number(r.weight) === prevW) {
+            r.weight = recW;
+            changed = true;
+          }
+        });
+        if (changed) renderBulkQuestionRows();
+      });
+    }
+  });
 
   function mapQuestionToBulkEditRow(q) {
     const optsMap = {};

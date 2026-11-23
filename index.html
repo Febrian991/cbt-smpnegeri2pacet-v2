@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.71">
+  <link rel="stylesheet" href="css/styles.css?v=3.77">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -922,6 +922,7 @@
             <div class="p-2.5 rounded-2xl bg-indigo-50 border border-indigo-200">
               <div class="text-[10px] font-bold text-indigo-700 uppercase">Nilai Akhir</div>
               <div id="consultScoreVal" class="text-lg font-black text-indigo-900 mt-0.5">0</div>
+              <div id="consultScorePoints" class="hidden text-[10px] font-bold text-indigo-700/80 mt-0.5">-</div>
             </div>
             <div class="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200">
               <div class="text-[10px] font-bold text-emerald-700 uppercase">Benar</div>
@@ -3541,8 +3542,8 @@
   <script src="js/default-students.js?v=3.58"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
   <script src="js/exam-engine.js?v=3.70"></script>
-  <script src="js/admin.js?v=3.75"></script>
-  <script src="js/app.js?v=3.75"></script>
+  <script src="js/admin.js?v=3.77"></script>
+  <script src="js/app.js?v=3.77"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

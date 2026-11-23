@@ -1196,41 +1196,6 @@ class CBTAdmin {
     return { success: true, count: updatedRows.length, weight: w };
   }
 
-  rebalanceQuestionsWeightTo100(questionIds = []) {
-    const idList = (Array.isArray(questionIds) ? questionIds : []).map(String);
-    if (idList.length === 0) return { success: false, count: 0 };
-    const cur = this.getCurrentTeacher();
-    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
-
-    const editableIds = window.examEngine.questions
-      .filter(q => q && idList.includes(String(q.id)) && (isAdmin || !cur || this._isQuestionOwnedByTeacher(q, cur)))
-      .map(q => String(q.id));
-    if (editableIds.length === 0) return { success: false, count: 0 };
-
-    const n = editableIds.length;
-    const baseWeight = Math.floor(100 / n);
-    const remainder = 100 - (baseWeight * n);
-    const weightById = new Map();
-    editableIds.forEach((id, idx) => {
-      weightById.set(id, baseWeight + (idx < remainder ? 1 : 0));
-    });
-
-    const nowIso = new Date().toISOString();
-    const updatedRows = [];
-    const nextList = [...window.examEngine.questions].map(q => {
-      if (!q || !weightById.has(String(q.id))) return q;
-      const u = { ...q, weight: weightById.get(String(q.id)), updatedAt: nowIso };
-      updatedRows.push(u);
-      return u;
-    });
-
-    window.examEngine.saveQuestions(nextList, true);
-    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.upsertQuestionRows === 'function') {
-      window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: nextList });
-    }
-    return { success: true, count: updatedRows.length, baseWeight };
-  }
-
   updateQuestionsBatch(questionUpdates = []) {
     if (!Array.isArray(questionUpdates) || questionUpdates.length === 0) {
       return { success: false, count: 0, skippedCount: 0, message: 'Tidak ada data pembaruan soal.' };
@@ -1662,10 +1627,20 @@ class CBTAdmin {
           const assignedId = nextId;
           usedIds.add(String(assignedId));
           nextId += 1;
+          const itemSub = item.subject ? String(item.subject).trim() : fallbackSub;
+          const matchedSubjQ = existing.find(eq => {
+            const es = String(eq?.subject || '').trim();
+            if (!es) return false;
+            return (window.examEngine && typeof window.examEngine.matchesSubject === 'function')
+              ? window.examEngine.matchesSubject(es, itemSub)
+              : es.toLowerCase() === itemSub.toLowerCase();
+          });
+          const fallbackWeight = matchedSubjQ ? (parseInt(matchedSubjQ.weight, 10) || 25) : 25;
           return {
             ...item,
             id: assignedId,
-            subject: item.subject ? String(item.subject).trim() : fallbackSub,
+            weight: Math.max(1, parseInt(item.weight, 10) || fallbackWeight),
+            subject: itemSub,
             classLevel: item.classLevel ? String(item.classLevel).trim() : fallbackCls,
             createdBy: item.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
             createdById: item.createdById || (cur ? cur.id : "admin"),
@@ -1967,6 +1942,13 @@ class CBTAdmin {
     return { success: true };
   }
 
+  formatResultPointsDisplay(resultRecord) {
+    const maxPts = Number(resultRecord?.maxPossiblePoints || 0);
+    if (!Number.isFinite(maxPts) || maxPts <= 0) return '-';
+    const earnedPts = Number(resultRecord?.totalEarnedPoints ?? 0);
+    return `${earnedPts.toLocaleString('id-ID')} / ${maxPts.toLocaleString('id-ID')}`;
+  }
+
   // ===================== 1. EXPORT FORMAT EXCEL (.xlsx) =====================
   exportResultsExcel(subjectFilter = null, classFilter = null) {
     const results = this.getAllResultsSorted(subjectFilter, classFilter);
@@ -1997,7 +1979,7 @@ class CBTAdmin {
         [analytics.totalStudents, analytics.averageScore, analytics.highestScore, analytics.highestStudent, analytics.lowestScore, analytics.lowestStudent, `${analytics.passRatePercentage}%`],
         [""],
         ["DAFTAR PERINGKAT & EVALUASI JAWABAN SISWA:"],
-        ["Rank", "Nama Siswa", "NISN", "Kelas", "Nilai Akhir", "Status Remedial", "Jawaban Siswa (Benar & Salah per Nomor)", "Waktu Selesai", "B / S / K", "Keterangan Curang"]
+        ["Rank", "Nama Siswa", "NISN", "Kelas", "Nilai Akhir", "Poin Bobot", "Status Remedial", "Jawaban Siswa (Benar & Salah per Nomor)", "Waktu Selesai", "B / S / K", "Keterangan Curang"]
       ];
 
       results.forEach((r, idx) => {
@@ -2012,6 +1994,7 @@ class CBTAdmin {
           r.student?.nisn || '-',
           r.student?.class || 'Umum',
           r.finalScore,
+          this.formatResultPointsDisplay(r),
           remedialLabel,
           this.formatAnswersPlainText(r),
           r.completedAt,
@@ -2025,7 +2008,7 @@ class CBTAdmin {
       aoaData.push([this.getPrintStampText()]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoaData);
-      ws['!merges'] = [{ s: { r: footerRowIdx, c: 0 }, e: { r: footerRowIdx, c: 9 } }];
+      ws['!merges'] = [{ s: { r: footerRowIdx, c: 0 }, e: { r: footerRowIdx, c: 10 } }];
 
       ws['!cols'] = [
         { wch: 7 },   // Rank
@@ -2033,6 +2016,7 @@ class CBTAdmin {
         { wch: 16 },  // NISN
         { wch: 10 },  // Kelas
         { wch: 12 },  // Nilai
+        { wch: 15 },  // Poin Bobot
         { wch: 16 },  // Status Remedial
         { wch: 55 },  // Jawaban Siswa per nomor
         { wch: 20 },  // Waktu Selesai
@@ -2056,7 +2040,7 @@ class CBTAdmin {
         <h2>LAPORAN REKAPITULASI HASIL UJIAN SEKOLAH (CBT)</h2>
         <table border="1">
           <tr style="background:#f1f5f9;font-weight:bold;">
-            <th>Rank</th><th>Nama Siswa</th><th>NISN</th><th>Kelas</th><th>Nilai Akhir</th><th>Status Remedial</th><th>Jawaban Siswa</th><th>Waktu Selesai</th><th>B/S/K</th><th>Keterangan Curang</th>
+            <th>Rank</th><th>Nama Siswa</th><th>NISN</th><th>Kelas</th><th>Nilai Akhir</th><th>Poin Bobot</th><th>Status Remedial</th><th>Jawaban Siswa</th><th>Waktu Selesai</th><th>B/S/K</th><th>Keterangan Curang</th>
           </tr>
           ${results.map((r, i) => `
             <tr>
@@ -2065,6 +2049,7 @@ class CBTAdmin {
               <td>'${r.student?.nisn || '-'}</td>
               <td>${r.student?.class || '-'}</td>
               <td><b>${r.finalScore}</b></td>
+              <td>${this.formatResultPointsDisplay(r)}</td>
               <td><b>${this.getRemedialStatusLabel(r.finalScore)}</b></td>
               <td>${this.formatAnswersPlainText(r)}</td>
               <td>${r.completedAt}</td>
@@ -2319,6 +2304,10 @@ class CBTAdmin {
         : '<span style="color:#64748b; font-size:9px;">-</span>';
 
       const isRemedial = Number(r.finalScore || 0) < 75;
+      const pointsText = this.formatResultPointsDisplay(r);
+      const pointsSubHtml = pointsText !== '-'
+        ? `<div style="font-size:7.5px; font-weight:600; color:#475569; margin-top:1px; white-space:nowrap;">(${esc(pointsText)})</div>`
+        : '';
       const rowBg = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       return `
         <tr style="background:${rowBg}; color:#0f172a; border-bottom:1px solid #cbd5e1; font-size:9.5px; break-inside:avoid; page-break-inside:avoid;">
@@ -2326,7 +2315,7 @@ class CBTAdmin {
           <td style="padding:4px 5px; border:1px solid #cbd5e1; font-weight:700; color:#0f172a;">${esc(r.student?.name || '-')}</td>
           <td style="padding:4px 5px; border:1px solid #cbd5e1; font-family:monospace; color:#0f172a;">${esc(r.student?.nisn || '-')}</td>
           <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${esc(r.student?.class || '-')}</td>
-          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:11.5px; color:${isRemedial ? '#dc2626' : '#15803d'};">${esc(r.finalScore)}</td>
+          <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:900; font-size:11.5px; color:${isRemedial ? '#dc2626' : '#15803d'};">${esc(r.finalScore)}${pointsSubHtml}</td>
           <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; font-weight:800; font-size:9.5px; color:${isRemedial ? '#dc2626' : '#15803d'}; white-space:nowrap;">${isRemedial ? 'Remedial' : 'Tidak Remedial'}</td>
           <td style="padding:4px 5px; border:1px solid #cbd5e1; line-height:1.35; color:#0f172a;">${ansHtml}</td>
           <td style="padding:4px 4px; border:1px solid #cbd5e1; text-align:center; color:#0f172a;">${esc(r.completedAt || '-')}</td>
@@ -3438,12 +3427,12 @@ class CBTAdmin {
 
     if (isPrint) {
       const theadHtml = headers.some(h => String(h || '').trim() !== '')
-        ? `<thead class="cbt-rich-table-print"><tr>${padRow(headers).map(h => `<th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; font-weight:bold; text-align:left; background:#f1f5f9;">${this.escapePrintHtml(h)}</th>`).join('')}</tr></thead>`
+        ? `<thead class="cbt-rich-table-print"><tr>${padRow(headers).map(h => `<th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; font-weight:bold; text-align:left; background:#ffffff; background-color:#ffffff; color:#000000;">${this.escapePrintHtml(h)}</th>`).join('')}</tr></thead>`
         : '';
-      const tbodyHtml = rows.map(r => `<tr>${padRow(r).map(c => `<td style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; line-height:1.3; vertical-align:top; background:#ffffff;">${this.escapePrintHtml(c)}</td>`).join('')}</tr>`).join('');
+      const tbodyHtml = rows.map(r => `<tr>${padRow(r).map(c => `<td style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; line-height:1.3; vertical-align:top; background:#ffffff; background-color:#ffffff; color:#000000;">${this.escapePrintHtml(c)}</td>`).join('')}</tr>`).join('');
       return `
-        <div style="margin:4px 0 6px 0;">
-          <table class="cbt-question-table cbt-rich-table-print" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff;">
+        <div style="margin:4px 0 6px 0; background:#ffffff;">
+          <table class="cbt-question-table cbt-rich-table-print" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff; background-color:#ffffff;">
             ${theadHtml}
             <tbody>${tbodyHtml}</tbody>
           </table>
@@ -3770,12 +3759,12 @@ class CBTAdmin {
       `).join('');
       bodyHtml = `
         <div style="padding:3px 1px 5px 1px;">
-          <table class="cbt-question-table" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff;">
+          <table class="cbt-question-table" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff; background-color:#ffffff;">
             <thead class="cbt-tf-print-thead">
-              <tr style="background:#f1f5f9;">
-                <th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; text-align:left; background:#f1f5f9;">Pernyataan</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#f1f5f9;">B</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#f1f5f9;">S</th>
+              <tr style="background:#ffffff; background-color:#ffffff;">
+                <th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; text-align:left; background:#ffffff; background-color:#ffffff; color:#000000;">Pernyataan</th>
+                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">B</th>
+                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">S</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -4224,6 +4213,7 @@ class CBTAdmin {
     const filename = `Naskah_Soal_F4_${subSlug}${clsSlug}_${Date.now()}.pdf`;
 
     try {
+      try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
       window.scrollTo(0, 0);
       await this.preloadPaperImages(questionsList, options);
       const tempWrapper = document.createElement('div');
@@ -4252,6 +4242,18 @@ class CBTAdmin {
               clonedDoc.body.style.background = '#ffffff';
               clonedDoc.body.style.backgroundImage = 'none';
             }
+            try { clonedDoc.getSelection && clonedDoc.getSelection().removeAllRanges(); } catch (e) {}
+            const resetStyle = clonedDoc.createElement('style');
+            resetStyle.textContent = `
+              .naskah-paper-sheet, .naskah-paper-sheet div, .naskah-paper-sheet p, .naskah-paper-sheet span,
+              .naskah-paper-sheet table, .naskah-paper-sheet thead, .naskah-paper-sheet tbody,
+              .naskah-paper-sheet tr, .naskah-paper-sheet td, .naskah-paper-sheet th {
+                background: transparent !important;
+                background-color: transparent !important;
+              }
+              .naskah-paper-sheet { background: #ffffff !important; background-color: #ffffff !important; }
+            `;
+            if (clonedDoc.head) clonedDoc.head.appendChild(resetStyle);
             const container = clonedDoc.querySelector('.html2pdf__container');
             if (container) {
               container.style.left = '0px';
@@ -4329,11 +4331,12 @@ class CBTAdmin {
     }
 
     try {
+      try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
       const layoutCols = parseInt(options.layoutCols, 10) === 1 ? 1 : 2;
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = this.generateExamPaperHtml(questionsList, options);
 
-      // Bersihkan gaya khusus preview layar agar halaman Word F4 tidak double-margin/overflow
+      // Bersihkan gaya khusus preview layar agar halaman Word F4 tidak double-margin/overflow/blok warna
       const sheets = Array.from(tempDiv.querySelectorAll('.naskah-paper-sheet'));
       sheets.forEach((sheet, idx) => {
         sheet.style.width = '100%';
@@ -4343,9 +4346,24 @@ class CBTAdmin {
         sheet.style.boxShadow = 'none';
         sheet.style.minHeight = 'auto';
         sheet.style.background = '#ffffff';
+        sheet.style.backgroundColor = '#ffffff';
         if (idx > 0) {
           sheet.style.pageBreakBefore = 'always';
           sheet.style.breakBefore = 'page';
+        }
+      });
+
+      // Pastikan seluruh elemen teks/tabel di dokumen Word bersih dari latar belakang biru/shading
+      tempDiv.querySelectorAll('div, p, span, table, thead, tbody, tr, th, td, mark').forEach(el => {
+        if (el.tagName === 'MARK') {
+          el.style.background = 'none';
+          el.style.backgroundColor = 'transparent';
+          el.style.color = '#000000';
+        }
+        const bg = (el.style && (el.style.backgroundColor || el.style.background)) || '';
+        if (bg && bg !== 'transparent' && bg !== 'none' && bg !== '#ffffff' && bg !== 'rgb(255, 255, 255)') {
+          el.style.background = '#ffffff';
+          el.style.backgroundColor = '#ffffff';
         }
       });
 
@@ -4457,7 +4475,14 @@ class CBTAdmin {
               mso-paper-source: 0;
             }
             div.Section1 { page: Section1; }
-            body { font-family: "Times New Roman", Times, serif; color: #000000; margin: 0; padding: 0; }
+            html, body { font-family: "Times New Roman", Times, serif; color: #000000; background: #ffffff !important; background-color: #ffffff !important; margin: 0; padding: 0; }
+            .naskah-paper-sheet, .naskah-paper-sheet div, .naskah-paper-sheet p, .naskah-paper-sheet span, .naskah-paper-sheet table, .naskah-paper-sheet thead, .naskah-paper-sheet tbody, .naskah-paper-sheet tr, .naskah-paper-sheet th, .naskah-paper-sheet td {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+              mso-highlight: none !important;
+              mso-shading: white;
+            }
+            .naskah-paper-sheet a { color: #000000 !important; text-decoration: none !important; }
             .naskah-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
             .naskah-page-break { page-break-before: always; break-before: page; }
             .cbt-print-footer-note { color: #1d4ed8 !important; font-style: italic !important; font-size: 8pt !important; text-align: center !important; white-space: nowrap !important; }
@@ -4500,6 +4525,7 @@ class CBTAdmin {
       window.print();
       return;
     }
+    try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
     printArea.innerHTML = this.generateExamPaperHtml(questionsList, options);
     printArea.classList.remove('hidden');
     document.body.classList.add('printing-questions');
@@ -5652,6 +5678,7 @@ class CBTAdmin {
     const filename = `Daftar_Hadir_${roomSlug}_${Date.now()}.pdf`;
 
     try {
+      try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
       window.scrollTo(0, 0);
       const tempWrapper = document.createElement('div');
       tempWrapper.innerHTML = this.buildAttendanceSheetHtml(studentsList, options);
@@ -5678,6 +5705,18 @@ class CBTAdmin {
               clonedDoc.body.style.background = '#ffffff';
               clonedDoc.body.style.backgroundImage = 'none';
             }
+            try { clonedDoc.getSelection && clonedDoc.getSelection().removeAllRanges(); } catch (e) {}
+            const resetStyle = clonedDoc.createElement('style');
+            resetStyle.textContent = `
+              .attendance-paper-sheet, .attendance-paper-sheet div, .attendance-paper-sheet p, .attendance-paper-sheet span,
+              .attendance-paper-sheet table, .attendance-paper-sheet thead, .attendance-paper-sheet tbody,
+              .attendance-paper-sheet tr, .attendance-paper-sheet td, .attendance-paper-sheet th {
+                background: transparent !important;
+                background-color: transparent !important;
+              }
+              .attendance-paper-sheet { background: #ffffff !important; background-color: #ffffff !important; }
+            `;
+            if (clonedDoc.head) clonedDoc.head.appendChild(resetStyle);
             const container = clonedDoc.querySelector('.html2pdf__container');
             if (container) {
               container.style.left = '0px';
@@ -5810,7 +5849,13 @@ class CBTAdmin {
               margin: 0.9cm 1.2cm 0.9cm 1.2cm;
             }
             div.Section1 { page: Section1; }
-            body { font-family: Arial, Helvetica, sans-serif; color: #000000; margin: 0; padding: 0; }
+            body { font-family: Arial, Helvetica, sans-serif; color: #000000; background: #ffffff !important; margin: 0; padding: 0; }
+            .attendance-paper-sheet, .attendance-paper-sheet div, .attendance-paper-sheet p, .attendance-paper-sheet span, .attendance-paper-sheet table, .attendance-paper-sheet thead, .attendance-paper-sheet tbody, .attendance-paper-sheet tr, .attendance-paper-sheet th, .attendance-paper-sheet td {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+              mso-highlight: none !important;
+              mso-shading: white;
+            }
             .attendance-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
             .attendance-page-break { page-break-before: always; break-before: page; }
           </style>

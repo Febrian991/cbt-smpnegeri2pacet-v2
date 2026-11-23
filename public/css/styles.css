@@ -153,16 +153,16 @@ body.exam-locked img {
    COOL SLATE & BIRU SEKOLAH LIGHT MODE (Anti-Glare Comfort)
    ========================================================================== */
 @media screen {
-  html:not(.dark) .bg-white:not([class*="bg-gradient-"]):not(.naskah-paper-sheet) {
+  html:not(.dark) .bg-white:not([class*="bg-gradient-"]):not(.naskah-paper-sheet):not(.attendance-paper-sheet):not(.cbt-light-paper) {
     background-color: #ecf1f8 !important;
   }
 
-  html:not(.dark) .bg-slate-50:not([class*="bg-gradient-"]):not(.naskah-paper-sheet) {
+  html:not(.dark) .bg-slate-50:not([class*="bg-gradient-"]):not(.naskah-paper-sheet):not(.attendance-paper-sheet):not(.cbt-light-paper) {
     background-color: #dce5f2 !important;
   }
 
-  html:not(.dark) .border-slate-200:not(.naskah-paper-sheet),
-  html:not(.dark) .border-slate-100:not(.naskah-paper-sheet) {
+  html:not(.dark) .border-slate-200:not(.naskah-paper-sheet):not(.attendance-paper-sheet):not(.cbt-light-paper),
+  html:not(.dark) .border-slate-100:not(.naskah-paper-sheet):not(.attendance-paper-sheet):not(.cbt-light-paper) {
     border-color: #b7c6db !important;
   }
 
@@ -178,24 +178,42 @@ body.exam-locked img {
   }
 }
 
-/* Pastikan naskah soal PDF/Print & tabel soal bebas blok seleksi/zebra */
+/* Pastikan naskah soal & daftar hadir PDF/Print/Pratinjau bebas blok biru/seleksi/zebra */
 .naskah-paper-sheet,
-.naskah-paper-sheet * {
+.naskah-paper-sheet *,
+.attendance-paper-sheet,
+.attendance-paper-sheet * {
   -webkit-user-select: text;
   user-select: text;
 }
+.naskah-paper-sheet *::selection,
+.attendance-paper-sheet *::selection {
+  background: #e2e8f0;
+  color: #000000;
+}
+.naskah-paper-sheet div,
+.naskah-paper-sheet p,
+.naskah-paper-sheet span,
 .naskah-paper-sheet table,
 .naskah-paper-sheet tbody,
 .naskah-paper-sheet thead,
 .naskah-paper-sheet tr,
-.naskah-paper-sheet td {
+.naskah-paper-sheet td,
+.naskah-paper-sheet th,
+.attendance-paper-sheet table,
+.attendance-paper-sheet tbody,
+.attendance-paper-sheet thead,
+.attendance-paper-sheet tr,
+.attendance-paper-sheet td,
+.attendance-paper-sheet th {
   background-color: transparent !important;
   background: transparent !important;
 }
 .naskah-paper-sheet .cbt-tf-print-thead th,
-.naskah-paper-sheet .cbt-rich-table-print thead th {
-  background-color: #f1f5f9 !important;
-  background: #f1f5f9 !important;
+.naskah-paper-sheet .cbt-rich-table-print thead th,
+.attendance-paper-sheet thead th {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
   color: #000000 !important;
 }
 
@@ -383,7 +401,7 @@ html.dark .cbt-wacana-card {
     color: #b8c3ec !important;
   }
 
-  html.dark tbody tr:nth-child(even) {
+  html.dark table:not(.naskah-clean-table):not(.cbt-light-paper):not(.cbt-question-table) tbody tr:nth-child(even) {
     background-color: rgba(139, 92, 246, 0.05);
   }
 
