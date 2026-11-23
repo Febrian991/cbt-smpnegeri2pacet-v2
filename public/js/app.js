@@ -5545,9 +5545,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const totalWeightEl = document.getElementById('questionTotalWeightBadge');
+    const totalWeightFormulaEl = document.getElementById('questionTotalWeightFormula');
     if (totalWeightEl) {
-      const sumWeight = questions.reduce((acc, q) => acc + (parseInt(q?.weight, 10) || 10), 0);
-      totalWeightEl.innerText = String(sumWeight);
+      const weights = questions.map(q => parseInt(q?.weight, 10) || 10);
+      const sumWeight = weights.reduce((acc, w) => acc + w, 0);
+      totalWeightEl.innerText = sumWeight.toLocaleString('id-ID');
+      if (totalWeightFormulaEl) {
+        if (questions.length === 0) {
+          totalWeightFormulaEl.innerText = '';
+        } else {
+          const allSame = weights.every(w => w === weights[0]);
+          totalWeightFormulaEl.innerText = allSame
+            ? `(${questions.length} soal × bobot ${weights[0]})`
+            : `(${questions.length} soal)`;
+        }
+      }
     }
 
     const btnClearTrials = document.getElementById('btnClearTrialQuestions');
@@ -6275,6 +6287,13 @@ document.addEventListener('DOMContentLoaded', () => {
     alert(`Berhasil mengubah Kategori ${res.count} soal menjadi "${catName}"!`);
   });
 
+  document.querySelectorAll('.btn-bar-weight-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wInp = document.getElementById('bulkWeightValueInput');
+      if (wInp) wInp.value = btn.getAttribute('data-bar-weight') || '25';
+    });
+  });
+
   const btnApplyBulkWeight = document.getElementById('btnApplyBulkWeight');
   if (btnApplyBulkWeight) {
     btnApplyBulkWeight.addEventListener('click', () => {
@@ -6283,32 +6302,15 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Tidak ada soal yang tampil atau dicentang.');
         return;
       }
-      const val = parseInt(document.getElementById('bulkWeightValueInput')?.value, 10) || 25;
+      const val = Math.max(1, parseInt(document.getElementById('bulkWeightValueInput')?.value, 10) || 25);
+      const totalPts = target.questions.length * val;
       const scopeText = target.isExplicitSelection
         ? `${target.questions.length} soal yang dicentang`
         : `seluruh ${target.questions.length} soal yang sedang tampil`;
-      if (!confirm(`Terapkan bobot nilai ${val} poin ke ${scopeText}?`)) return;
+      if (!confirm(`Terapkan bobot nilai ${val} poin per soal ke ${scopeText}?\n\nTotal bobot: ${target.questions.length} soal × ${val} = ${totalPts.toLocaleString('id-ID')} poin.`)) return;
       const res = window.cbtAdmin.updateQuestionsWeightBatch(target.questions.map(q => q.id), val);
       renderAdminQuestionList();
-      alert(`Berhasil mengubah bobot ${res.count} soal menjadi ${res.weight} poin per soal.`);
-    });
-  }
-
-  const btnRebalanceWeight100 = document.getElementById('btnRebalanceWeight100');
-  if (btnRebalanceWeight100) {
-    btnRebalanceWeight100.addEventListener('click', () => {
-      const target = getTargetQuestionsForBulkAction();
-      if (target.questions.length === 0) {
-        alert('Tidak ada soal yang tampil atau dicentang.');
-        return;
-      }
-      const scopeText = target.isExplicitSelection
-        ? `${target.questions.length} soal yang dicentang`
-        : `${target.questions.length} soal yang tampil`;
-      if (!confirm(`Bagi rata bobot ${scopeText} agar jumlah totalnya tepat 100 poin?`)) return;
-      const res = window.cbtAdmin.rebalanceQuestionsWeightTo100(target.questions.map(q => q.id));
-      renderAdminQuestionList();
-      alert(`Berhasil membagi rata bobot ${res.count} soal (sekitar ${res.baseWeight} poin/soal, total = 100 poin).`);
+      alert(`Berhasil mengubah bobot ${res.count} soal menjadi ${res.weight} poin/soal (Total = ${(res.count * res.weight).toLocaleString('id-ID')} poin).`);
     });
   }
 
@@ -6913,9 +6915,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateBulkTotalWeightInfo() {
     const infoEl = document.getElementById('bulkTotalWeightInfo');
+    const formulaEl = document.getElementById('bulkTotalWeightFormula');
     if (!infoEl) return;
-    const sum = bulkRowsState.reduce((acc, r) => acc + (parseInt(r.weight, 10) || 10), 0);
-    infoEl.innerText = String(sum);
+    const weights = bulkRowsState.map(r => parseInt(r.weight, 10) || 10);
+    const sum = weights.reduce((acc, w) => acc + w, 0);
+    infoEl.innerText = sum.toLocaleString('id-ID');
+    if (formulaEl) {
+      if (bulkRowsState.length === 0) {
+        formulaEl.innerText = '';
+      } else {
+        const allSame = weights.every(w => w === weights[0]);
+        formulaEl.innerText = allSame
+          ? `(${bulkRowsState.length} soal × bobot ${weights[0]})`
+          : `(${bulkRowsState.length} soal)`;
+      }
+    }
   }
 
   function syncBulkModeUI() {
@@ -7284,6 +7298,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  document.querySelectorAll('.btn-bulk-weight-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetWeight = Math.max(1, parseInt(btn.getAttribute('data-bulk-weight'), 10) || 25);
+      const inp = document.getElementById('bulkDefaultWeight');
+      if (inp) inp.value = String(targetWeight);
+      bulkRowsState.forEach(r => { r.weight = targetWeight; });
+      renderBulkQuestionRows();
+    });
+  });
+
   document.getElementById('btnBulkSyncCountAndWeight')?.addEventListener('click', () => {
     const targetCount = parseInt(document.getElementById('bulkInputCount')?.value, 10) || 5;
     const targetWeight = Math.max(1, parseInt(document.getElementById('bulkDefaultWeight')?.value, 10) || 25);
@@ -7292,17 +7316,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (bulkRowsState.length > targetCount) bulkRowsState = bulkRowsState.slice(0, targetCount);
     }
     bulkRowsState.forEach(r => { r.weight = targetWeight; });
-    renderBulkQuestionRows();
-  });
-
-  document.getElementById('btnBulkAuto100')?.addEventListener('click', () => {
-    const n = bulkRowsState.length;
-    if (n === 0) return;
-    const base = Math.floor(100 / n);
-    const rem = 100 - (base * n);
-    bulkRowsState.forEach((r, i) => {
-      r.weight = base + (i < rem ? 1 : 0);
-    });
     renderBulkQuestionRows();
   });
 
