@@ -1245,7 +1245,8 @@
               <div class="grid grid-cols-2 gap-2.5">
                 <div>
                   <label class="block font-bold text-slate-700 mb-1" for="schInputClass">Kelas / Tingkat</label>
-                  <input type="text" id="schInputClass" required placeholder="Contoh: Kelas 7" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                  <input type="text" id="schInputClass" list="scheduleClassList" required placeholder="Contoh: Kelas 7" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+                  <datalist id="scheduleClassList"></datalist>
                 </div>
                 <div>
                   <label class="block font-bold text-slate-700 mb-1" for="schInputTime">Jam Pelaksanaan</label>
@@ -3199,53 +3200,78 @@
         <button id="btnCloseQuestionsPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
       </div>
 
-      <!-- Baris Pengaturan Naskah Sebelum Download -->
-      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50/80 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
-        <div class="col-span-2">
-          <label class="block font-bold text-slate-600 mb-1" for="nqExamTitle">Judul Naskah</label>
-          <input type="text" id="nqExamTitle" value="ASESMEN SUMATIF AKHIR SEMESTER (ASAS)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-bold text-slate-600 mb-1" for="nqSemester">Semester</label>
-          <input type="text" id="nqSemester" value="SEMESTER GANJIL" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-bold text-slate-600 mb-1" for="nqAcademicYear">Tahun Pelajaran</label>
-          <input type="text" id="nqAcademicYear" value="2025/2026" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-bold text-slate-600 mb-1" for="nqDuration">Alokasi Waktu</label>
-          <input type="text" id="nqDuration" value="80 Menit" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-bold text-slate-600 mb-1" for="nqLayoutCols">Tata Letak</label>
-          <select id="nqLayoutCols" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="2">2 Kolom (Template)</option>
-            <option value="1">1 Kolom (Gambar Besar)</option>
-          </select>
-        </div>
-        <div class="col-span-2 sm:col-span-2">
-          <label class="block font-bold text-slate-600 mb-1" for="nqDateText">Hari / Tanggal (Opsional)</label>
-          <input type="text" id="nqDateText" placeholder="Kosongkan untuk titik-titik (........)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div class="col-span-2 sm:col-span-2">
-          <label class="block font-bold text-slate-600 mb-1">Kop Surat Resmi (Opsional)</label>
-          <input type="file" id="nqKopImageFile" accept="image/*" class="hidden">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button type="button" id="btnUploadNqKopImage" class="px-2.5 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs cursor-pointer transition flex items-center gap-1 shadow-xs">
-              <span>🖼️ Upload Kop Surat</span>
-            </button>
-            <button type="button" id="btnRemoveNqKopImage" class="hidden px-2 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer transition" title="Hapus gambar kop surat & kembali ke kop otomatis">
-              ✕ Hapus
-            </button>
-            <span id="nqKopImageStatus" class="text-[11px] font-semibold text-slate-500 truncate max-w-[150px]">Kop Otomatis Sekolah</span>
+      <!-- Baris Pemilihan Paket Mapel per Kelas & Pengaturan Naskah Sebelum Download -->
+      <div class="border-b border-slate-200 bg-slate-50/90 max-h-[42vh] overflow-y-auto">
+        <div class="px-4 pt-3 pb-2.5 border-b border-emerald-200/70 bg-emerald-50/60 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 text-xs">
+          <div class="lg:col-span-5">
+            <label class="block font-bold text-emerald-900 mb-1" for="nqSubjectClassCombo">📦 Pilih Paket Mapel per Kelas yang Diunduh</label>
+            <select id="nqSubjectClassCombo" class="w-full px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"></select>
+          </div>
+          <div class="lg:col-span-3">
+            <label class="block font-bold text-slate-600 mb-1" for="nqSubjectSelect">📚 Mata Pelajaran</label>
+            <select id="nqSubjectSelect" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></select>
+          </div>
+          <div class="lg:col-span-2">
+            <label class="block font-bold text-slate-600 mb-1" for="nqClassSelect">🏫 Kelas / Tingkat</label>
+            <select id="nqClassSelect" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"></select>
+          </div>
+          <div class="lg:col-span-2">
+            <label class="block font-bold text-slate-600 mb-1" for="nqCategorySelect">🏷️ Kategori Soal</label>
+            <select id="nqCategorySelect" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-violet-700 outline-none focus:ring-2 focus:ring-violet-500">
+              <option value="ALL">Semua Kategori</option>
+              <option value="exam">📝 Soal Asli Saja</option>
+              <option value="trial">🧪 Simulasi Saja</option>
+            </select>
           </div>
         </div>
-        <div class="col-span-2 sm:col-span-2 flex items-end pb-1">
-          <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
-            <input type="checkbox" id="nqIncludeAnswerKey" class="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer">
-            <span>Sertakan Kunci Jawaban</span>
-          </label>
+
+        <div class="px-4 py-2.5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
+          <div class="col-span-2">
+            <label class="block font-bold text-slate-600 mb-1" for="nqExamTitle">Judul Naskah</label>
+            <input type="text" id="nqExamTitle" value="ASESMEN SUMATIF AKHIR SEMESTER (ASAS)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="nqSemester">Semester</label>
+            <input type="text" id="nqSemester" value="SEMESTER GANJIL" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="nqAcademicYear">Tahun Pelajaran</label>
+            <input type="text" id="nqAcademicYear" value="2025/2026" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="nqDuration">Alokasi Waktu</label>
+            <input type="text" id="nqDuration" value="80 Menit" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1" for="nqLayoutCols">Tata Letak</label>
+            <select id="nqLayoutCols" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="2">2 Kolom (Template)</option>
+              <option value="1">1 Kolom (Gambar Besar)</option>
+            </select>
+          </div>
+          <div class="col-span-2 sm:col-span-2">
+            <label class="block font-bold text-slate-600 mb-1" for="nqDateText">Hari / Tanggal (Opsional)</label>
+            <input type="text" id="nqDateText" placeholder="Kosongkan untuk titik-titik (........)" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="col-span-2 sm:col-span-2">
+            <label class="block font-bold text-slate-600 mb-1">Kop Surat Resmi (Opsional)</label>
+            <input type="file" id="nqKopImageFile" accept="image/*" class="hidden">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" id="btnUploadNqKopImage" class="px-2.5 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs cursor-pointer transition flex items-center gap-1 shadow-xs">
+                <span>🖼️ Upload Kop Surat</span>
+              </button>
+              <button type="button" id="btnRemoveNqKopImage" class="hidden px-2 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer transition" title="Hapus gambar kop surat & kembali ke kop otomatis">
+                ✕ Hapus
+              </button>
+              <span id="nqKopImageStatus" class="text-[11px] font-semibold text-slate-500 truncate max-w-[150px]">Kop Otomatis Sekolah</span>
+            </div>
+          </div>
+          <div class="col-span-2 sm:col-span-2 flex items-end pb-1">
+            <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+              <input type="checkbox" id="nqIncludeAnswerKey" class="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer">
+              <span>Sertakan Kunci Jawaban</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -3502,8 +3528,8 @@
   <script src="js/default-students.js?v=3.58"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
   <script src="js/exam-engine.js?v=3.70"></script>
-  <script src="js/admin.js?v=3.73"></script>
-  <script src="js/app.js?v=3.73"></script>
+  <script src="js/admin.js?v=3.74"></script>
+  <script src="js/app.js?v=3.74"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

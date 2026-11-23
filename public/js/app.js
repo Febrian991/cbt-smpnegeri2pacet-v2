@@ -2354,14 +2354,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const roomPickerWrap = document.getElementById('pengawasRoomPickerWrap');
     const roomPickerSelect = document.getElementById('pengawasRoomPickerSelect');
+    const roomPickerHint = document.getElementById('pengawasRoomPickerHint');
+    const allowDayRoomPick = isPengawas && (
+      pengawasScope.mode === 'flexible' ||
+      (pengawasScope.mode === 'weekly' && !(pengawasScope.weeklySchedule && pengawasScope.weeklySchedule[pengawasScope.activeDay]))
+    );
     if (roomPickerWrap && roomPickerSelect) {
-      if (isPengawas && pengawasScope.mode === 'flexible') {
+      if (allowDayRoomPick) {
         const stuClasses = (window.studentManager && typeof window.studentManager.getAllClasses === 'function')
           ? window.studentManager.getAllClasses()
           : [];
         const roomChoices = stuClasses.length > 0 ? stuClasses : ['7A', '7B', '8A', '8B', '9A', '9B'];
         roomPickerSelect.innerHTML = '<option value="">-- Pilih Ruang / Kelas Ujian --</option>' +
           roomChoices.map(c => `<option value="${escapeHtmlSafe(c)}">Ruang / Kelas ${escapeHtmlSafe(c)}</option>`).join('');
+        if (roomPickerHint) {
+          roomPickerHint.innerText = pengawasScope.mode === 'weekly'
+            ? `Hari ${pengawasScope.activeDay || 'ini'} belum diisi jadwal ruang tetap; silakan pilih ruang yang sedang Anda awasi hari ini.`
+            : 'Akun pengawas ini tidak dikunci 1 kelas, silakan pilih ruang yang sedang Anda awasi hari ini.';
+        }
         const currentPicked = pengawasScope.sessionSelectedRoom || '';
         if (currentPicked && Array.from(roomPickerSelect.options).some(o => o.value === currentPicked)) {
           roomPickerSelect.value = currentPicked;
@@ -3092,9 +3102,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function populateScheduleSubjectDatalist() {
     const dl = document.getElementById('scheduleSubjectList');
-    if (!dl || !window.cbtAdmin) return;
-    const subjects = window.cbtAdmin.getAllSubjects();
-    dl.innerHTML = subjects.map(s => `<option value="${s}">`).join('');
+    if (dl && window.cbtAdmin) {
+      const subjects = window.cbtAdmin.getAllSubjects();
+      dl.innerHTML = subjects.map(s => `<option value="${escapeHtmlSafe(s)}">`).join('');
+    }
+    const clsDl = document.getElementById('scheduleClassList');
+    if (clsDl) {
+      const stuClasses = (window.studentManager && typeof window.studentManager.getAllClasses === 'function')
+        ? window.studentManager.getAllClasses()
+        : [];
+      const presets = ['Semua Kelas', 'Kelas 7', 'Kelas 8', 'Kelas 9', ...stuClasses];
+      const uniquePresets = [...new Set(presets.filter(Boolean))];
+      clsDl.innerHTML = uniquePresets.map(c => `<option value="${escapeHtmlSafe(c)}">`).join('');
+    }
   }
 
   const schInputQuestionCategory = document.getElementById('schInputQuestionCategory');
@@ -7468,7 +7488,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnExportQuestions.addEventListener('click', () => {
       const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
       const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      window.cbtAdmin.exportQuestionsJSON(subjFilter, classFilter);
+      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+      window.cbtAdmin.exportQuestionsJSON(subjFilter, classFilter, catFilter);
     });
   }
 
@@ -7606,17 +7627,347 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDownloadQuestionsDoc = document.getElementById('btnDownloadQuestionsDoc');
   const btnExecuteDirectPrintQuestions = document.getElementById('btnExecuteDirectPrintQuestions');
 
+  const nqSubjectClassCombo = document.getElementById('nqSubjectClassCombo');
+  const nqSubjectSelect = document.getElementById('nqSubjectSelect');
+  const nqClassSelect = document.getElementById('nqClassSelect');
+  const nqCategorySelect = document.getElementById('nqCategorySelect');
+
+  function makeNqComboKey(subj, cls) {
+    return `${String(subj || 'ALL')}|||${String(cls || 'ALL')}`;
+  }
+
+  function parseNqComboKey(keyVal) {
+    const raw = String(keyVal || '');
+    const sepIdx = raw.indexOf('|||');
+    if (sepIdx === -1) return null;
+    return {
+      subject: raw.slice(0, sepIdx) || 'ALL',
+      classLevel: raw.slice(sepIdx + 3) || 'ALL'
+    };
+  }
+
+  function syncNqScheduleMeta() {
+    if (!window.cbtAdmin) return;
+    const subjVal = nqSubjectSelect ? nqSubjectSelect.value : 'ALL';
+    const clsVal = nqClassSelect ? nqClassSelect.value : 'ALL';
+    const examCfg = window.examEngine ? window.examEngine.config : {};
+    const durInput = document.getElementById('nqDuration');
+    const dateInput = document.getElementById('nqDateText');
+
+    const allSchedules = window.cbtAdmin.getAllSchedules() || [];
+    const matchingSchedule = allSchedules.find(s =>
+      subjVal !== 'ALL' &&
+      subjVal !== 'UMUM' &&
+      window.examEngine &&
+      window.examEngine.matchesSubject(s.subject, subjVal) &&
+      (clsVal === 'ALL' || window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', clsVal))
+    );
+
+    if (durInput) {
+      const mins = matchingSchedule ? (matchingSchedule.durationMinutes || 80) : (examCfg.durationMinutes || 80);
+      durInput.value = `${mins} Menit`;
+    }
+    if (dateInput) {
+      if (matchingSchedule && (matchingSchedule.day || matchingSchedule.dateFormatted || matchingSchedule.dateIso)) {
+        const dStr = matchingSchedule.dateFormatted || window.cbtAdmin.formatIndonesianDate(matchingSchedule.dateIso);
+        dateInput.value = [matchingSchedule.day, dStr].filter(Boolean).join(', ');
+      } else {
+        dateInput.value = '';
+      }
+    }
+  }
+
+  function populateNqDownloadSelectors(prefSubject = null, prefClass = null, prefCategory = null) {
+    if (!window.cbtAdmin) return [];
+    const cur = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = Boolean(cur && (cur.role === 'admin' || cur.id === 'admin'));
+    const teacherSubjects = window.cbtAdmin.getTeacherSubjectsList(cur);
+    const assignedClasses = (!isAdmin && cur && cur.classes)
+      ? window.cbtAdmin.parseTeacherClasses(cur.classes)
+      : [];
+    const allKnownSubjects = window.cbtAdmin.getAllSubjects() || [];
+    const studentClasses = window.studentManager ? window.studentManager.getAllClasses() : [];
+
+    if (nqCategorySelect && prefCategory !== null && prefCategory !== undefined) {
+      const catOpts = Array.from(nqCategorySelect.options).map(o => o.value);
+      nqCategorySelect.value = catOpts.includes(prefCategory) ? prefCategory : 'ALL';
+    }
+    const activeCat = nqCategorySelect ? (nqCategorySelect.value || 'ALL') : 'ALL';
+
+    const scopedAll = window.cbtAdmin.getQuestionsFiltered('ALL', 'ALL', activeCat);
+
+    // Kumpulkan daftar mata pelajaran terurut & ter-deduplikasi sesuai cakupan akun
+    const subjectNames = [];
+    const pushUniqueSubj = (name) => {
+      const clean = String(name || '').trim();
+      if (!clean || clean.toLowerCase() === 'umum') return;
+      const already = subjectNames.some(existing =>
+        existing.toLowerCase() === clean.toLowerCase() ||
+        (window.examEngine && window.examEngine.matchesSubject(existing, clean))
+      );
+      if (!already) subjectNames.push(clean);
+    };
+
+    allKnownSubjects.forEach(s => {
+      if (window.cbtAdmin.getQuestionsFiltered(s, 'ALL', activeCat).length > 0) {
+        pushUniqueSubj(s);
+      }
+    });
+    scopedAll.forEach(q => {
+      if (q && q.subject) pushUniqueSubj(q.subject);
+    });
+
+    const umumCount = isAdmin ? window.cbtAdmin.getQuestionsFiltered('UMUM', 'ALL', activeCat).length : 0;
+
+    // Susun daftar paket "Mapel per Kelas" (mis. Matematika — Kelas 7, Matematika — Kelas 8, dst.)
+    const packages = [];
+    const standardGrades = ['Kelas 7', 'Kelas 8', 'Kelas 9'];
+    const allSchedules = window.cbtAdmin.getAllSchedules() || [];
+
+    subjectNames.forEach(subj => {
+      const subjAllCount = window.cbtAdmin.getQuestionsFiltered(subj, 'ALL', activeCat).length;
+      if (subjAllCount === 0) return;
+
+      const candidateClasses = [];
+      const addCandidateClass = (cls) => {
+        const clean = String(cls || '').trim();
+        if (!clean || clean.toUpperCase() === 'ALL' || /^SEMUA(?:\s+KELAS)?$/i.test(clean)) return;
+        if (!candidateClasses.some(c => c.toLowerCase() === clean.toLowerCase())) {
+          candidateClasses.push(clean);
+        }
+      };
+
+      standardGrades.forEach(g => addCandidateClass(g));
+
+      // Cek apakah ada kelas spesifik di soal atau jadwal untuk mapel ini
+      const subjQuestions = window.cbtAdmin.getQuestionsFiltered(subj, 'ALL', activeCat);
+      let hasGenericAllClassQ = false;
+      subjQuestions.forEach(q => {
+        const rawCls = String(q.classLevel || 'Semua Kelas').trim();
+        if (!rawCls || /^SEMUA/i.test(rawCls)) {
+          hasGenericAllClassQ = true;
+          return;
+        }
+        const normStd = standardGrades.find(g => g.toLowerCase() === rawCls.toLowerCase());
+        if (!normStd && !/^(7|8|9)$/.test(rawCls)) {
+          // Hanya tambahkan token kelas spesifik jika belum tercakup atau merupakan kelas rombel/khusus
+          rawCls.split(/[,;/]+/).forEach(part => {
+            const p = part.trim();
+            if (p && !/^Kelas\s*[789]$/i.test(p) && !/^[789]$/.test(p)) {
+              addCandidateClass(p);
+            }
+          });
+        }
+      });
+
+      allSchedules.forEach(sch => {
+        if (window.examEngine && window.examEngine.matchesSubject(sch.subject, subj)) {
+          const sCls = String(sch.classLevel || '').trim();
+          if (sCls && !/^SEMUA/i.test(sCls) && !/^Kelas\s*[789]$/i.test(sCls) && !/^[789]$/.test(sCls)) {
+            addCandidateClass(sCls);
+          }
+        }
+      });
+
+      const matchedTiersForSubj = [];
+      standardGrades.forEach(g => {
+        const cnt = window.cbtAdmin.getQuestionsFiltered(subj, g, activeCat).length;
+        if (cnt > 0) {
+          matchedTiersForSubj.push({ subject: subj, classLevel: g, count: cnt, isCustomClass: false });
+        }
+      });
+
+      // Tambahkan kelas non-standar (mis. X, 10A, atau 7A jika berbeda isinya dari Kelas 7 umum)
+      candidateClasses.filter(c => !standardGrades.includes(c)).forEach(customCls => {
+        const cnt = window.cbtAdmin.getQuestionsFiltered(subj, customCls, activeCat).length;
+        if (cnt > 0) {
+          const customLabel = /^Kelas\s+/i.test(customCls) ? customCls : `Kelas ${customCls}`;
+          matchedTiersForSubj.push({ subject: subj, classLevel: customCls, classLabel: customLabel, count: cnt, isCustomClass: true });
+        }
+      });
+
+      matchedTiersForSubj.forEach(item => packages.push(item));
+
+      if (hasGenericAllClassQ || matchedTiersForSubj.length !== 1) {
+        packages.push({
+          subject: subj,
+          classLevel: 'ALL',
+          classLabel: 'Semua Kelas',
+          count: subjAllCount,
+          isSubjectAllClasses: true
+        });
+      }
+    });
+
+    if (umumCount > 0) {
+      packages.push({
+        subject: 'UMUM',
+        subjectLabel: 'Umum / Soal Demo',
+        classLevel: 'ALL',
+        classLabel: 'Semua Kelas',
+        count: umumCount
+      });
+    }
+
+    // Isi dropdown Paket Mapel per Kelas (#nqSubjectClassCombo)
+    if (nqSubjectClassCombo) {
+      nqSubjectClassCombo.innerHTML = '';
+      if (packages.length === 0) {
+        const optEmpty = document.createElement('option');
+        optEmpty.value = makeNqComboKey('ALL', 'ALL');
+        optEmpty.innerText = 'Tidak ada soal pada kategori ini';
+        nqSubjectClassCombo.appendChild(optEmpty);
+      } else {
+        packages.forEach(pkg => {
+          const opt = document.createElement('option');
+          opt.value = makeNqComboKey(pkg.subject, pkg.classLevel);
+          const subText = pkg.subjectLabel || pkg.subject;
+          const clsText = pkg.classLabel || pkg.classLevel;
+          const prefixIcon = pkg.isSubjectAllClasses ? '📚' : '📘';
+          opt.innerText = `${prefixIcon} ${subText} — ${clsText} (${pkg.count} soal)`;
+          nqSubjectClassCombo.appendChild(opt);
+        });
+        if (scopedAll.length > 0 && (subjectNames.length > 1 || umumCount > 0)) {
+          const optAllAll = document.createElement('option');
+          optAllAll.value = makeNqComboKey('ALL', 'ALL');
+          optAllAll.innerText = `🗂️ Semua Mapel & Semua Kelas (${scopedAll.length} soal)`;
+          nqSubjectClassCombo.appendChild(optAllAll);
+        }
+      }
+    }
+
+    // Isi dropdown Mata Pelajaran (#nqSubjectSelect)
+    if (nqSubjectSelect) {
+      nqSubjectSelect.innerHTML = '';
+      if (isAdmin || teacherSubjects.length !== 1) {
+        const optAllSub = document.createElement('option');
+        optAllSub.value = 'ALL';
+        optAllSub.innerText = `Semua Mapel (${scopedAll.length})`;
+        nqSubjectSelect.appendChild(optAllSub);
+      }
+      subjectNames.forEach(s => {
+        const cnt = window.cbtAdmin.getQuestionsFiltered(s, 'ALL', activeCat).length;
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.innerText = `${s} (${cnt})`;
+        nqSubjectSelect.appendChild(opt);
+      });
+      if (umumCount > 0) {
+        const optU = document.createElement('option');
+        optU.value = 'UMUM';
+        optU.innerText = `Umum / Demo (${umumCount})`;
+        nqSubjectSelect.appendChild(optU);
+      }
+    }
+
+    // Isi dropdown Kelas (#nqClassSelect)
+    if (nqClassSelect) {
+      nqClassSelect.innerHTML = '';
+      const optAllCls = document.createElement('option');
+      optAllCls.value = 'ALL';
+      optAllCls.innerText = 'Semua Kelas';
+      nqClassSelect.appendChild(optAllCls);
+
+      const seenCls = new Set(['ALL']);
+      const appendClsOpt = (val, label) => {
+        const clean = String(val || '').trim();
+        if (!clean || seenCls.has(clean.toLowerCase())) return;
+        seenCls.add(clean.toLowerCase());
+        const opt = document.createElement('option');
+        opt.value = clean;
+        opt.innerText = label || clean;
+        nqClassSelect.appendChild(opt);
+      };
+
+      if (assignedClasses.length > 0) {
+        assignedClasses.forEach(c => appendClsOpt(c, /^Kelas\s+/i.test(c) ? c : `Kelas ${c}`));
+      } else {
+        standardGrades.forEach(g => appendClsOpt(g, g));
+        studentClasses.forEach(c => appendClsOpt(c, /^Kelas\s+/i.test(c) ? c : `Kelas ${c}`));
+      }
+      packages.forEach(pkg => {
+        if (pkg.classLevel && pkg.classLevel !== 'ALL') {
+          appendClsOpt(pkg.classLevel, pkg.classLabel || pkg.classLevel);
+        }
+      });
+    }
+
+    // Tentukan pilihan awal yang paling tepat
+    let targetSubj = prefSubject || 'ALL';
+    let targetCls = prefClass || 'ALL';
+
+    if ((!prefSubject || prefSubject === 'ALL') && (!prefClass || prefClass === 'ALL')) {
+      const firstConcrete = packages.find(p => p.subject !== 'UMUM' && p.classLevel !== 'ALL') || packages[0];
+      if (firstConcrete) {
+        targetSubj = firstConcrete.subject;
+        targetCls = firstConcrete.classLevel;
+      }
+    } else if (targetSubj !== 'ALL') {
+      // Samakan nama kanonik jika perlu
+      const matchedSub = subjectNames.find(s =>
+        s.toLowerCase() === targetSubj.toLowerCase() ||
+        (window.examEngine && window.examEngine.matchesSubject(s, targetSubj))
+      );
+      if (matchedSub) targetSubj = matchedSub;
+    }
+
+    if (nqSubjectSelect) {
+      const subOpts = Array.from(nqSubjectSelect.options).map(o => o.value);
+      if (subOpts.includes(targetSubj)) nqSubjectSelect.value = targetSubj;
+      else if (nqSubjectSelect.options.length > 0) nqSubjectSelect.selectedIndex = 0;
+    }
+    if (nqClassSelect) {
+      const clsOpts = Array.from(nqClassSelect.options).map(o => o.value);
+      if (clsOpts.includes(targetCls)) nqClassSelect.value = targetCls;
+      else nqClassSelect.value = 'ALL';
+    }
+    syncNqComboToSelects();
+    return packages;
+  }
+
+  function syncNqComboToSelects() {
+    if (!nqSubjectClassCombo) return;
+    const subjVal = nqSubjectSelect ? nqSubjectSelect.value : 'ALL';
+    const clsVal = nqClassSelect ? nqClassSelect.value : 'ALL';
+    const desiredKey = makeNqComboKey(subjVal, clsVal);
+
+    // Hapus opsi custom sementara jika ada
+    const oldCustom = nqSubjectClassCombo.querySelector('option[data-custom-combo="1"]');
+    if (oldCustom) oldCustom.remove();
+
+    const optValues = Array.from(nqSubjectClassCombo.options).map(o => o.value);
+    if (optValues.includes(desiredKey)) {
+      nqSubjectClassCombo.value = desiredKey;
+    } else {
+      const customOpt = document.createElement('option');
+      customOpt.value = desiredKey;
+      customOpt.dataset.customCombo = '1';
+      const subLabel = subjVal === 'ALL' ? 'Semua Mapel' : (subjVal === 'UMUM' ? 'Umum / Demo' : subjVal);
+      const clsLabel = clsVal === 'ALL' ? 'Semua Kelas' : (/^Kelas\s+/i.test(clsVal) ? clsVal : `Kelas ${clsVal}`);
+      const cnt = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjVal, clsVal, nqCategorySelect?.value || 'ALL').length : 0;
+      customOpt.innerText = `🎯 ${subLabel} — ${clsLabel} (${cnt} soal)`;
+      nqSubjectClassCombo.insertBefore(customOpt, nqSubjectClassCombo.firstChild);
+      nqSubjectClassCombo.value = desiredKey;
+    }
+  }
+
   function getSelectedQuestionsAndPaperOptions() {
-    const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
-    const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-    const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+    const subjFilter = nqSubjectSelect?.value || document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+    const classFilter = nqClassSelect?.value || document.getElementById('filterQuestionsClass')?.value || 'ALL';
+    const catFilter = nqCategorySelect?.value || document.getElementById('filterQuestionsCategory')?.value || 'ALL';
     const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter) : [];
 
     const cur = window.cbtAdmin ? window.cbtAdmin.getCurrentTeacher() : null;
     const examCfg = window.examEngine ? window.examEngine.config : {};
     const subjectName = (subjFilter && subjFilter !== 'ALL' && subjFilter !== 'UMUM')
       ? subjFilter
-      : (cur && cur.role !== 'admin' ? cur.subject : (examCfg.subject || 'Semua Mata Pelajaran'));
+      : (subjFilter === 'UMUM'
+        ? 'Umum / Soal Demo'
+        : (cur && cur.role !== 'admin' && cur.subject ? cur.subject : 'Semua Mata Pelajaran'));
+
+    const displayClass = (classFilter && classFilter !== 'ALL')
+      ? (/^(7|8|9)[A-Z]?$/i.test(classFilter) && !/^Kelas\s+/i.test(classFilter) ? `Kelas ${classFilter}` : classFilter)
+      : '';
 
     const options = {
       examTitle: document.getElementById('nqExamTitle')?.value.trim() || examCfg.examTitle || 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)',
@@ -7627,7 +7978,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dateText: document.getElementById('nqDateText')?.value.trim() || '',
       includeAnswerKey: Boolean(document.getElementById('nqIncludeAnswerKey')?.checked),
       subject: subjectName,
-      classLevel: classFilter !== 'ALL' ? classFilter : ''
+      classLevel: displayClass
     };
     return { questions, options };
   }
@@ -7636,58 +7987,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('questionsPaperPreviewContainer');
     const countBadge = document.getElementById('questionsPreviewCountBadge');
     const { questions, options } = getSelectedQuestionsAndPaperOptions();
-    if (countBadge) countBadge.innerText = `${questions.length} Soal (${options.subject})`;
+    if (countBadge) {
+      const clsPart = options.classLevel ? ` • ${options.classLevel}` : ' • Semua Kelas';
+      countBadge.innerText = `${questions.length} Soal (${options.subject}${clsPart})`;
+    }
     if (!container) return;
 
     if (questions.length === 0) {
-      container.innerHTML = `<div class="text-center py-14 text-slate-500 font-semibold text-sm bg-white rounded-2xl border border-slate-200">Belum ada butir soal pada mata pelajaran/kelas ini.</div>`;
+      container.innerHTML = `<div class="text-center py-14 text-slate-500 font-semibold text-sm bg-white rounded-2xl border border-slate-200 px-4">Belum ada butir soal pada pilihan <strong>${options.subject}${options.classLevel ? ' — ' + options.classLevel : ''}</strong>.<br><span class="text-xs font-normal text-slate-400">Silakan pilih paket Mapel per Kelas lain pada kolom di atas.</span></div>`;
       return;
     }
     container.innerHTML = window.cbtAdmin.generateExamPaperHtml(questions, options);
   }
 
+  if (nqSubjectClassCombo) {
+    nqSubjectClassCombo.addEventListener('change', () => {
+      const parsed = parseNqComboKey(nqSubjectClassCombo.value);
+      if (parsed) {
+        if (nqSubjectSelect) {
+          const hasSub = Array.from(nqSubjectSelect.options).some(o => o.value === parsed.subject);
+          if (hasSub) nqSubjectSelect.value = parsed.subject;
+        }
+        if (nqClassSelect) {
+          const hasCls = Array.from(nqClassSelect.options).some(o => o.value === parsed.classLevel);
+          if (hasCls) nqClassSelect.value = parsed.classLevel;
+        }
+      }
+      syncNqScheduleMeta();
+      refreshQuestionsPaperPreview();
+    });
+  }
+
+  if (nqSubjectSelect) {
+    nqSubjectSelect.addEventListener('change', () => {
+      syncNqComboToSelects();
+      syncNqScheduleMeta();
+      refreshQuestionsPaperPreview();
+    });
+  }
+
+  if (nqClassSelect) {
+    nqClassSelect.addEventListener('change', () => {
+      syncNqComboToSelects();
+      syncNqScheduleMeta();
+      refreshQuestionsPaperPreview();
+    });
+  }
+
+  if (nqCategorySelect) {
+    nqCategorySelect.addEventListener('change', () => {
+      const prevSub = nqSubjectSelect?.value || 'ALL';
+      const prevCls = nqClassSelect?.value || 'ALL';
+      populateNqDownloadSelectors(prevSub, prevCls, nqCategorySelect.value);
+      syncNqScheduleMeta();
+      refreshQuestionsPaperPreview();
+    });
+  }
+
   if (btnOpenPrintQuestions) {
     btnOpenPrintQuestions.addEventListener('click', () => {
-      const subjFilter = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
-      const classFilter = document.getElementById('filterQuestionsClass')?.value || 'ALL';
-      const catFilter = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
-      const questions = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, catFilter) : [];
-      if (questions.length === 0) {
-        alert("Belum ada butir soal pada filter mata pelajaran/kelas ini. Tambahkan soal terlebih dahulu!");
+      const totalScoped = window.cbtAdmin ? window.cbtAdmin.getQuestionsFiltered('ALL', 'ALL', 'ALL').length : 0;
+      if (totalScoped === 0) {
+        alert("Belum ada butir soal di Bank Soal. Tambahkan atau impor soal terlebih dahulu!");
         return;
       }
 
+      const bgSubj = document.getElementById('filterQuestionsSubject')?.value || 'ALL';
+      const bgClass = document.getElementById('filterQuestionsClass')?.value || 'ALL';
+      const bgCat = document.getElementById('filterQuestionsCategory')?.value || 'ALL';
+
+      // Gunakan kategori filter latar jika masih ada soal; jika kosong fallback ke ALL agar paket tetap muncul
+      const catMatches = window.cbtAdmin.getQuestionsFiltered('ALL', 'ALL', bgCat).length;
+      const initialCat = catMatches > 0 ? bgCat : 'ALL';
+
       const examCfg = window.examEngine ? window.examEngine.config : {};
       const titleInput = document.getElementById('nqExamTitle');
-      const durInput = document.getElementById('nqDuration');
-      const dateInput = document.getElementById('nqDateText');
-
       if (titleInput && examCfg.examTitle) {
         titleInput.value = examCfg.examTitle.toUpperCase();
       }
 
-      // Cari jadwal yang cocok dengan mapel terpilih agar durasi & tanggal otomatis terisi rapi
-      const allSchedules = window.cbtAdmin ? window.cbtAdmin.getAllSchedules() : [];
-      const matchingSchedule = allSchedules.find(s =>
-        subjFilter !== 'ALL' &&
-        window.examEngine &&
-        window.examEngine.matchesSubject(s.subject, subjFilter) &&
-        (classFilter === 'ALL' || window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', classFilter))
-      );
-
-      if (durInput) {
-        const mins = matchingSchedule ? (matchingSchedule.durationMinutes || 80) : (examCfg.durationMinutes || 80);
-        durInput.value = `${mins} Menit`;
-      }
-      if (dateInput) {
-        if (matchingSchedule && (matchingSchedule.day || matchingSchedule.dateFormatted || matchingSchedule.dateIso)) {
-          const dStr = matchingSchedule.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(matchingSchedule.dateIso) : '');
-          dateInput.value = [matchingSchedule.day, dStr].filter(Boolean).join(', ');
-        } else {
-          dateInput.value = '';
-        }
-      }
-
+      populateNqDownloadSelectors(bgSubj, bgClass, initialCat);
+      syncNqScheduleMeta();
       syncNqKopUi();
       refreshQuestionsPaperPreview();
       if (modalPrintQuestionsPreview) modalPrintQuestionsPreview.classList.remove('hidden');

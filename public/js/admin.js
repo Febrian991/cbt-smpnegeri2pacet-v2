@@ -430,15 +430,20 @@ class CBTAdmin {
     const normSched = this.normalizePengawasRoomSchedule(t && t.roomSchedule);
     const todayDay = this.getIndonesianDayName(this.getLocalDateIso()) || 'Senin';
     if (normSched[todayDay]) return todayDay;
-    const activeList = Array.isArray(activeSchedules)
-      ? activeSchedules
-      : (this.getActiveSchedules ? this.getActiveSchedules() : []);
-    const matchedActiveDay = activeList
-      .map(s => String(s && s.day || '').trim())
-      .find(d => d && normSched[d]);
-    if (matchedActiveDay) return matchedActiveDay;
-    const firstActiveDay = activeList.map(s => String(s && s.day || '').trim()).find(Boolean);
-    return (todayDay === 'Minggu' && firstActiveDay) ? firstActiveDay : todayDay;
+    if (todayDay === 'Minggu') {
+      const activeList = Array.isArray(activeSchedules)
+        ? activeSchedules
+        : (this.getActiveSchedules ? this.getActiveSchedules() : []);
+      const matchedActiveDay = activeList
+        .map(s => String(s && s.day || '').trim())
+        .find(d => d && normSched[d]);
+      if (matchedActiveDay) return matchedActiveDay;
+      const firstActiveDay = activeList.map(s => String(s && s.day || '').trim()).find(Boolean);
+      if (firstActiveDay) return firstActiveDay;
+      const firstScheduledDay = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'].find(d => Boolean(normSched[d]));
+      if (firstScheduledDay) return firstScheduledDay;
+    }
+    return todayDay;
   }
 
   searchTeachers(query = "", roleFilter = "ALL") {
@@ -1617,15 +1622,22 @@ class CBTAdmin {
     };
   }
 
-  exportQuestionsJSON(subjectFilter = 'ALL', classFilter = 'ALL') {
-    const toExport = this.getQuestionsFiltered(subjectFilter, classFilter);
+  exportQuestionsJSON(subjectFilter = 'ALL', classFilter = 'ALL', categoryFilter = 'ALL') {
+    const toExport = this.getQuestionsFiltered(subjectFilter, classFilter, categoryFilter);
+    if (!toExport || toExport.length === 0) {
+      alert("Tidak ada butir soal yang cocok dengan filter untuk diekspor.");
+      return;
+    }
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(toExport, null, 2));
     const downloadAnchor = document.createElement('a');
-    const slug = subjectFilter && subjectFilter !== 'ALL'
+    const subSlug = subjectFilter && subjectFilter !== 'ALL'
       ? '_' + String(subjectFilter).toLowerCase().replace(/[^a-z0-9]+/g, '_')
       : '';
+    const clsSlug = classFilter && classFilter !== 'ALL'
+      ? '_' + String(classFilter).toLowerCase().replace(/[^a-z0-9]+/g, '_')
+      : '';
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `bank_soal_ujian${slug}_${Date.now()}.json`);
+    downloadAnchor.setAttribute("download", `bank_soal_ujian${subSlug}${clsSlug}_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -2963,6 +2975,10 @@ class CBTAdmin {
     if (hasWeekly) {
       mode = 'weekly';
       assignedClasses = weeklySchedule[activeDay] ? this.parseTeacherClasses(weeklySchedule[activeDay]) : [];
+      if (assignedClasses.length === 0) {
+        sessionSelectedRoom = this.getPengawasSessionRoom(cur);
+        if (sessionSelectedRoom) assignedClasses = this.parseTeacherClasses(sessionSelectedRoom);
+      }
     } else if (staticClasses.length > 0) {
       mode = 'fixed';
       assignedClasses = staticClasses;
@@ -4062,10 +4078,13 @@ class CBTAdmin {
           <span style="font-weight:bold; color:#1d4ed8;">${this.escapePrintHtml(item.answerKeyText)}</span>
         </div>
       `).join('');
+      const keyClassSuffix = (options.classLevel && options.classLevel !== 'ALL')
+        ? ` • ${options.classLevel}`
+        : '';
       keyHtml = `
         <div class="naskah-paper-sheet naskah-page-break" style="page-break-before:always; break-before:page; width:210mm; max-width:100%; margin:0 auto 14px auto; padding:8mm 12mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
           <div style="text-align:center; border-bottom:2px solid #000000; padding-bottom:6px; margin-bottom:12px;">
-            <div style="font-size:13px; font-weight:bold; text-transform:uppercase;">KUNCI JAWABAN • ${this.escapePrintHtml(subjectName)}</div>
+            <div style="font-size:13px; font-weight:bold; text-transform:uppercase;">KUNCI JAWABAN • ${this.escapePrintHtml(subjectName)}${this.escapePrintHtml(keyClassSuffix)}</div>
             <div style="font-size:11px;">${this.escapePrintHtml(examTitle)} (${this.escapePrintHtml(semester)} ${this.escapePrintHtml(academicYear)})</div>
           </div>
           <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
@@ -4198,8 +4217,11 @@ class CBTAdmin {
 
     const prevScrollY = window.scrollY || window.pageYOffset || 0;
     const prevScrollX = window.scrollX || window.pageXOffset || 0;
-    const slug = String(options.subject || 'Naskah_Soal').replace(/[^a-z0-9]+/gi, '_');
-    const filename = `Naskah_Soal_F4_${slug}_${Date.now()}.pdf`;
+    const subSlug = String(options.subject || 'Naskah_Soal').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'Naskah_Soal';
+    const clsSlug = (options.classLevel && options.classLevel !== 'ALL')
+      ? '_' + String(options.classLevel).replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')
+      : '';
+    const filename = `Naskah_Soal_F4_${subSlug}${clsSlug}_${Date.now()}.pdf`;
 
     try {
       window.scrollTo(0, 0);
@@ -4444,12 +4466,15 @@ class CBTAdmin {
         <body><div class="Section1">${cleanedHtml}</div></body>
         </html>
       `;
-      const slug = String(options.subject || 'Naskah_Soal').replace(/[^a-z0-9]+/gi, '_');
+      const subSlug = String(options.subject || 'Naskah_Soal').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'Naskah_Soal';
+      const clsSlug = (options.classLevel && options.classLevel !== 'ALL')
+        ? '_' + String(options.classLevel).replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')
+        : '';
       const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Naskah_Soal_F4_${slug}_${Date.now()}.doc`;
+      a.download = `Naskah_Soal_F4_${subSlug}${clsSlug}_${Date.now()}.doc`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -5085,10 +5110,18 @@ class CBTAdmin {
       const nameText = this.escapePrintHtml(t?.name || '-');
       const subjectTokens = typeof this.splitSubjectTokens === 'function' ? this.splitSubjectTokens(t?.subject || '') : [];
       const subjectText = isPengawas
-        ? 'Semua Mapel Aktif (Pantau Ujian)'
+        ? 'Sesuai Jadwal Ruang Ujian'
         : this.escapePrintHtml(subjectTokens.length > 0 ? subjectTokens.join(', ') : (t?.subject || (isAdmin ? 'Semua Mapel' : '-')));
       const parsedClasses = t?.classes && typeof this.parseTeacherClasses === 'function' ? this.parseTeacherClasses(t.classes) : [];
-      const classesText = this.escapePrintHtml(isAdmin ? 'Semua Kelas' : (parsedClasses.length > 0 ? parsedClasses.join(', ') : (t?.classes || 'Semua Kelas')));
+      const weeklySched = isPengawas && typeof this.normalizePengawasRoomSchedule === 'function'
+        ? this.normalizePengawasRoomSchedule(t?.roomSchedule)
+        : {};
+      const weeklyEntries = Object.entries(weeklySched);
+      const shortDayMap = { Senin: 'Sen', Selasa: 'Sel', Rabu: 'Rab', Kamis: 'Kam', Jumat: 'Jum', Sabtu: 'Sab' };
+      const pengawasRoomCardText = weeklyEntries.length > 0
+        ? weeklyEntries.map(([d, rm]) => `${shortDayMap[d] || d}:${rm}`).join(' • ')
+        : (parsedClasses.length > 0 ? parsedClasses.join(', ') : 'Fleksibel (Pilih di Ruang)');
+      const classesText = this.escapePrintHtml(isAdmin ? 'Semua Kelas' : (isPengawas ? pengawasRoomCardText : (parsedClasses.length > 0 ? parsedClasses.join(', ') : (t?.classes || 'Semua Kelas'))));
       const pinText = this.escapePrintHtml(t?.pin || (isAdmin ? 'admin123' : (isPengawas ? 'pengawas123' : 'guru123')));
 
       return `
