@@ -1663,8 +1663,8 @@ class StudentManager {
               <div style="color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeCity}, ${safeDate}</div>
               <div style="font-weight:700; color:#0f172a;">Kepala Sekolah,</div>
               <div style="height:11px;"></div>
-              <div style="font-weight:800; text-decoration:underline; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:72px;">${safeHeadmaster}</div>
-              <div style="color:#64748b; font-size:5.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:72px;">NIP. ${safeHeadmasterNip}</div>
+              <div><span style="display:inline-block; font-weight:800; color:#0f172a; border-bottom:0.8px solid #0f172a; padding-bottom:0.5px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:72px;">${safeHeadmaster}</span></div>
+              <div style="color:#64748b; font-size:5.1px; margin-top:1.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:72px;">NIP. ${safeHeadmasterNip}</div>
             </div>
           </div>
 

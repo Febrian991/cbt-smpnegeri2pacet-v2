@@ -2481,7 +2481,7 @@ class CBTAdmin {
               <div style="color:#1e293b;">Mengetahui,</div>
               <div style="font-weight:700; color:#0f172a;">Kepala Sekolah</div>
               <div style="height:36px;"></div>
-              <div style="font-weight:700; text-decoration:underline; text-underline-offset:2px; color:#0f172a;">${safeHeadmaster}</div>
+              <div><span style="display:inline-block; font-weight:700; color:#0f172a; border-bottom:1.2px solid #0f172a; padding-bottom:1.5px; line-height:1.25;">${safeHeadmaster}</span></div>
               <div style="font-size:10px; color:#475569; margin-top:3px;">NIP. ${safeHeadmasterNip}</div>
             </td>
             <td style="width:50%; text-align:center; vertical-align:top; padding:7px 12px 2px 12px;">
@@ -2489,7 +2489,7 @@ class CBTAdmin {
               <div style="color:#1e293b;">Dibuat Oleh,</div>
               <div style="font-weight:700; color:#0f172a;">Guru Mata Pelajaran</div>
               <div style="height:36px;"></div>
-              <div style="font-weight:700; text-decoration:underline; text-underline-offset:2px; color:#0f172a;">${safeTeacher}</div>
+              <div><span style="display:inline-block; font-weight:700; color:#0f172a; border-bottom:1.2px solid #0f172a; padding-bottom:1.5px; line-height:1.25;">${safeTeacher}</span></div>
               <div style="font-size:10px; color:#475569; margin-top:3px;">NIP. ${safeTeacherNip}</div>
             </td>
           </tr>
@@ -5593,8 +5593,8 @@ class CBTAdmin {
               <div style="color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeCity}, ${safeDate}</div>
               <div style="font-weight:700; color:#0f172a;">Kepala Sekolah,</div>
               <div style="height:11px;"></div>
-              <div style="font-weight:800; text-decoration:underline; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px;">${safeHeadmaster}</div>
-              <div style="color:#64748b; font-size:5.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px;">NIP. ${safeHeadmasterNip}</div>
+              <div><span style="display:inline-block; font-weight:800; color:#0f172a; border-bottom:0.8px solid #0f172a; padding-bottom:0.5px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px;">${safeHeadmaster}</span></div>
+              <div style="color:#64748b; font-size:5.1px; margin-top:1.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px;">NIP. ${safeHeadmasterNip}</div>
             </div>
           </div>
 
@@ -6479,8 +6479,8 @@ class CBTAdmin {
                   <div>${this.escapePrintHtml(signLine)}</div>
                   <div style="font-weight:600;">${this.escapePrintHtml(signerRole)}</div>
                   <div style="height:48px;"></div>
-                  <div style="font-weight:700; text-decoration:underline;">${this.escapePrintHtml(headmasterName)}</div>
-                  <div style="font-size:10px;">${headmasterNip ? `NIP. ${this.escapePrintHtml(headmasterNip)}` : ''}</div>
+                  <div><span style="display:inline-block; font-weight:700; color:#0f172a; border-bottom:1px solid #0f172a; padding-bottom:1.5px; line-height:1.25;">${this.escapePrintHtml(headmasterName)}</span></div>
+                  <div style="font-size:10px; margin-top:3px;">${headmasterNip ? `NIP. ${this.escapePrintHtml(headmasterNip)}` : ''}</div>
                 </td>
               </tr>
             </tbody>
