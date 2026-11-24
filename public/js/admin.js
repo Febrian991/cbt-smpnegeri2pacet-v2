@@ -425,6 +425,54 @@ class CBTAdmin {
     } catch (e) {}
   }
 
+  normalizeRoomKey(raw) {
+    const s = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().toUpperCase();
+    if (!s || s === '-') return '';
+    return s
+      .replace(/^RUANGAN?\b/i, 'RUANG')
+      .replace(/[\s._-]+/g, '')
+      .replace(/([A-Z])0+(\d+)/g, '$1$2');
+  }
+
+  partitionAssignedTargets(tokens = []) {
+    const sm = (typeof window !== 'undefined' && window.studentManager) ? window.studentManager : null;
+    const knownRooms = (sm && typeof sm.getAllRooms === 'function') ? sm.getAllRooms() : [];
+    const knownRoomMap = new Map();
+    knownRooms.forEach(r => {
+      const k = this.normalizeRoomKey(r);
+      if (k) knownRoomMap.set(k, r);
+    });
+
+    const assignedRooms = [];
+    const assignedClassTokens = [];
+    const seenRooms = new Set();
+    const seenClasses = new Set();
+
+    (Array.isArray(tokens) ? tokens : []).forEach(tok => {
+      const cleanTok = String(tok || '').trim();
+      if (!cleanTok) return;
+      const rKey = this.normalizeRoomKey(cleanTok);
+      const matchedKnown = rKey ? knownRoomMap.get(rKey) : null;
+      const looksLikeRoomName = /^(RUANG|LAB|AULA|R\d+)/i.test(rKey);
+
+      if (matchedKnown || (looksLikeRoomName && !/^\d+[A-Z]*$/i.test(cleanTok))) {
+        const display = matchedKnown || cleanTok;
+        if (rKey && !seenRooms.has(rKey)) {
+          seenRooms.add(rKey);
+          assignedRooms.push(display);
+        }
+      } else {
+        const cKey = cleanTok.toUpperCase();
+        if (!seenClasses.has(cKey)) {
+          seenClasses.add(cKey);
+          assignedClassTokens.push(cleanTok);
+        }
+      }
+    });
+
+    return { assignedRooms, assignedClassTokens };
+  }
+
   getPengawasActiveDayName(teacher = null, activeSchedules = null) {
     const t = teacher || this.getCurrentTeacher();
     const normSched = this.normalizePengawasRoomSchedule(t && t.roomSchedule);
@@ -989,10 +1037,12 @@ class CBTAdmin {
     const passageGroupId = source.passageGroupId ? String(source.passageGroupId).trim() : '';
     const passageTitle = source.passageTitle ? String(source.passageTitle).trim() : '';
     const passageText = source.passageText ? String(source.passageText).trim() : '';
+    const passageImage = source.passageImage ? String(source.passageImage).trim() : '';
     const passageTable = cleanTable(source.passageTable);
     const passageChart = cleanChart(source.passageChart);
     const passageOrder = source.passageOrder ? Math.max(1, parseInt(source.passageOrder, 10) || 1) : undefined;
     const passageGroupSize = source.passageGroupSize ? Math.max(1, parseInt(source.passageGroupSize, 10) || 1) : undefined;
+    const passageSpan = source.passageSpan ? Math.max(1, parseInt(source.passageSpan, 10) || 1) : undefined;
 
     return {
       tableData: cleanTable(source.tableData),
@@ -1001,10 +1051,12 @@ class CBTAdmin {
       ...(passageGroupId ? { passageGroupId } : {}),
       ...(passageTitle ? { passageTitle } : {}),
       ...(passageText ? { passageText } : {}),
+      ...(passageImage ? { passageImage } : {}),
       ...(passageTable ? { passageTable } : {}),
       ...(passageChart ? { passageChart } : {}),
       ...(passageOrder ? { passageOrder } : {}),
-      ...(passageGroupSize ? { passageGroupSize } : {})
+      ...(passageGroupSize ? { passageGroupSize } : {}),
+      ...(passageSpan ? { passageSpan } : {})
     };
   }
 
@@ -1070,12 +1122,41 @@ class CBTAdmin {
       : filtered;
   }
 
+  isPassageItem(q) {
+    if (window.examEngine && typeof window.examEngine.isPassageItem === 'function') {
+      return window.examEngine.isPassageItem(q);
+    }
+    return Boolean(q && String(q.type || '').trim().toLowerCase() === 'passage');
+  }
+
+  isEmptyOptionsQuestion(q) {
+    if (window.examEngine && typeof window.examEngine.isEmptyOptionsQuestion === 'function') {
+      return window.examEngine.isEmptyOptionsQuestion(q);
+    }
+    if (!q || typeof q !== 'object') return false;
+    const type = String(q.type || 'single').trim().toLowerCase();
+    if (type !== 'single' && type !== 'multiple') return false;
+    const rawOpts = Array.isArray(q.options) ? q.options : [];
+    const optTables = (q.optionTables && typeof q.optionTables === 'object') ? q.optionTables : {};
+    const hasOpt = rawOpts.some(o => {
+      if (!o) return false;
+      const k = String(o.key || '').trim().toUpperCase();
+      return String(o.text || '').trim() !== '' || Boolean(optTables[k] && Array.isArray(optTables[k].rows) && optTables[k].rows.length > 0);
+    });
+    return !hasOpt && String(q.question || q.passageText || '').trim().length > 0;
+  }
+
   _buildQuestionEntity(questionData, id, cur, nowIso, existingQuestion = null) {
-    const type = questionData.type || existingQuestion?.type || 'single';
+    const type = String(questionData.type || existingQuestion?.type || 'single').trim().toLowerCase() || 'single';
+    const isPassage = type === 'passage';
     const richFields = this._normalizeRichQuestionFields(questionData);
     const createdBy = existingQuestion?.createdBy || questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin");
     const createdById = existingQuestion?.createdById || questionData.createdById || (cur ? cur.id : "admin");
     const createdByNip = existingQuestion?.createdByNip || questionData.createdByNip || (cur ? cur.nip : "");
+
+    const rawText = questionData.question !== undefined ? String(questionData.question) : (existingQuestion?.question || '');
+    const pText = richFields.passageText || (isPassage ? String(rawText || '').trim() : '');
+    const pTitle = richFields.passageTitle || '';
 
     const qObj = {
       id,
@@ -1088,19 +1169,26 @@ class CBTAdmin {
       isTrial: questionData.isTrial !== undefined
         ? Boolean(questionData.isTrial)
         : (existingQuestion ? this.isTrialQuestion(existingQuestion) : false),
-      question: questionData.question !== undefined ? String(questionData.question) : (existingQuestion?.question || ''),
+      question: isPassage ? (pText || pTitle) : rawText,
       image: questionData.image !== undefined ? questionData.image : (existingQuestion?.image || ""),
-      weight: Math.max(1, parseInt(questionData.weight, 10) || existingQuestion?.weight || 10),
+      weight: isPassage ? 0 : Math.max(1, parseInt(questionData.weight, 10) || existingQuestion?.weight || 10),
       updatedAt: nowIso
     };
 
     if (richFields.tableData) qObj.tableData = richFields.tableData;
-    if (richFields.optionTables) qObj.optionTables = richFields.optionTables;
+    if (!isPassage && richFields.optionTables) qObj.optionTables = richFields.optionTables;
     if (richFields.chartData) qObj.chartData = richFields.chartData;
-    if (richFields.passageGroupId) {
+
+    if (isPassage) {
+      if (richFields.passageGroupId) qObj.passageGroupId = richFields.passageGroupId;
+      if (pTitle) qObj.passageTitle = pTitle;
+      if (pText) qObj.passageText = pText;
+      qObj.passageSpan = richFields.passageSpan || richFields.passageGroupSize || existingQuestion?.passageSpan || 5;
+    } else if (richFields.passageGroupId) {
       qObj.passageGroupId = richFields.passageGroupId;
-      if (richFields.passageTitle) qObj.passageTitle = richFields.passageTitle;
+      if (pTitle) qObj.passageTitle = pTitle;
       if (richFields.passageText) qObj.passageText = richFields.passageText;
+      if (richFields.passageImage) qObj.passageImage = richFields.passageImage;
       if (richFields.passageTable) qObj.passageTable = richFields.passageTable;
       if (richFields.passageChart) qObj.passageChart = richFields.passageChart;
       if (richFields.passageOrder) qObj.passageOrder = richFields.passageOrder;
@@ -1120,6 +1208,64 @@ class CBTAdmin {
     }
 
     return qObj;
+  }
+
+  convertQuestionsBatchToPassage(questionIds = [], passageSpan = 5) {
+    const idSet = new Set((Array.isArray(questionIds) ? questionIds : []).map(String));
+    if (idSet.size === 0) return { success: false, count: 0, message: 'Tidak ada item dipilih.' };
+
+    const cur = this.getCurrentTeacher();
+    const isAdmin = cur && (cur.role === 'admin' || cur.id === 'admin');
+    const nowIso = new Date().toISOString();
+    const span = Math.max(1, parseInt(passageSpan, 10) || 5);
+    const updatedRows = [];
+    let skippedCount = 0;
+
+    const nextList = [...window.examEngine.questions].map(q => {
+      if (!q || !idSet.has(String(q.id))) return q;
+      if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(q, cur)) {
+        skippedCount += 1;
+        return q;
+      }
+      const rawPassage = String(q.passageText || q.question || '').trim();
+      const converted = this._buildQuestionEntity({
+        ...q,
+        type: 'passage',
+        passageTitle: String(q.passageTitle || '').trim(),
+        passageText: rawPassage,
+        passageSpan: Math.max(1, parseInt(q.passageSpan || q.passageGroupSize || span, 10) || span),
+        weight: 0
+      }, q.id, cur, nowIso, q);
+      delete converted.options;
+      delete converted.correctAnswer;
+      delete converted.statements;
+      delete converted.optionTables;
+      updatedRows.push(converted);
+      return converted;
+    });
+
+    if (updatedRows.length === 0) {
+      return {
+        success: false,
+        count: 0,
+        skippedCount,
+        message: skippedCount > 0 ? 'Item milik guru lain tidak dapat diubah.' : 'Tidak ada item yang ditemukan.'
+      };
+    }
+
+    window.examEngine.saveQuestions(nextList, true);
+    if (typeof window !== 'undefined' && window.supabaseSync) {
+      if (typeof window.supabaseSync.upsertQuestionRows === 'function') {
+        window.supabaseSync.upsertQuestionRows(updatedRows, { seedFallback: nextList });
+      } else if (typeof window.supabaseSync.upsertQuestionRow === 'function') {
+        updatedRows.forEach(row => window.supabaseSync.upsertQuestionRow(row, nextList));
+      }
+    }
+    return { success: true, count: updatedRows.length, skippedCount, questions: updatedRows };
+  }
+
+  convertQuestionToPassage(id, options = {}) {
+    return this.convertQuestionsBatchToPassage([id], options.passageSpan || 5);
   }
 
   addQuestion(questionData) {
@@ -1182,6 +1328,7 @@ class CBTAdmin {
     const updatedRows = [];
     const nextList = [...window.examEngine.questions].map(q => {
       if (!q || !idSet.has(String(q.id))) return q;
+      if (this.isPassageItem(q)) return q;
       if (!isAdmin && cur && !this._isQuestionOwnedByTeacher(q, cur)) return q;
       const u = { ...q, weight: w, updatedAt: nowIso };
       updatedRows.push(u);
@@ -1294,7 +1441,7 @@ class CBTAdmin {
       if (hasSubj) u.subject = patch.subject.trim();
       if (hasCls) u.classLevel = patch.classLevel.trim();
       if (hasTrial) u.isTrial = Boolean(patch.isTrial);
-      if (hasWeight) u.weight = Math.max(1, Math.min(100, parseInt(patch.weight, 10) || 10));
+      if (hasWeight && !this.isPassageItem(q)) u.weight = Math.max(1, Math.min(100, parseInt(patch.weight, 10) || 10));
       if (patch.clearPassage === true) {
         delete u.passageGroupId;
         delete u.passageTitle;
@@ -2584,6 +2731,7 @@ class CBTAdmin {
         { key: 'admin_btn_add_student', group: 'Data Siswa Admin', label: 'Tombol: + Tambah Siswa', selector: '#btnOpenAddStudent' },
         { key: 'admin_btn_edit_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: ✏️ Edit Siswa', selector: '.btn-edit-student' },
         { key: 'admin_btn_delete_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: 🗑️ Hapus Siswa', selector: '.btn-delete-student' },
+        { key: 'admin_btn_assign_exam_rooms', group: 'Data Siswa Admin', label: 'Tombol: 🏫 Atur / Acak Ruang', selector: '#btnOpenAssignExamRooms' },
         { key: 'admin_btn_import_export_students', group: 'Data Siswa Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Siswa', selector: '#btnDownloadStudentTemplate, #btnTriggerImportStudents' },
         { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
         { key: 'admin_btn_print_attendance', group: 'Data Siswa Admin', label: 'Tombol: 📋 Daftar Hadir Peserta', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
@@ -2759,32 +2907,48 @@ class CBTAdmin {
       alert("Pustaka SheetJS belum termuat. Pastikan ada koneksi internet.");
       return;
     }
-    const schoolClasses = (typeof window !== 'undefined' && window.studentManager && typeof window.studentManager.getAllClasses === 'function')
-      ? window.studentManager.getAllClasses().filter(Boolean)
-      : [];
-    const sampleClasses = schoolClasses.length > 0
-      ? schoolClasses.slice(0, 12)
-      : ["7A", "7B", "7C", "8A", "8B", "9A", "9B"];
+    const sm = (typeof window !== 'undefined' && window.studentManager) ? window.studentManager : null;
+    const schoolRooms = (sm && typeof sm.getAllRooms === 'function') ? sm.getAllRooms().filter(Boolean) : [];
+    const schoolClasses = (sm && typeof sm.getAllClasses === 'function') ? sm.getAllClasses().filter(Boolean) : [];
 
-    const exampleRows = sampleClasses.map((cls, idx) => {
-      const slug = String(cls).toLowerCase().replace(/[^a-z0-9]+/g, '');
-      const roomNo = String(idx + 1).padStart(2, '0');
-      return [
-        `pengawas_${slug || roomNo}`,
-        `Pengawas Ruang ${idx + 1} (Kelas ${cls})`,
-        String(cls),
-        "pengawas123",
-        "pengawas"
-      ];
-    });
+    let exampleRows = [];
+    if (schoolRooms.length > 0) {
+      exampleRows = schoolRooms.slice(0, 12).map((rm, idx) => {
+        const slug = String(rm).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        const clsList = (sm && typeof sm.getClassesInRoom === 'function') ? sm.getClassesInRoom(rm) : [];
+        const clsNote = clsList.length > 0 ? ` (${clsList.join('/')})` : '';
+        return [
+          `pengawas_${slug || String(idx + 1).padStart(2, '0')}`,
+          `Pengawas ${rm}${clsNote}`,
+          String(rm),
+          "pengawas123",
+          "pengawas"
+        ];
+      });
+    } else {
+      const sampleClasses = schoolClasses.length > 0
+        ? schoolClasses.slice(0, 12)
+        : ["Ruang 1", "Ruang 2", "Ruang 3", "7A", "7B", "8A", "9A"];
+      exampleRows = sampleClasses.map((cls, idx) => {
+        const slug = String(cls).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const roomNo = String(idx + 1).padStart(2, '0');
+        return [
+          `pengawas_${slug || roomNo}`,
+          `Pengawas Ruang ${idx + 1} (${cls})`,
+          String(cls),
+          "pengawas123",
+          "pengawas"
+        ];
+      });
+    }
 
     const headers = [
       ["TEMPLATE DATA PENGAWAS RUANG UJIAN CBT - SMP NEGERI 2 PACET"],
-      ["Petunjuk: Jangan ubah judul kolom di baris ke-3. Isi daftar Pengawas mulai baris ke-4. Boleh memakai NIP Guru yang sama asal Password/PIN Pengawas berbeda dari PIN Guru (misal: pengawas123), atau pakai ID ruang (misal: pengawas_7a)."],
+      ["Petunjuk: Jangan ubah judul kolom di baris ke-3. Isi daftar Pengawas mulai baris ke-4. Kolom ruang boleh diisi Ruang Ujian acak (misal: Ruang 1) ataupun Kelas (misal: 7A). Kosongkan kolom ruang jika Pengawas bebas memilih ruang saat hari-H."],
       [
         "ID / NIP Login Pengawas (Wajib)",
         "Nama Lengkap Pengawas / Ruang (Wajib)",
-        "Kelas / Ruang yang Diawasi (contoh: 7A atau 7A, 7B)",
+        "Ruang / Kelas yang Diawasi (contoh: Ruang 1 atau 7A)",
         "Password / PIN Login (Default: pengawas123)",
         "Peran Akun (Otomatis: pengawas)"
       ],
@@ -2958,31 +3122,54 @@ class CBTAdmin {
     const cfg = (typeof window !== 'undefined' && window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
 
     let mode = 'flexible';
-    let assignedClasses = [];
+    let assignedRawTokens = [];
     let sessionSelectedRoom = '';
 
     if (hasWeekly) {
       mode = 'weekly';
-      assignedClasses = weeklySchedule[activeDay] ? this.parseTeacherClasses(weeklySchedule[activeDay]) : [];
-      if (assignedClasses.length === 0) {
+      assignedRawTokens = weeklySchedule[activeDay] ? this.parseTeacherClasses(weeklySchedule[activeDay]) : [];
+      if (assignedRawTokens.length === 0) {
         sessionSelectedRoom = this.getPengawasSessionRoom(cur);
-        if (sessionSelectedRoom) assignedClasses = this.parseTeacherClasses(sessionSelectedRoom);
+        if (sessionSelectedRoom) assignedRawTokens = this.parseTeacherClasses(sessionSelectedRoom);
       }
     } else if (staticClasses.length > 0) {
       mode = 'fixed';
-      assignedClasses = staticClasses;
+      assignedRawTokens = staticClasses;
     } else {
       mode = 'flexible';
       sessionSelectedRoom = this.getPengawasSessionRoom(cur);
-      assignedClasses = sessionSelectedRoom ? this.parseTeacherClasses(sessionSelectedRoom) : [];
+      assignedRawTokens = sessionSelectedRoom ? this.parseTeacherClasses(sessionSelectedRoom) : [];
     }
 
+    const { assignedRooms, assignedClassTokens } = this.partitionAssignedTargets(assignedRawTokens);
+    const isRoomScoped = assignedRooms.length > 0;
+    const sm = (typeof window !== 'undefined' && window.studentManager) ? window.studentManager : null;
+
+    // Kumpulkan kelas asli siswa yang duduk di ruang pengawasan (bisa campur Kelas 7, 8, 9!)
+    const roomClassLevelSet = new Set();
+    if (isRoomScoped && sm && typeof sm.getClassesInRoom === 'function') {
+      assignedRooms.forEach(rm => {
+        sm.getClassesInRoom(rm).forEach(cls => {
+          if (cls) roomClassLevelSet.add(cls);
+        });
+      });
+    }
+    const roomClassLevels = Array.from(roomClassLevelSet);
+    const effectiveScheduleClasses = [...new Set([...assignedClassTokens, ...roomClassLevels])];
+    const displayScopeLabels = isRoomScoped
+      ? [...assignedRooms, ...assignedClassTokens]
+      : assignedClassTokens;
+
     const matchesRoom = (schedTargetClass) => {
-      if (assignedClasses.length === 0) return false;
+      if (displayScopeLabels.length === 0) return false;
       const clsStr = String(schedTargetClass || '').trim();
       if (!clsStr || clsStr.toLowerCase().includes('semua')) return true;
+      if (isRoomScoped && effectiveScheduleClasses.length === 0) {
+        // Jika daftar siswa ruang belum sempat termuat, izinkan jadwal aktif tampil sementara
+        return true;
+      }
       if (typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
-        return window.examEngine.matchesClassLevel(clsStr, assignedClasses.join(', '));
+        return window.examEngine.matchesClassLevel(clsStr, effectiveScheduleClasses.join(', '));
       }
       return true;
     };
@@ -2995,12 +3182,12 @@ class CBTAdmin {
       return explicitSubjects.some(es => String(es).toLowerCase() === String(schedSubj || '').toLowerCase());
     };
 
-    const roomMatchedActiveSchedules = assignedClasses.length > 0
+    const roomMatchedActiveSchedules = displayScopeLabels.length > 0
       ? activeSchedules.filter(s => matchesRoom(s.classLevel || s.targetClass) && matchesExplicitSubject(s.subject))
       : [];
 
     const subjectMap = new Map();
-    if (assignedClasses.length > 0) {
+    if (displayScopeLabels.length > 0) {
       if (explicitSubjects.length > 0) {
         if (roomMatchedActiveSchedules.length > 0) {
           roomMatchedActiveSchedules.forEach(s => {
@@ -3027,7 +3214,11 @@ class CBTAdmin {
     }
 
     return {
-      classes: assignedClasses,
+      classes: displayScopeLabels,
+      assignedRooms,
+      assignedClassTokens,
+      roomClassLevels,
+      isRoomScoped,
       mode,
       activeDay,
       weeklySchedule,
@@ -3658,23 +3849,42 @@ class CBTAdmin {
   }
 
   renderPassageStimulusHtml(q, rangeLabel = '', isPrint = false) {
-    if (!q || (!q.passageText && !q.passageTable && !q.passageChart && !q.passageTitle)) return '';
+    if (!q || (!q.passageText && !q.passageTable && !q.passageChart && !q.passageTitle && !q.passageImage)) return '';
     const titleStr = String(q.passageTitle || '').trim();
-    const headerNote = rangeLabel
-      ? `Bacalah stimulus / wacana berikut untuk menjawab soal ${rangeLabel}!`
+    const rawRange = String(rangeLabel || '').trim();
+    const printHeaderNote = rawRange
+      ? `Wacana untuk soal ${rawRange}.`
+      : 'Wacana untuk soal berikut.';
+    const screenHeaderNote = rawRange
+      ? `Wacana untuk soal ${rawRange}`
       : 'Wacana / Stimulus Kelompok Soal';
-    const textHtml = q.passageText
-      ? `<div style="white-space:pre-line; line-height:1.48; ${isPrint ? 'font-size:10px;' : 'font-size:13px;'}">${this.escapePrintHtml(q.passageText)}</div>`
+
+    const formatPrintParagraphs = (raw) => {
+      const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) return '';
+      return lines.map(line => (
+        `<p style="margin:0 0 4px 0; text-indent:14px; text-align:justify; line-height:1.45; font-size:10.5px;">${this.escapePrintHtml(line)}</p>`
+      )).join('');
+    };
+
+    const textHtml = isPrint
+      ? (q.passageText ? formatPrintParagraphs(q.passageText) : '')
+      : (q.passageText ? `<div style="white-space:pre-line; line-height:1.48; font-size:13px;">${this.escapePrintHtml(q.passageText)}</div>` : '');
+    const imgHtml = q.passageImage
+      ? (isPrint
+        ? `<div style="margin:4px 0 6px 0; text-align:center;"><img src="${q.passageImage}" alt="Gambar Wacana" style="max-width:100%; max-height:170px; width:auto; height:auto; object-fit:contain; display:inline-block;"></div>`
+        : `<div class="mt-2"><img src="${q.passageImage}" alt="Gambar Wacana" class="rounded-xl max-h-48 object-contain border border-slate-200 bg-white p-1"></div>`)
       : '';
     const tblHtml = q.passageTable ? this.renderQuestionTableHtml(q.passageTable, isPrint) : '';
     const chartHtml = q.passageChart ? this.renderChartSvgHtml(q.passageChart, { isPrint, compact: isPrint }) : '';
 
     if (isPrint) {
       return `
-        <div class="naskah-stimulus-box" style="margin:6px 0 8px 0; padding:6px 8px; border:1px solid #000000; background:#ffffff; break-inside:avoid; page-break-inside:avoid;">
-          <div style="font-weight:bold; font-size:10px; font-style:italic; margin-bottom:4px;">${this.escapePrintHtml(headerNote)}</div>
-          ${titleStr ? `<div style="font-weight:bold; font-size:10.5px; text-align:center; margin-bottom:4px; text-transform:uppercase;">${this.escapePrintHtml(titleStr)}</div>` : ''}
+        <div class="naskah-stimulus-box" style="margin:4px 0 9px 0; padding:2px 0; background:#ffffff;">
+          <div style="font-size:10.5px; font-weight:normal; margin-bottom:5px;">${this.escapePrintHtml(printHeaderNote)}</div>
+          ${titleStr ? `<div style="font-weight:bold; font-size:11.5px; text-align:center; margin:2px 0 6px 0;">${this.escapePrintHtml(titleStr)}</div>` : ''}
           ${textHtml}
+          ${imgHtml}
           ${tblHtml}
           ${chartHtml}
         </div>
@@ -3684,11 +3894,12 @@ class CBTAdmin {
     return `
       <div class="cbt-wacana-card">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-          <span class="text-[11px] font-extrabold text-blue-700 dark:text-blue-300 uppercase tracking-wide">📖 ${this.escapePrintHtml(headerNote)}</span>
+          <span class="text-[11px] font-extrabold text-blue-700 dark:text-blue-300 uppercase tracking-wide">📖 ${this.escapePrintHtml(screenHeaderNote)}</span>
           ${titleStr ? `<span class="text-xs font-bold text-slate-800 dark:text-slate-100">${this.escapePrintHtml(titleStr)}</span>` : ''}
         </div>
         <div class="text-slate-800 dark:text-slate-100 space-y-2">
           ${textHtml}
+          ${imgHtml}
           ${tblHtml}
           ${chartHtml}
         </div>
@@ -3905,34 +4116,45 @@ class CBTAdmin {
       </div>
     `;
 
-    const groupOrder = (list) => (window.examEngine && typeof window.examEngine.groupPassageQuestionsOrder === 'function')
-      ? window.examEngine.groupPassageQuestionsOrder(list)
-      : list;
+    const rawList = Array.isArray(questionsList) ? questionsList : [];
+    const resolvedQuestions = (window.examEngine && typeof window.examEngine.resolvePassagesIntoQuestions === 'function')
+      ? window.examEngine.resolvePassagesIntoQuestions(rawList, { keepUnattachedPassages: true })
+      : rawList;
 
-    // Kelompokkan tipe soal berurutan (I. PG Tunggal, II. PG Kompleks, III. Benar/Salah) sambil menjaga kelompok wacana tetap berdekatan
-    const singleQs = groupOrder(questionsList.filter(q => (q.type || 'single') === 'single'));
-    const multiQs = groupOrder(questionsList.filter(q => q.type === 'multiple'));
-    const tfQs = groupOrder(questionsList.filter(q => q.type === 'true_false'));
+    const orphanPassages = resolvedQuestions.filter(q => this.isPassageItem(q));
+    const singleQs = resolvedQuestions.filter(q => !this.isPassageItem(q) && (q.type || 'single') === 'single');
+    const multiQs = resolvedQuestions.filter(q => !this.isPassageItem(q) && q.type === 'multiple');
+    const tfQs = resolvedQuestions.filter(q => !this.isPassageItem(q) && q.type === 'true_false');
+    const allScorableInOrder = [...singleQs, ...multiQs, ...tfQs];
 
     const blocks = [];
     let numCounter = 1;
     const emittedPassages = new Set();
 
-    const pushSectionQuestions = (sectionQs, getKeyText) => {
+    const buildStimulusBlockForQuestion = (q) => {
+      const gid = q && q.passageGroupId ? String(q.passageGroupId).trim() : '';
+      if (!gid || emittedPassages.has(gid) || !(q.passageText || q.passageTable || q.passageChart || q.passageTitle || q.passageImage)) {
+        return null;
+      }
+      emittedPassages.add(gid);
+      const groupMembers = allScorableInOrder.filter(item => String(item.passageGroupId || '').trim() === gid);
+      const spanLen = Math.max(1, groupMembers.length);
+      const endNum = numCounter + spanLen - 1;
+      const rangeLabel = spanLen > 1 ? `nomor ${numCounter} sampai dengan nomor ${endNum}` : `nomor ${numCounter}`;
+      const stimHtml = this.renderPassageStimulusHtml(q, rangeLabel, true);
+      const estH = 44 + Math.ceil(String(q.passageText || '').length / (layoutCols === 2 ? 48 : 96)) * 13 + (q.passageTable ? 90 : 0) + (q.passageChart ? 130 : 0) + (q.passageImage ? 150 : 0);
+      return {
+        isHeading: true,
+        height: estH,
+        html: stimHtml
+      };
+    };
+
+    const pushSectionQuestions = (sectionQs, getKeyText, skipFirstStimulus = false) => {
       sectionQs.forEach((q, localIdx) => {
-        const gid = q.passageGroupId ? String(q.passageGroupId).trim() : '';
-        if (gid && !emittedPassages.has(gid) && (q.passageText || q.passageTable || q.passageChart || q.passageTitle)) {
-          emittedPassages.add(gid);
-          const groupMembers = sectionQs.filter(item => String(item.passageGroupId || '').trim() === gid);
-          const endNum = numCounter + groupMembers.length - 1;
-          const rangeLabel = groupMembers.length > 1 ? `nomor ${numCounter} s.d. ${endNum}` : `nomor ${numCounter}`;
-          const stimHtml = this.renderPassageStimulusHtml(q, rangeLabel, true);
-          const estH = 60 + Math.ceil(String(q.passageText || '').length / (layoutCols === 2 ? 48 : 96)) * 13 + (q.passageTable ? 90 : 0) + (q.passageChart ? 130 : 0);
-          blocks.push({
-            isHeading: true,
-            height: estH,
-            html: stimHtml
-          });
+        if (!(skipFirstStimulus && localIdx === 0)) {
+          const stimBlock = buildStimulusBlockForQuestion(q);
+          if (stimBlock) blocks.push(stimBlock);
         }
         blocks.push({
           isHeading: false,
@@ -3946,26 +4168,38 @@ class CBTAdmin {
     };
 
     if (singleQs.length > 0) {
+      const firstStimBlock = buildStimulusBlockForQuestion(singleQs[0]);
+      if (firstStimBlock) {
+        blocks.push(firstStimBlock);
+      }
       blocks.push({
         isHeading: true,
-        height: 24,
-        html: `<div style="font-weight:bold; font-size:11px; margin-bottom:6px;">I. Pilihlah satu jawaban yang paling tepat!</div>`
+        height: 36,
+        html: `
+          <div style="margin:2px 0 6px 0;">
+            <div style="font-weight:bold; font-size:11px;">I. PILIHAN GANDA</div>
+            <div style="font-size:10.5px; margin-top:2px;">Pilihlah salah satu jawaban yang tepat dari huruf a, b, c, dan d!</div>
+          </div>
+        `
       });
-      pushSectionQuestions(singleQs, (q) => q.correctAnswer || '-');
+      pushSectionQuestions(singleQs, (q) => q.correctAnswer || '-', Boolean(firstStimBlock));
     }
 
     if (multiQs.length > 0) {
+      const roman = singleQs.length > 0 ? 'II' : 'I';
+      const firstMultiStim = singleQs.length === 0 ? buildStimulusBlockForQuestion(multiQs[0]) : null;
+      if (firstMultiStim) blocks.push(firstMultiStim);
       blocks.push({
         isHeading: true,
         height: 28,
-        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${singleQs.length > 0 ? 'II' : 'I'}. Pilihan Ganda Kompleks (Pilihlah lebih dari satu jawaban yang benar!)</div>`
+        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. PILIHAN GANDA KOMPLEKS (Pilihlah lebih dari satu jawaban yang benar!)</div>`
       });
       pushSectionQuestions(multiQs, (q) => {
         const rawAns = Array.isArray(q.correctAnswer)
           ? q.correctAnswer
           : (Array.isArray(q.correctAnswers) ? q.correctAnswers : (q.correctAnswer ? [q.correctAnswer] : []));
         return rawAns.length > 0 ? rawAns.join(', ') : '-';
-      });
+      }, Boolean(firstMultiStim));
     }
 
     if (tfQs.length > 0) {
@@ -3973,9 +4207,29 @@ class CBTAdmin {
       blocks.push({
         isHeading: true,
         height: 28,
-        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. Tentukan Benar (B) atau Salah (S) pada pernyataan berikut!</div>`
+        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. BENAR / SALAH (Tentukan Benar atau Salah pada pernyataan berikut!)</div>`
       });
       pushSectionQuestions(tfQs, (q) => (Array.isArray(q.statements) ? q.statements.map((s, idx) => `${idx + 1}:${s.correct || s.answer || '-'}`).join(', ') : '-'));
+    }
+
+    if (orphanPassages.length > 0) {
+      orphanPassages.forEach(p => {
+        const pSpan = Math.max(1, parseInt(p.passageSpan || p.passageGroupSize, 10) || 5);
+        const orphanStim = this.renderPassageStimulusHtml({
+          passageTitle: p.passageTitle || '',
+          passageText: p.passageText || p.question || '',
+          passageImage: p.image || p.passageImage || '',
+          passageTable: p.tableData || p.passageTable || null,
+          passageChart: p.chartData || p.passageChart || null
+        }, pSpan > 1 ? `nomor 1 sampai dengan nomor ${pSpan}` : 'berikut', true);
+        if (orphanStim) {
+          blocks.push({
+            isHeading: true,
+            height: 70 + Math.ceil(String(p.passageText || p.question || '').length / (layoutCols === 2 ? 48 : 96)) * 13,
+            html: orphanStim
+          });
+        }
+      });
     }
 
     // Ukur tinggi aktual kop & setiap blok soal di lebar kertas F4 (210mm) agar halaman terisi penuh & rapi
@@ -4559,7 +4813,9 @@ class CBTAdmin {
 
     const normalizeText = (txt) => String(txt || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-    const items = (questionsList || []).map((q, idx) => {
+    const items = (questionsList || [])
+      .filter(q => !this.isPassageItem(q))
+      .map((q, idx) => {
       const qId = q.id;
       const qTextNorm = normalizeText(q.question);
       const qSubjNorm = String(q.subject || '').trim().toLowerCase();
@@ -4796,7 +5052,8 @@ class CBTAdmin {
       }
     });
 
-    const items = (questionsList || []).map((q, idx) => {
+    const scorableSource = (questionsList || []).filter(q => !this.isPassageItem(q));
+    const items = scorableSource.map((q, idx) => {
       const errors = [];
       const warnings = [];
       const type = q.type || 'single';
@@ -4833,7 +5090,9 @@ class CBTAdmin {
             return !hasOptTxt && !hasOptTbl;
           })
           .map(o => o?.key || '?');
-        if (emptyKeys.length > 0) {
+        if (this.isEmptyOptionsQuestion(q)) {
+          errors.push('Opsi A–D kosong! Jika ini teks Wacana, klik "Jadikan Wacana Tanpa Nomor".');
+        } else if (emptyKeys.length > 0) {
           errors.push(`Teks/tabel opsi ${emptyKeys.join(', ')} masih kosong.`);
         }
 
@@ -5011,8 +5270,8 @@ class CBTAdmin {
     const allQuestions = window.examEngine && Array.isArray(window.examEngine.questions)
       ? window.examEngine.questions
       : [];
-    const realQuestions = allQuestions.filter(q => q && !this.isTrialQuestion(q));
-    const trialQuestions = allQuestions.filter(q => q && this.isTrialQuestion(q));
+    const realQuestions = allQuestions.filter(q => q && !this.isPassageItem(q) && !this.isTrialQuestion(q));
+    const trialQuestions = allQuestions.filter(q => q && !this.isPassageItem(q) && this.isTrialQuestion(q));
 
     const matchesSub = (qSub, target) => (window.examEngine && window.examEngine.matchesSubject)
       ? window.examEngine.matchesSubject(qSub, target)
@@ -5391,12 +5650,16 @@ class CBTAdmin {
     const schoolName = String(options.schoolName || savedAtt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
     const schoolCode = String(options.schoolCode !== undefined ? options.schoolCode : (savedAtt.schoolCode || '')).trim();
     const classLabel = String(options.classLabel || '').trim();
-    const serverRoom = String(options.serverRoom || savedAtt.serverRoom || (classLabel ? `Ruang Ujian ${classLabel}` : 'Ruang Ujian 1')).trim();
+    const roomLabel = String(options.roomLabel || '').trim();
+    const serverRoom = String(options.serverRoom || savedAtt.serverRoom || (roomLabel || (classLabel ? `Ruang Ujian ${classLabel}` : 'Ruang Ujian 1'))).trim();
     const session = String(options.session !== undefined ? options.session : (savedAtt.session || '1')).trim();
     const dayText = String(options.dayText !== undefined ? options.dayText : (savedAtt.dayText || '')).trim() || '....................';
     const dateText = String(options.dateText !== undefined ? options.dateText : (savedAtt.dateText || '')).trim() || '..............................';
     const timeRange = String(options.timeRange !== undefined ? options.timeRange : (savedAtt.timeRange || '07.30 - 09.30')).trim();
     const subjectName = String(options.subjectName !== undefined ? options.subjectName : (savedAtt.subjectName || examCfg.subject || '')).trim() || 'Semua Mata Pelajaran';
+    const uniqueClassSet = new Set(list.map(s => String(s && s.class || '').trim()).filter(Boolean));
+    const isMixedClasses = Boolean(options.isMixedRoom || uniqueClassSet.size > 1);
+    const resolveSubjectForStudent = typeof options.resolveSubjectForStudent === 'function' ? options.resolveSubjectForStudent : null;
 
     const headmasterName = String(options.headmasterName || savedAtt.headmasterName || cfg.headmasterName || 'Kepala Sekolah').trim();
     const headmasterNip = String(options.headmasterNip !== undefined ? options.headmasterNip : (savedAtt.headmasterNip || cfg.headmasterNip || '')).trim();
@@ -5606,14 +5869,18 @@ class CBTAdmin {
             const sigHtml = isEven
               ? `<div style="display:flex; width:100%; align-items:center;"><span style="display:inline-block; width:50%;"></span><span style="display:inline-block; width:50%; text-align:left; font-size:${rowFontSize};">${no}.</span></div>`
               : `<div style="display:flex; width:100%; align-items:center;"><span style="display:inline-block; width:50%; text-align:left; font-size:${rowFontSize};">${no}.</span><span style="display:inline-block; width:50%;"></span></div>`;
+            const stuClassSuffix = isMixedClasses && st.class
+              ? ` <span style="font-size:9px; font-weight:600; color:#334155;">(${this.escapePrintHtml(st.class)})</span>`
+              : '';
+            const stuSubjectText = (resolveSubjectForStudent ? resolveSubjectForStudent(st) : '') || subjectName;
 
             return `
               <tr>
                 <td style="border:1px solid #000000; padding:${cellPad}; text-align:center; font-size:${rowFontSize};">${no}</td>
                 <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize}; white-space:nowrap;">${this.escapePrintHtml(st.nisn || '-')}</td>
-                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(st.name || '-')}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(st.name || '-')}${stuClassSuffix}</td>
                 <td style="border:1px solid #000000; padding:${cellPad}; vertical-align:middle;">${sigHtml}</td>
-                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(subjectName)}</td>
+                <td style="border:1px solid #000000; padding:${cellPad}; font-size:${rowFontSize};">${this.escapePrintHtml(stuSubjectText)}</td>
               </tr>
             `;
           }).join('')
@@ -5674,7 +5941,7 @@ class CBTAdmin {
     const pdfHeightMm = paperSize === 'A4' ? 297 : 330;
     const prevScrollY = window.scrollY || window.pageYOffset || 0;
     const prevScrollX = window.scrollX || window.pageXOffset || 0;
-    const roomSlug = String(options.classLabel || options.serverRoom || 'Semua_Kelas').replace(/[^a-z0-9]+/gi, '_');
+    const roomSlug = String(options.roomLabel || options.classLabel || options.serverRoom || 'Semua_Kelas').replace(/[^a-z0-9]+/gi, '_');
     const filename = `Daftar_Hadir_${roomSlug}_${Date.now()}.pdf`;
 
     try {

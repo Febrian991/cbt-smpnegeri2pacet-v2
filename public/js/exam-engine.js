@@ -682,6 +682,27 @@ class ExamEngine {
     return /^\[Soal\s+(?:Simulasi|Uji Coba)/i.test(String(q.question || '').trim());
   }
 
+  isPassageItem(q) {
+    return Boolean(q && String(q.type || '').trim().toLowerCase() === 'passage');
+  }
+
+  isEmptyOptionsQuestion(q) {
+    if (!q || typeof q !== 'object') return false;
+    const type = String(q.type || 'single').trim().toLowerCase();
+    if (type !== 'single' && type !== 'multiple') return false;
+    const rawOpts = Array.isArray(q.options) ? q.options : [];
+    const optTables = (q.optionTables && typeof q.optionTables === 'object') ? q.optionTables : {};
+    const hasAnyOptionContent = rawOpts.some(opt => {
+      if (!opt) return false;
+      const k = String(opt.key || '').trim().toUpperCase();
+      const hasTxt = String(opt.text || '').trim() !== '';
+      const hasTbl = Boolean(optTables[k] && Array.isArray(optTables[k].rows) && optTables[k].rows.length > 0);
+      return hasTxt || hasTbl;
+    });
+    const textContent = String(q.question || q.passageText || '').trim();
+    return !hasAnyOptionContent && textContent.length > 0;
+  }
+
   groupPassageQuestionsOrder(list = []) {
     if (!Array.isArray(list) || list.length <= 1) return Array.isArray(list) ? list : [];
     const groupedBuckets = new Map();
@@ -694,7 +715,11 @@ class ExamEngine {
     });
     if (groupedBuckets.size === 0) return list;
     groupedBuckets.forEach(bucket => {
-      bucket.sort((a, b) => (Number(a.passageOrder) || 0) - (Number(b.passageOrder) || 0));
+      bucket.sort((a, b) => {
+        const oa = this.isPassageItem(a) ? -1 : (Number(a.passageOrder) || 0);
+        const ob = this.isPassageItem(b) ? -1 : (Number(b.passageOrder) || 0);
+        return oa - ob;
+      });
     });
     const emitted = new Set();
     const ordered = [];
@@ -708,6 +733,72 @@ class ExamEngine {
       }
     });
     return ordered;
+  }
+
+  resolvePassagesIntoQuestions(rawList = [], options = {}) {
+    const keepUnattachedPassages = Boolean(options && options.keepUnattachedPassages);
+    const ordered = this.groupPassageQuestionsOrder(Array.isArray(rawList) ? rawList : []);
+    if (ordered.length === 0) return [];
+
+    const cloned = ordered.map(item => (item && typeof item === 'object' ? { ...item } : item));
+    const attachedPassageIndices = new Set();
+
+    cloned.forEach((p, idx) => {
+      if (!this.isPassageItem(p)) return;
+      const pTitle = String(p.passageTitle || '').trim();
+      const pText = String(p.passageText || p.question || '').trim();
+      const pImg = p.passageImage || p.image || '';
+      const pTbl = p.passageTable || p.tableData || null;
+      const pChart = p.passageChart || p.chartData || null;
+      const explicitGid = p.passageGroupId ? String(p.passageGroupId).trim() : '';
+      const gid = explicitGid || `WACANA-BLK-${p.id || idx}`;
+      const span = Math.max(1, parseInt(p.passageSpan || p.passageGroupSize, 10) || 5);
+
+      let targetIndices = [];
+      if (explicitGid) {
+        cloned.forEach((cand, cIdx) => {
+          if (cIdx !== idx && cand && !this.isPassageItem(cand) && String(cand.passageGroupId || '').trim() === explicitGid) {
+            targetIndices.push(cIdx);
+          }
+        });
+      }
+
+      if (targetIndices.length === 0) {
+        for (let j = idx + 1; j < cloned.length && targetIndices.length < span; j++) {
+          const cand = cloned[j];
+          if (!cand) continue;
+          if (this.isPassageItem(cand)) break;
+          const candGid = String(cand.passageGroupId || '').trim();
+          if (candGid && candGid !== gid) {
+            if (targetIndices.length > 0) break;
+            continue;
+          }
+          targetIndices.push(j);
+        }
+      }
+
+      if (targetIndices.length > 0) {
+        attachedPassageIndices.add(idx);
+        targetIndices.forEach((tIdx, orderIdx) => {
+          const target = cloned[tIdx];
+          if (!target) return;
+          if (!target.passageGroupId) target.passageGroupId = gid;
+          if (!target.passageTitle && pTitle) target.passageTitle = pTitle;
+          if (!target.passageText && pText) target.passageText = pText;
+          if (!target.passageImage && pImg) target.passageImage = pImg;
+          if (!target.passageTable && pTbl) target.passageTable = pTbl;
+          if (!target.passageChart && pChart) target.passageChart = pChart;
+          if (!target.passageOrder) target.passageOrder = orderIdx + 1;
+          if (!target.passageGroupSize) target.passageGroupSize = targetIndices.length;
+        });
+      }
+    });
+
+    return cloned.filter((item, idx) => {
+      if (!item) return false;
+      if (!this.isPassageItem(item)) return true;
+      return keepUnattachedPassages && !attachedPassageIndices.has(idx);
+    });
   }
 
   getQuestionsForExam(subjectOverride = null, classOverride = null, categoryOverride = null) {
@@ -733,8 +824,9 @@ class ExamEngine {
       return this.matchesClassLevel(q.classLevel || 'Semua Kelas', targetClass);
     });
 
-    if (matched.length > 0) {
-      return { questions: this.groupPassageQuestionsOrder(matched), isFallback: false, category: effectiveCategory };
+    const resolvedMatched = this.resolvePassagesIntoQuestions(matched, { keepUnattachedPassages: false });
+    if (resolvedMatched.length > 0) {
+      return { questions: resolvedMatched, isFallback: false, category: effectiveCategory };
     }
 
     const subjectOnly = this.questions.filter(q => {
@@ -744,15 +836,20 @@ class ExamEngine {
       return this.matchesSubject(qSub, targetSubject);
     });
 
-    if (subjectOnly.length > 0) {
-      return { questions: this.groupPassageQuestionsOrder(subjectOnly), isFallback: false, category: effectiveCategory };
+    const resolvedSubjectOnly = this.resolvePassagesIntoQuestions(subjectOnly, { keepUnattachedPassages: false });
+    if (resolvedSubjectOnly.length > 0) {
+      return { questions: resolvedSubjectOnly, isFallback: false, category: effectiveCategory };
     }
 
     if (effectiveCategory !== 'ALL') {
       return { questions: [], isFallback: true, emptyForCategory: true, category: effectiveCategory };
     }
 
-    return { questions: this.groupPassageQuestionsOrder([...this.questions]), isFallback: true, category: 'ALL' };
+    return {
+      questions: this.resolvePassagesIntoQuestions([...this.questions], { keepUnattachedPassages: false }),
+      isFallback: true,
+      category: 'ALL'
+    };
   }
 
   getExamQuestions() {
@@ -846,6 +943,7 @@ class ExamEngine {
       nisn: this.student.nisn,
       name: this.student.name,
       class: this.student.class,
+      examRoom: this.student.examRoom || '',
       subject: activeCfg.subject,
       status: 'in_progress',
       attemptNumber: this.attemptNumber || 1,
@@ -943,12 +1041,13 @@ class ExamEngine {
 
     let restoredList = [];
     if (Array.isArray(sessionData.activeQuestionIds) && sessionData.activeQuestionIds.length > 0) {
+      const freshPool = this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class, activeCfg.questionCategory || 'ALL').questions;
       const restored = sessionData.activeQuestionIds
-        .map(id => this.questions.find(q => q.id === id))
-        .filter(Boolean);
+        .map(id => freshPool.find(q => q.id === id) || this.questions.find(q => q.id === id))
+        .filter(q => Boolean(q) && !this.isPassageItem(q));
       restoredList = restored.length > 0
         ? restored
-        : this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class, activeCfg.questionCategory || 'ALL').questions;
+        : freshPool;
     } else {
       restoredList = this.getQuestionsForExam(activeCfg.subject, this.student && this.student.class, activeCfg.questionCategory || 'ALL').questions;
     }
@@ -1698,6 +1797,7 @@ class ExamEngine {
           nisn: studentSnap.nisn,
           name: studentSnap.name,
           class: studentSnap.class,
+          examRoom: studentSnap.examRoom || '',
           subject: activeCfg.subject,
           status: 'completed',
           attemptNumber: attemptSnap,

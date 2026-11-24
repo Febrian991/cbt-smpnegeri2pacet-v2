@@ -23,6 +23,21 @@ function buildBirthPlaceDate(birthPlace, birthDate, fallbackRaw = "") {
   return String(fallbackRaw || "").trim() || "-";
 }
 
+function normalizeExamRoomDisplay(raw) {
+  const txt = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+  if (!txt || txt === '-' || /^belum\s+diatur$/i.test(txt)) return '';
+  return txt;
+}
+
+function normalizeExamRoomKey(raw) {
+  const s = normalizeExamRoomDisplay(raw).toUpperCase();
+  if (!s) return '';
+  return s
+    .replace(/^RUANGAN?\b/i, 'RUANG')
+    .replace(/[\s._-]+/g, '')
+    .replace(/([A-Z])0+(\d+)/g, '$1$2');
+}
+
 const SAMPLE_INITIAL_STUDENTS = [
   { nisn: "0081234501", name: "Ahmad Fauzan Pratama", class: "9A", birthPlace: "Mojokerto", birthDate: "12 Januari 2011", birthPlaceDate: "Mojokerto, 12 Januari 2011", gender: "Laki-laki", address: "Ds. Pacet RT 02 RW 01, Kec. Pacet", password: "123" },
   { nisn: "0081234502", name: "Aisyah Putri Maharani", class: "9A", birthPlace: "Mojokerto", birthDate: "24 Maret 2011", birthPlaceDate: "Mojokerto, 24 Maret 2011", gender: "Perempuan", address: "Ds. Claket RT 01 RW 03, Kec. Pacet", password: "123" },
@@ -110,11 +125,13 @@ class StudentManager {
     const birthPlace = s.birthPlace ? String(s.birthPlace).trim() : split.birthPlace;
     const birthDate = s.birthDate ? String(s.birthDate).trim() : split.birthDate;
     const birthPlaceDate = buildBirthPlaceDate(birthPlace, birthDate, s.birthPlaceDate);
+    const examRoom = normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang));
 
     return {
       nisn: String(s.nisn || '').trim(),
       name: String(s.name || '').trim(),
       class: String(s.class || '9A').trim(),
+      examRoom,
       birthPlace,
       birthDate,
       birthPlaceDate,
@@ -144,7 +161,7 @@ class StudentManager {
       return candidates;
     }
 
-    // Mode Guru Mapel: hanya simpan daftar nama/kelas tanpa password di sessionStorage/memori
+    // Mode Guru Mapel & Pengawas: simpan daftar nama/kelas/ruang tanpa password di sessionStorage/memori
     try { localStorage.removeItem('cbt_students_list'); } catch (e) {}
     if (this._hasStaffSession()) {
       try {
@@ -155,7 +172,8 @@ class StudentManager {
             return parsed.map(s => ({
               nisn: String(s.nisn || '').trim(),
               name: String(s.name || '').trim(),
-              class: String(s.class || 'Umum').trim()
+              class: String(s.class || 'Umum').trim(),
+              examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang))
             }));
           }
         }
@@ -186,7 +204,8 @@ class StudentManager {
       this.students = list.map(s => ({
         nisn: String(s.nisn || '').trim(),
         name: String(s.name || '').trim(),
-        class: String(s.class || 'Umum').trim()
+        class: String(s.class || 'Umum').trim(),
+        examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang))
       }));
       try {
         sessionStorage.setItem('cbt_guru_roster_cache', JSON.stringify(this.students));
@@ -245,6 +264,57 @@ class StudentManager {
     return Array.from(classSet).sort((a, b) => this.compareClassNames(a, b));
   }
 
+  normalizeRoomDisplay(raw) {
+    return normalizeExamRoomDisplay(raw);
+  }
+
+  normalizeRoomKey(raw) {
+    return normalizeExamRoomKey(raw);
+  }
+
+  compareRoomNames(a, b) {
+    return String(a || '').localeCompare(String(b || ''), 'id', { numeric: true, sensitivity: 'base' });
+  }
+
+  getAllRooms() {
+    const roomMap = new Map();
+    this.students.forEach(s => {
+      const disp = normalizeExamRoomDisplay(s && (s.examRoom || s.room || s.ruang));
+      const key = normalizeExamRoomKey(disp);
+      if (disp && key && !roomMap.has(key)) {
+        roomMap.set(key, disp);
+      }
+    });
+    return Array.from(roomMap.values()).sort((a, b) => this.compareRoomNames(a, b));
+  }
+
+  matchesRoom(studentRoom, targetRoom) {
+    const k1 = normalizeExamRoomKey(studentRoom);
+    const k2 = normalizeExamRoomKey(targetRoom);
+    return Boolean(k1 && k2 && k1 === k2);
+  }
+
+  isKnownRoom(token) {
+    const k = normalizeExamRoomKey(token);
+    if (!k) return false;
+    return this.getAllRooms().some(r => normalizeExamRoomKey(r) === k);
+  }
+
+  getStudentsByRoom(roomName) {
+    const key = normalizeExamRoomKey(roomName);
+    if (!key) return [];
+    return this.students.filter(s => normalizeExamRoomKey(s.examRoom) === key);
+  }
+
+  getClassesInRoom(roomName) {
+    const inRoom = this.getStudentsByRoom(roomName);
+    const clsSet = new Set();
+    inRoom.forEach(s => {
+      if (s.class) clsSet.add(String(s.class).trim());
+    });
+    return Array.from(clsSet).sort((a, b) => this.compareClassNames(a, b));
+  }
+
   authenticateStudent(nisn, password, directoryOverride = null) {
     const cleanNisn = String(nisn || "").trim();
     const cleanPass = String(password || "").trim();
@@ -268,7 +338,8 @@ class StudentManager {
       student: {
         nisn: String(student.nisn || '').trim(),
         name: String(student.name || '-').trim(),
-        class: String(student.class || 'Umum').trim()
+        class: String(student.class || 'Umum').trim(),
+        examRoom: normalizeExamRoomDisplay(student.examRoom || student.room || student.ruang || '')
       }
     };
   }
@@ -288,7 +359,8 @@ class StudentManager {
           student: {
             nisn: String(rpcRes.student.nisn || cleanNisn).trim(),
             name: String(rpcRes.student.name || '-').trim(),
-            class: String(rpcRes.student.class || 'Umum').trim()
+            class: String(rpcRes.student.class || 'Umum').trim(),
+            examRoom: normalizeExamRoomDisplay(rpcRes.student.examRoom || rpcRes.student.room || '')
           }
         };
       }
@@ -309,7 +381,8 @@ class StudentManager {
           this._hintMemoryList = cloudStudents.map(s => ({
             nisn: String(s.nisn || '').trim(),
             name: String(s.name || '').trim(),
-            class: String(s.class || 'Umum').trim()
+            class: String(s.class || 'Umum').trim(),
+            examRoom: normalizeExamRoomDisplay(s.examRoom || s.room || s.ruang || '')
           }));
           return this.authenticateStudent(cleanNisn, cleanPass, cloudStudents);
         }
@@ -325,14 +398,14 @@ class StudentManager {
 
     const localMatch = this.getStudentByNisn(cleanNisn);
     if (localMatch) {
-      return { found: true, name: localMatch.name, class: localMatch.class };
+      return { found: true, name: localMatch.name, class: localMatch.class, examRoom: localMatch.examRoom || '' };
     }
 
     if (typeof window !== 'undefined' && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
       if (typeof window.supabaseSync.lookupStudentHintRpc === 'function' && !window.supabaseSync.securityRpcMissing) {
         const res = await window.supabaseSync.lookupStudentHintRpc(cleanNisn);
         if (res && res.found) {
-          return { found: true, name: res.name, class: res.class };
+          return { found: true, name: res.name, class: res.class, examRoom: normalizeExamRoomDisplay(res.examRoom || res.room || '') };
         }
         if (res && !res.rpcUnavailable) {
           return { found: false };
@@ -341,7 +414,7 @@ class StudentManager {
 
       if (Array.isArray(this._hintMemoryList)) {
         const cached = this._hintMemoryList.find(s => s.nisn === cleanNisn);
-        return cached ? { found: true, name: cached.name, class: cached.class } : { found: false };
+        return cached ? { found: true, name: cached.name, class: cached.class, examRoom: cached.examRoom || '' } : { found: false };
       }
 
       if (typeof window.supabaseSync.pullAuthDirectoryFallback === 'function') {
@@ -353,16 +426,17 @@ class StudentManager {
           this._hintMemoryList = cloudStudents.map(s => ({
             nisn: String(s.nisn || '').trim(),
             name: String(s.name || '').trim(),
-            class: String(s.class || 'Umum').trim()
+            class: String(s.class || 'Umum').trim(),
+            examRoom: normalizeExamRoomDisplay(s.examRoom || s.room || s.ruang || '')
           }));
           const found = this._hintMemoryList.find(s => s.nisn === cleanNisn);
-          return found ? { found: true, name: found.name, class: found.class } : { found: false };
+          return found ? { found: true, name: found.name, class: found.class, examRoom: found.examRoom || '' } : { found: false };
         }
       }
     }
 
     const offlineMatch = this._getOfflineCandidateStudents().find(s => s.nisn === cleanNisn);
-    return offlineMatch ? { found: true, name: offlineMatch.name, class: offlineMatch.class } : { found: false };
+    return offlineMatch ? { found: true, name: offlineMatch.name, class: offlineMatch.class, examRoom: offlineMatch.examRoom || '' } : { found: false };
   }
 
   addStudent(studentData) {
@@ -376,11 +450,13 @@ class StudentManager {
 
     const birthPlace = studentData.birthPlace ? String(studentData.birthPlace).trim() : splitBirthPlaceDate(studentData.birthPlaceDate).birthPlace;
     const birthDate = studentData.birthDate ? String(studentData.birthDate).trim() : splitBirthPlaceDate(studentData.birthPlaceDate).birthDate;
+    const examRoom = normalizeExamRoomDisplay(studentData.examRoom !== undefined ? studentData.examRoom : (studentData.room || ''));
 
     this.students.push({
       nisn: cleanNisn,
       name: String(studentData.name || "").trim(),
       class: studentData.class ? String(studentData.class).trim() : "9A",
+      examRoom,
       birthPlace,
       birthDate,
       birthPlaceDate: buildBirthPlaceDate(birthPlace, birthDate),
@@ -412,10 +488,14 @@ class StudentManager {
       if (String(s.nisn).trim() === String(nisn).trim()) {
         const nextPlace = updatedData.birthPlace !== undefined ? String(updatedData.birthPlace).trim() : s.birthPlace;
         const nextDate = updatedData.birthDate !== undefined ? String(updatedData.birthDate).trim() : s.birthDate;
+        const nextRoom = updatedData.examRoom !== undefined
+          ? normalizeExamRoomDisplay(updatedData.examRoom)
+          : (s.examRoom || '');
         return {
           ...s,
           name: updatedData.name ? String(updatedData.name).trim() : s.name,
           class: updatedData.class ? String(updatedData.class).trim() : s.class,
+          examRoom: nextRoom,
           birthPlace: nextPlace,
           birthDate: nextDate,
           birthPlaceDate: buildBirthPlaceDate(nextPlace, nextDate, updatedData.birthPlaceDate || s.birthPlaceDate),
@@ -430,6 +510,103 @@ class StudentManager {
     return { success: true };
   }
 
+  assignExamRooms(options = {}) {
+    if (!Array.isArray(this.students) || this.students.length === 0) {
+      return { success: false, message: "Belum ada data siswa untuk dibagi ruang ujian." };
+    }
+    const mode = String(options.mode || 'mixed_random').trim();
+    if (mode === 'clear') {
+      const next = this.students.map(s => ({ ...s, examRoom: '' }));
+      this.saveStudents(next);
+      return { success: true, mode: 'clear', assignedCount: next.length, roomCount: 0, roomsSummary: [] };
+    }
+
+    const roomCount = Math.max(1, Math.min(50, parseInt(options.roomCount, 10) || 8));
+    const roomPrefix = normalizeExamRoomDisplay(options.roomPrefix || 'Ruang') || 'Ruang';
+    const roomLabels = Array.from({ length: roomCount }, (_, i) => `${roomPrefix} ${i + 1}`);
+
+    const getGradeBucket = (clsStr) => {
+      const m = String(clsStr || '').trim().match(/^(VIII|VII|IX|[0-9]+)/i);
+      if (!m) return 'LAIN';
+      const tok = m[1].toUpperCase();
+      if (tok === 'VII') return '7';
+      if (tok === 'VIII') return '8';
+      if (tok === 'IX') return '9';
+      return tok;
+    };
+
+    const fisherYatesShuffle = (arr) => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
+
+    const assignedRoomByNisn = new Map();
+    if (mode === 'by_class_sequential') {
+      const sorted = [...this.students].sort((a, b) => {
+        const cmp = this.compareClassNames(a.class, b.class);
+        if (cmp !== 0) return cmp;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'id');
+      });
+      const baseSize = Math.floor(sorted.length / roomCount);
+      const remainder = sorted.length % roomCount;
+      let cursor = 0;
+      for (let rIdx = 0; rIdx < roomCount; rIdx++) {
+        const cap = baseSize + (rIdx < remainder ? 1 : 0);
+        for (let k = 0; k < cap && cursor < sorted.length; k++) {
+          assignedRoomByNisn.set(String(sorted[cursor].nisn).trim(), roomLabels[rIdx]);
+          cursor++;
+        }
+      }
+    } else {
+      // Acak Campur Lintas Kelas (7-8-9) merata ke semua ruang:
+      // Setiap jenjang diacak terpisah lalu dibagikan round-robin dengan cursor berlanjut
+      const gradeMap = new Map();
+      this.students.forEach(s => {
+        const g = getGradeBucket(s.class);
+        if (!gradeMap.has(g)) gradeMap.set(g, []);
+        gradeMap.get(g).push(s);
+      });
+      const gradeKeys = Array.from(gradeMap.keys()).sort((a, b) => String(a).localeCompare(String(b), 'id', { numeric: true }));
+      let roomCursor = 0;
+      gradeKeys.forEach(g => {
+        const shuffledGrade = fisherYatesShuffle(gradeMap.get(g));
+        shuffledGrade.forEach(stu => {
+          assignedRoomByNisn.set(String(stu.nisn).trim(), roomLabels[roomCursor % roomCount]);
+          roomCursor++;
+        });
+      });
+    }
+
+    const nextStudents = this.students.map(s => ({
+      ...s,
+      examRoom: assignedRoomByNisn.get(String(s.nisn).trim()) || roomLabels[0]
+    }));
+    this.saveStudents(nextStudents);
+
+    const roomsSummary = roomLabels.map(lbl => {
+      const members = nextStudents.filter(s => this.matchesRoom(s.examRoom, lbl));
+      const gradeCounts = {};
+      members.forEach(m => {
+        const g = `Kls ${getGradeBucket(m.class)}`;
+        gradeCounts[g] = (gradeCounts[g] || 0) + 1;
+      });
+      return { room: lbl, total: members.length, gradeCounts };
+    });
+
+    return {
+      success: true,
+      mode,
+      roomCount,
+      roomPrefix,
+      assignedCount: nextStudents.length,
+      roomsSummary
+    };
+  }
+
   clearAllStudents() {
     this.students = [];
     this.saveStudents([]);
@@ -442,6 +619,7 @@ class StudentManager {
       (s.name && s.name.toLowerCase().includes(q)) ||
       (s.nisn && s.nisn.toLowerCase().includes(q)) ||
       (s.class && s.class.toLowerCase().includes(q)) ||
+      (s.examRoom && s.examRoom.toLowerCase().includes(q)) ||
       (s.birthPlace && s.birthPlace.toLowerCase().includes(q)) ||
       (s.birthDate && s.birthDate.toLowerCase().includes(q)) ||
       (s.address && s.address.toLowerCase().includes(q))
@@ -512,7 +690,7 @@ class StudentManager {
 
     const headers = [
       ["TEMPLATE PANGKALAN DATA PESERTA UJIAN SEKOLAH (CBT) - SMP NEGERI 2 PACET"],
-      ["Petunjuk: Jangan ubah baris judul kolom di baris ke-3. Kolom Tempat Lahir & Tanggal Lahir terpisah. Isi data siswa mulai baris ke-4."],
+      ["Petunjuk: Jangan ubah baris judul kolom di baris ke-3. Kolom Ruang Ujian bersifat opsional (isi misal: Ruang 1 jika siswa diacak lintas kelas 7-8-9)."],
       [
         "NISN (Wajib)",
         "Nama Lengkap Siswa (Wajib)",
@@ -521,13 +699,14 @@ class StudentManager {
         "Tanggal Lahir (Wajib)",
         "Jenis Kelamin (Laki-laki / Perempuan)",
         "Alamat Lengkap Siswa (Wajib)",
-        "Password Login Siswa (Bawaan: 123)"
+        "Password Login Siswa (Bawaan: 123)",
+        "Ruang Ujian (Opsional, misal: Ruang 1)"
       ],
-      ["0081234501", "Ahmad Fauzan Pratama", "9A", "Mojokerto", "12 Januari 2011", "Laki-laki", "Ds. Pacet RT 02 RW 01, Kec. Pacet", "123"],
-      ["0081234502", "Aisyah Putri Maharani", "9A", "Mojokerto", "24 Maret 2011", "Perempuan", "Ds. Claket RT 01 RW 03, Kec. Pacet", "123"],
-      ["0081234503", "Bagus Setiawan", "8A", "Mojokerto", "05 Juli 2012", "Laki-laki", "Ds. Padusan RT 04 RW 02, Kec. Pacet", "123"],
-      ["0081234504", "Cantika Dewi Anggraini", "8B", "Mojokerto", "18 Agustus 2012", "Perempuan", "Ds. Cembor RT 03 RW 01, Kec. Pacet", "123"],
-      ["0081234505", "Dimas Arya Pangestu", "7A", "Mojokerto", "09 Februari 2013", "Laki-laki", "Ds. Kembangbelor RT 02 RW 02, Kec. Pacet", "123"]
+      ["0081234501", "Ahmad Fauzan Pratama", "9A", "Mojokerto", "12 Januari 2011", "Laki-laki", "Ds. Pacet RT 02 RW 01, Kec. Pacet", "123", "Ruang 1"],
+      ["0081234502", "Aisyah Putri Maharani", "9A", "Mojokerto", "24 Maret 2011", "Perempuan", "Ds. Claket RT 01 RW 03, Kec. Pacet", "123", "Ruang 2"],
+      ["0081234503", "Bagus Setiawan", "8A", "Mojokerto", "05 Juli 2012", "Laki-laki", "Ds. Padusan RT 04 RW 02, Kec. Pacet", "123", "Ruang 1"],
+      ["0081234504", "Cantika Dewi Anggraini", "8B", "Mojokerto", "18 Agustus 2012", "Perempuan", "Ds. Cembor RT 03 RW 01, Kec. Pacet", "123", "Ruang 2"],
+      ["0081234505", "Dimas Arya Pangestu", "7A", "Mojokerto", "09 Februari 2013", "Laki-laki", "Ds. Kembangbelor RT 02 RW 02, Kec. Pacet", "123", "Ruang 1"]
     ];
 
     const wb = XLSX.utils.book_new();
@@ -541,7 +720,8 @@ class StudentManager {
       { wch: 20 },
       { wch: 18 },
       { wch: 36 },
-      { wch: 18 }
+      { wch: 18 },
+      { wch: 22 }
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "Daftar Siswa");
@@ -583,6 +763,7 @@ class StudentManager {
         headerRow.some(h => h.includes('tempat lahir')) ||
         headerRow.some(h => h.includes('tanggal lahir')) ||
         headerRow.length >= 8;
+      const roomColIdx = headerRow.findIndex(h => h.includes('ruang'));
 
       const importedStudents = [];
       const dataRows = rows.slice(headerRowIndex + 1);
@@ -597,7 +778,7 @@ class StudentManager {
 
         let birthPlace = "Mojokerto";
         let birthDate = "15 Januari 2011";
-        let rawJk, rawAddress, rawPass;
+        let rawJk, rawAddress, rawPass, rawRoom;
 
         if (hasSplitColumns) {
           birthPlace = row[3] ? String(row[3]).trim() : "Mojokerto";
@@ -605,6 +786,7 @@ class StudentManager {
           rawJk = row[5];
           rawAddress = row[6];
           rawPass = row[7];
+          rawRoom = roomColIdx >= 0 ? row[roomColIdx] : row[8];
         } else {
           const parsedTtl = splitBirthPlaceDate(row[3]);
           birthPlace = parsedTtl.birthPlace;
@@ -612,12 +794,14 @@ class StudentManager {
           rawJk = row[4];
           rawAddress = row[5];
           rawPass = row[6];
+          rawRoom = roomColIdx >= 0 ? row[roomColIdx] : row[7];
         }
 
         importedStudents.push({
           nisn: String(rawNisn).trim(),
           name: String(rawName).trim(),
           class: rawClass ? String(rawClass).trim() : "9A",
+          examRoom: normalizeExamRoomDisplay(rawRoom || ''),
           birthPlace,
           birthDate,
           birthPlaceDate: buildBirthPlaceDate(birthPlace, birthDate),
@@ -710,8 +894,12 @@ class StudentManager {
       const safeName = this.escapeHtml(s.name || '-');
       const safeGender = this.escapeHtml(s.gender || 'Laki-laki');
       const safeClass = this.escapeHtml(s.class || '9A');
+      const safeExamRoom = this.escapeHtml(normalizeExamRoomDisplay(s.examRoom || ''));
       const safeAddress = this.escapeHtml(s.address || 'Pacet, Mojokerto');
       const safePassword = this.escapeHtml(s.password || '123');
+      const roomFooterHtml = safeExamRoom
+        ? `<span style="color:#4338ca; font-weight:800;">Ruang: ${safeExamRoom}</span>`
+        : `<span></span>`;
 
       return `
       <div class="exam-card-9x5" style="width:9.0cm; height:5.3cm; max-width:9.0cm; max-height:5.3cm; border:1.6px solid #0f172a; border-radius:8px; padding:5px 7px; background:#ffffff; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; font-family:'Plus Jakarta Sans', Arial, sans-serif; overflow:hidden; position:relative; page-break-inside:avoid; break-inside:avoid;">
@@ -788,7 +976,8 @@ class StudentManager {
         </div>
 
         <!-- FOOTER KARTU -->
-        <div style="border-top:0.8px dashed #cbd5e1; padding-top:2px; display:flex; justify-content:flex-end; font-size:6.1px; color:#64748b; font-weight:600;">
+        <div style="border-top:0.8px dashed #cbd5e1; padding-top:2px; display:flex; justify-content:space-between; align-items:center; font-size:6.1px; color:#64748b; font-weight:600;">
+          ${roomFooterHtml}
           <span>No. Urut: ${startIndex + idx + 1}</span>
         </div>
 
@@ -819,10 +1008,24 @@ class StudentManager {
     const safeStamp = this.escapeHtml(this.getCardsFooterNote());
 
     const explicitClass = options && options.classLabel ? String(options.classLabel).trim() : '';
-    const shouldGroupByClass = Boolean(!explicitClass && options && options.groupByClass !== false && items.length > 0);
+    const explicitRoom = options && options.roomLabel ? String(options.roomLabel).trim() : '';
+    const shouldGroupByRoom = Boolean(!explicitClass && !explicitRoom && options && options.groupByRoom && items.length > 0);
+    const shouldGroupByClass = Boolean(!explicitClass && !explicitRoom && !shouldGroupByRoom && options && options.groupByClass !== false && items.length > 0);
 
     let sections = [];
-    if (shouldGroupByClass) {
+    if (shouldGroupByRoom) {
+      const grouped = new Map();
+      items.forEach(s => {
+        const rm = normalizeExamRoomDisplay(s.examRoom) || 'Belum Diatur Ruang';
+        if (!grouped.has(rm)) grouped.set(rm, []);
+        grouped.get(rm).push(s);
+      });
+      const sortedRoomKeys = Array.from(grouped.keys()).sort((a, b) => this.compareRoomNames(a, b));
+      sections = sortedRoomKeys.map(rm => ({
+        sectionPrefix: `${this.escapeHtml(rm)} &bull; `,
+        students: grouped.get(rm)
+      }));
+    } else if (shouldGroupByClass) {
       const grouped = new Map();
       items.forEach(s => {
         const cls = String(s.class || 'Umum').trim() || 'Umum';
@@ -831,12 +1034,15 @@ class StudentManager {
       });
       const sortedClassKeys = Array.from(grouped.keys()).sort((a, b) => this.compareClassNames(a, b));
       sections = sortedClassKeys.map(cls => ({
-        classLabel: cls,
+        sectionPrefix: `Kelas ${this.escapeHtml(cls)} &bull; `,
         students: grouped.get(cls)
       }));
     } else {
+      const lbl = explicitRoom
+        ? `${this.escapeHtml(explicitRoom)} &bull; `
+        : (explicitClass ? `Kelas ${this.escapeHtml(explicitClass)} &bull; ` : '');
       sections = [{
-        classLabel: explicitClass,
+        sectionPrefix: lbl,
         students: items
       }];
     }
@@ -848,7 +1054,7 @@ class StudentManager {
     sections.forEach(sec => {
       const secItems = sec.students;
       const secPages = Math.max(1, Math.ceil(secItems.length / perPage));
-      const classPrefix = sec.classLabel ? `Kelas ${this.escapeHtml(sec.classLabel)} &bull; ` : '';
+      const classPrefix = sec.sectionPrefix || '';
 
       for (let p = 0; p < secPages; p++) {
         const startIndex = p * perPage;
@@ -918,9 +1124,12 @@ class StudentManager {
     const pagesHtml = this.buildPaginatedCardsPagesHtml(list, examTitle, options);
     const schoolSlug = (cfg.schoolName || 'SMPN2Pacet').replace(/\s+/g, '_');
     const classLabel = options && options.classLabel ? String(options.classLabel).trim() : '';
-    const scopeSlug = classLabel
-      ? `Kelas_${classLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
-      : 'Semua_Kelas';
+    const roomLabel = options && options.roomLabel ? String(options.roomLabel).trim() : '';
+    const scopeSlug = roomLabel
+      ? `Ruang_${roomLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+      : (classLabel
+        ? `Kelas_${classLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+        : 'Semua_Peserta');
     const filename = `Kartu_Peserta_CBT_${scopeSlug}_${schoolSlug}_${Date.now()}.pdf`;
     const prevScrollX = window.scrollX || window.pageXOffset || 0;
     const prevScrollY = window.scrollY || window.pageYOffset || 0;
@@ -1014,6 +1223,39 @@ class StudentManager {
       }
       await this.downloadCardsPdf(grouped.get(cls), examTitle, { classLabel: cls, groupByClass: false });
       if (i < sortedClasses.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 450));
+      }
+    }
+  }
+
+  async downloadCardsPerRoomSeparatePdfs(studentsList, examTitle = "UJIAN SEKOLAH BERBASIS KOMPUTER", onProgress) {
+    const list = Array.isArray(studentsList) && studentsList.length > 0 ? studentsList : this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk di-download kartu ujiannya.");
+      return;
+    }
+
+    const grouped = new Map();
+    const displayMap = new Map();
+    list.forEach(s => {
+      const rm = normalizeExamRoomDisplay(s.examRoom) || 'Belum_Diatur_Ruang';
+      const k = normalizeExamRoomKey(rm) || rm;
+      if (!grouped.has(k)) {
+        grouped.set(k, []);
+        displayMap.set(k, rm);
+      }
+      grouped.get(k).push(s);
+    });
+    const sortedKeys = Array.from(grouped.keys()).sort((a, b) => this.compareRoomNames(displayMap.get(a), displayMap.get(b)));
+
+    for (let i = 0; i < sortedKeys.length; i++) {
+      const key = sortedKeys[i];
+      const disp = displayMap.get(key);
+      if (typeof onProgress === 'function') {
+        onProgress(i + 1, sortedKeys.length, disp);
+      }
+      await this.downloadCardsPdf(grouped.get(key), examTitle, { roomLabel: disp, groupByClass: false });
+      if (i < sortedKeys.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 450));
       }
     }

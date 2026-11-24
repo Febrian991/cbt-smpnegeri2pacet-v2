@@ -1025,7 +1025,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const applyHintResult = (student) => {
         if (student) {
           if (studentFoundName) studentFoundName.innerText = student.name;
-          if (studentFoundClass) studentFoundClass.innerText = `Kelas ${student.class}`;
+          if (studentFoundClass) {
+            studentFoundClass.innerText = student.examRoom
+              ? `Kelas ${student.class} • ${student.examRoom}`
+              : `Kelas ${student.class}`;
+          }
           if (studentFoundHint) studentFoundHint.classList.remove('hidden');
 
           const activeList = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
@@ -1077,6 +1081,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('confirmName').innerText = student.name;
     document.getElementById('confirmNisn').innerText = student.nisn;
     document.getElementById('confirmClass').innerText = `Kelas ${student.class}`;
+    const confirmExamRoomRow = document.getElementById('confirmExamRoomRow');
+    const confirmExamRoomEl = document.getElementById('confirmExamRoom');
+    if (confirmExamRoomRow && confirmExamRoomEl) {
+      if (student.examRoom && String(student.examRoom).trim()) {
+        confirmExamRoomEl.innerText = String(student.examRoom).trim();
+        confirmExamRoomRow.classList.remove('hidden');
+      } else {
+        confirmExamRoomEl.innerText = '-';
+        confirmExamRoomRow.classList.add('hidden');
+      }
+    }
     const confirmSubEl = document.getElementById('confirmSubject');
     if (confirmSubEl) {
       const catTag = cfg.questionCategory === 'trial'
@@ -1370,6 +1385,7 @@ document.addEventListener('DOMContentLoaded', () => {
         name: authenticatedStudent.name,
         nisn: authenticatedStudent.nisn,
         class: authenticatedStudent.class,
+        examRoom: authenticatedStudent.examRoom || '',
         token: token,
         attemptNumber: attemptStats.count + 1,
         maxAttempts: maxAttempts,
@@ -1418,6 +1434,7 @@ document.addEventListener('DOMContentLoaded', () => {
           nisn: authenticatedStudent.nisn,
           name: authenticatedStudent.name,
           class: authenticatedStudent.class,
+          examRoom: authenticatedStudent.examRoom || '',
           subject: targetExamConfig.subject,
           status: 'logged_in',
           attemptNumber: tempStudent.attemptNumber,
@@ -2361,20 +2378,47 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     if (roomPickerWrap && roomPickerSelect) {
       if (allowDayRoomPick) {
-        const stuClasses = (window.studentManager && typeof window.studentManager.getAllClasses === 'function')
-          ? window.studentManager.getAllClasses()
-          : [];
-        const roomChoices = stuClasses.length > 0 ? stuClasses : ['7A', '7B', '8A', '8B', '9A', '9B'];
-        roomPickerSelect.innerHTML = '<option value="">-- Pilih Ruang / Kelas Ujian --</option>' +
-          roomChoices.map(c => `<option value="${escapeHtmlSafe(c)}">Ruang / Kelas ${escapeHtmlSafe(c)}</option>`).join('');
+        const sm = window.studentManager;
+        const stuRooms = (sm && typeof sm.getAllRooms === 'function') ? sm.getAllRooms() : [];
+        const stuClasses = (sm && typeof sm.getAllClasses === 'function') ? sm.getAllClasses() : [];
+        let pickerHtml = '<option value="">-- Pilih Ruang / Kelas Ujian --</option>';
+        if (stuRooms.length > 0) {
+          pickerHtml += '<optgroup label="🏫 Ruang Ujian (Acak Lintas Kelas)">' + stuRooms.map(r => {
+            const members = sm.getStudentsByRoom ? sm.getStudentsByRoom(r) : [];
+            const gradeSummary = [...new Set(members.map(m => {
+              const matchG = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
+              return matchG ? matchG[1] : String(m.class || '');
+            }).filter(Boolean))].sort().join(',');
+            const extra = members.length > 0
+              ? ` (${members.length} Siswa${gradeSummary ? ` • Kls ${gradeSummary}` : ''})`
+              : '';
+            return `<option value="${escapeHtmlSafe(r)}">🏫 ${escapeHtmlSafe(r)}${escapeHtmlSafe(extra)}</option>`;
+          }).join('') + '</optgroup>';
+        }
+        const classChoices = stuClasses.length > 0 ? stuClasses : ['7A', '7B', '8A', '8B', '9A', '9B'];
+        pickerHtml += (stuRooms.length > 0 ? '<optgroup label="🎓 Berdasarkan Kelas Asli">' : '') +
+          classChoices.map(c => `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)}</option>`).join('') +
+          (stuRooms.length > 0 ? '</optgroup>' : '');
+        roomPickerSelect.innerHTML = pickerHtml;
+
         if (roomPickerHint) {
           roomPickerHint.innerText = pengawasScope.mode === 'weekly'
             ? `Hari ${pengawasScope.activeDay || 'ini'} belum diisi jadwal ruang tetap; silakan pilih ruang yang sedang Anda awasi hari ini.`
-            : 'Akun pengawas ini tidak dikunci 1 kelas, silakan pilih ruang yang sedang Anda awasi hari ini.';
+            : 'Akun pengawas ini tidak dikunci 1 ruang/kelas, silakan pilih ruang yang sedang Anda awasi hari ini.';
         }
         const currentPicked = pengawasScope.sessionSelectedRoom || '';
-        if (currentPicked && Array.from(roomPickerSelect.options).some(o => o.value === currentPicked)) {
-          roomPickerSelect.value = currentPicked;
+        const normPickedKey = typeof window.cbtAdmin.normalizeRoomKey === 'function'
+          ? window.cbtAdmin.normalizeRoomKey(currentPicked)
+          : currentPicked.toUpperCase();
+        const matchedOpt = currentPicked
+          ? Array.from(roomPickerSelect.options).find(o => {
+              if (!o.value) return false;
+              if (o.value.toUpperCase() === currentPicked.toUpperCase()) return true;
+              return normPickedKey && typeof window.cbtAdmin.normalizeRoomKey === 'function' && window.cbtAdmin.normalizeRoomKey(o.value) === normPickedKey;
+            })
+          : null;
+        if (matchedOpt) {
+          roomPickerSelect.value = matchedOpt.value;
         } else if (currentPicked) {
           const extraOpt = document.createElement('option');
           extraOpt.value = currentPicked;
@@ -2408,12 +2452,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const dayPrefix = pengawasScope.mode === 'weekly' && pengawasScope.activeDay
           ? `Jadwal Hari ${escapeHtmlSafe(pengawasScope.activeDay)} &bull; `
           : '';
-        const clsPart = `${dayPrefix}<strong>Kelas/Ruang: ${escapeHtmlSafe(clsList.join(', '))}</strong>`;
+        const roomGradeNote = pengawasScope.isRoomScoped && pengawasScope.roomClassLevels && pengawasScope.roomClassLevels.length > 0
+          ? ` <span class="text-[11px] opacity-90">(Campur Kelas: ${escapeHtmlSafe(pengawasScope.roomClassLevels.join(', '))})</span>`
+          : '';
+        const scopeWord = pengawasScope.isRoomScoped ? 'Ruang' : 'Kelas/Ruang';
+        const clsPart = `${dayPrefix}<strong>${scopeWord}: ${escapeHtmlSafe(clsList.join(', '))}</strong>${roomGradeNote}`;
         const subjPart = subjList.length > 0 ? `Mata Pelajaran: <strong>${escapeHtmlSafe(subjList.join(', '))}</strong>` : '';
         const scopeJoined = [clsPart, subjPart].filter(Boolean).join(' &bull; ');
         pengawasBannerDesc.innerHTML = `Ruang lingkup pantauan Anda: ${scopeJoined}. Anda dapat memantau status login, progres soal, pelanggaran tab, dan menekan <strong>🔄 Izinkan Ulang</strong> jika HP siswa bermasalah. Akses Bank Soal, Kunci Jawaban &amp; Rekap Nilai terkunci aman.`;
       } else if (pengawasScope.mode === 'flexible') {
-        pengawasBannerDesc.innerHTML = `Akun Pengawas ini bersifat <strong>fleksibel</strong> (tidak dikunci di 1 kelas). Silakan pilih <strong>Ruang / Kelas</strong> yang sedang Anda awasi hari ini pada pilihan di bawah agar token ujian &amp; daftar siswa ruangan tersebut tampil.`;
+        pengawasBannerDesc.innerHTML = `Akun Pengawas ini bersifat <strong>fleksibel</strong> (tidak dikunci di 1 ruang/kelas). Silakan pilih <strong>Ruang / Kelas</strong> yang sedang Anda awasi hari ini pada pilihan di bawah agar token ujian &amp; daftar siswa ruangan tersebut tampil.`;
       } else {
         pengawasBannerDesc.innerHTML = `Pada jadwal mingguan Anda, hari <strong>${escapeHtmlSafe(pengawasScope.activeDay || 'ini')}</strong> belum memiliki ruang pengawasan. Hubungi Proktor / Admin jika terjadi perubahan jadwal ruang.`;
       }
@@ -2438,7 +2486,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const parts = ['Pengawas Ruang Ujian'];
         if (pengawasScope.classes.length > 0) {
           if (pengawasScope.subjects.length > 0) parts.push(pengawasScope.subjects.join(', '));
-          parts.push(`Ruang/Kelas: ${pengawasScope.classes.join(', ')}`);
+          parts.push(`${pengawasScope.isRoomScoped ? 'Ruang' : 'Ruang/Kelas'}: ${pengawasScope.classes.join(', ')}`);
         } else if (pengawasScope.mode === 'flexible') {
           parts.push('Pilih Ruang Pengawasan Hari Ini');
         } else {
@@ -4012,7 +4060,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (monClassEl) {
       const prevMonCls = monClassEl.value;
-      const studentClasses = window.studentManager ? window.studentManager.getAllClasses() : [];
+      const sm = window.studentManager;
+      const allRooms = (sm && typeof sm.getAllRooms === 'function') ? sm.getAllRooms() : [];
+      const studentClasses = sm ? sm.getAllClasses() : [];
       const matchedStudentClasses = effectiveClasses.length > 0
         ? studentClasses.filter(c => window.examEngine.matchesClassLevel(effectiveClasses.join(', '), c))
         : studentClasses;
@@ -4026,6 +4076,23 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'Pilih Ruang di Atas'
             : 'Belum Ada Ruang Hari Ini';
           monClassEl.innerHTML = `<option value="__NO_ROOM__">${emptyRoomLbl}</option>`;
+        } else if (pengawasScope && pengawasScope.isRoomScoped) {
+          const assignedRooms = pengawasScope.assignedRooms || [];
+          const roomClasses = pengawasScope.roomClassLevels || [];
+          let pHtml = `<option value="ALL">🏫 Semua Siswa di ${escapeHtmlSafe(assignedRooms.join(', '))}</option>`;
+          if (assignedRooms.length > 1) {
+            assignedRooms.forEach(rm => {
+              pHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)}</option>`;
+            });
+          }
+          if (roomClasses.length > 1) {
+            pHtml += '<optgroup label="🎓 Filter Kelas di Ruang Ini">';
+            roomClasses.forEach(c => {
+              pHtml += `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)}</option>`;
+            });
+            pHtml += '</optgroup>';
+          }
+          monClassEl.innerHTML = pHtml;
         } else if (classesToShow.length === 1) {
           monClassEl.innerHTML = `<option value="${escapeHtmlSafe(classesToShow[0])}">Kelas ${escapeHtmlSafe(classesToShow[0])}</option>`;
         } else {
@@ -4041,21 +4108,28 @@ document.addEventListener('DOMContentLoaded', () => {
           monClassEl.value = prevMonCls;
         } else if (effectiveClasses.length === 0) {
           monClassEl.value = '__NO_ROOM__';
+        } else if (pengawasScope && pengawasScope.isRoomScoped) {
+          monClassEl.value = 'ALL';
         } else if (classesToShow.length === 1) {
           monClassEl.value = classesToShow[0];
         } else {
           monClassEl.value = 'ALL';
         }
       } else {
-        monClassEl.innerHTML = effectiveClasses.length > 0
-          ? `<option value="ALL">Kelas Diampu (${effectiveClasses.join(', ')})</option>`
-          : '<option value="ALL">Semua Kelas</option>';
-        classesToShow.forEach(c => {
-          const opt = document.createElement('option');
-          opt.value = c;
-          opt.innerText = `Kelas ${c}`;
-          monClassEl.appendChild(opt);
-        });
+        let html = effectiveClasses.length > 0
+          ? `<option value="ALL">Kelas Diampu (${escapeHtmlSafe(effectiveClasses.join(', '))})</option>`
+          : '<option value="ALL">Semua Ruang / Kelas</option>';
+        if (allRooms.length > 0 && isAdmin) {
+          html += '<optgroup label="🏫 Berdasarkan Ruang Ujian (Campur Kelas)">' +
+            allRooms.map(rm => `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)}</option>`).join('') +
+            '</optgroup>';
+        }
+        if (classesToShow.length > 0) {
+          html += (allRooms.length > 0 && isAdmin ? '<optgroup label="🎓 Berdasarkan Kelas Asli">' : '') +
+            classesToShow.map(c => `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)}</option>`).join('') +
+            (allRooms.length > 0 && isAdmin ? '</optgroup>' : '');
+        }
+        monClassEl.innerHTML = html;
         if (prevMonCls && Array.from(monClassEl.options).some(o => o.value === prevMonCls)) {
           monClassEl.value = prevMonCls;
         } else {
@@ -4197,7 +4271,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ];
       if (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function' && (forcePull || now - lastPengawasStatePullAt >= 60000)) {
         lastPengawasStatePullAt = now;
-        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: true, includeQuestions: false }));
+        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: false, includeQuestions: false }));
       }
       const [sessRes, , stateRes] = await Promise.all(cloudTasks);
       if (sessRes && Array.isArray(sessRes.data)) {
@@ -4227,7 +4301,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pengawasScope = isPengawas && typeof window.cbtAdmin.getPengawasScope === 'function'
       ? window.cbtAdmin.getPengawasScope(currentTeacher)
-      : { classes: [], subjects: [] };
+      : { classes: [], assignedRooms: [], assignedClassTokens: [], roomClassLevels: [], isRoomScoped: false, subjects: [] };
     const subjFilter = document.getElementById('filterMonitoringSubject')?.value || 'ALL';
     const classFilter = document.getElementById('filterMonitoringClass')?.value || 'ALL';
     const statusFilter = document.getElementById('filterMonitoringStatus')?.value || 'ACTIVE';
@@ -4240,6 +4314,13 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       allResults = [];
     }
+
+    const allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
+    const studentRoomByNisn = new Map();
+    allStudents.forEach(st => {
+      const k = String(st.nisn || '').trim().toUpperCase();
+      if (k && st.examRoom) studentRoomByNisn.set(k, String(st.examRoom).trim());
+    });
 
     const attemptsMap = new Map();
     const latestResultMap = new Map();
@@ -4263,6 +4344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nisn,
         name: s.name || '-',
         class: s.class || '-',
+        examRoom: s.examRoom || studentRoomByNisn.get(nisn) || '',
         subject: sub,
         status: s.status || 'logged_in',
         attemptNumber: s.attemptNumber || Math.max(1, attCount),
@@ -4279,11 +4361,13 @@ document.addEventListener('DOMContentLoaded', () => {
     latestResultMap.forEach((r, key) => {
       const existing = rowMap.get(key);
       const attCount = attemptsMap.get(key) || 1;
+      const rNisn = String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase();
       if (!existing || (existing.status !== 'logged_in' && existing.status !== 'in_progress')) {
         rowMap.set(key, {
-          nisn: String(r.student?.nisn || r.student_nisn || '').trim().toUpperCase(),
+          nisn: rNisn,
           name: r.student?.name || '-',
           class: r.student?.class || '-',
+          examRoom: r.student?.examRoom || studentRoomByNisn.get(rNisn) || '',
           subject: r.subject || '-',
           status: 'completed',
           attemptNumber: attCount,
@@ -4297,6 +4381,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       } else {
         existing.attemptsCompleted = attCount;
+        if (!existing.examRoom) existing.examRoom = r.student?.examRoom || studentRoomByNisn.get(rNisn) || '';
       }
     });
 
@@ -4307,7 +4392,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ? activeSchedules[0].subject
         : (!isAdmin && !isPengawas && teacherSubjects.length > 0 ? teacherSubjects[0] : (window.examEngine.config.subject || 'Umum')));
 
-    const allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
     const nisnWithActivityForScope = new Set();
     rowMap.forEach(row => {
       if (subjFilter === 'ALL' || window.examEngine.matchesSubject(row.subject, subjFilter)) {
@@ -4328,6 +4412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nisn: stuNisn,
         name: stu.name || '-',
         class: stu.class || '-',
+        examRoom: stu.examRoom || '',
         subject: stuDefaultSubject,
         status: 'not_logged_in',
         attemptNumber: 0,
@@ -4340,12 +4425,24 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    const smMon = window.studentManager;
     const scopedRows = Array.from(rowMap.values()).filter(row => {
       if (!isAdmin) {
         if (isPengawas) {
           if (pengawasScope.classes.length === 0) return false;
-          const stuCls = String(row.class || '').trim();
-          if (!stuCls || !window.examEngine.matchesClassLevel(pengawasScope.classes.join(', '), stuCls)) return false;
+          if (pengawasScope.isRoomScoped) {
+            const roomMatch = (pengawasScope.assignedRooms || []).some(rm =>
+              smMon && typeof smMon.matchesRoom === 'function'
+                ? smMon.matchesRoom(row.examRoom, rm)
+                : String(row.examRoom || '').trim().toUpperCase() === String(rm || '').trim().toUpperCase()
+            );
+            const extraClsMatch = (pengawasScope.assignedClassTokens || []).length > 0 &&
+              window.examEngine.matchesClassLevel(pengawasScope.assignedClassTokens.join(', '), String(row.class || '').trim());
+            if (!roomMatch && !extraClsMatch) return false;
+          } else {
+            const stuCls = String(row.class || '').trim();
+            if (!stuCls || !window.examEngine.matchesClassLevel(pengawasScope.classes.join(', '), stuCls)) return false;
+          }
           if (pengawasScope.subjects.length === 0) return false;
           const pSubOk = pengawasScope.subjects.some(ps => window.examEngine.matchesSubject(row.subject, ps));
           if (!pSubOk) return false;
@@ -4360,7 +4457,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (subjFilter === '__NO_SUBJECT__' || classFilter === '__NO_ROOM__') return false;
       if (subjFilter !== 'ALL' && !window.examEngine.matchesSubject(row.subject, subjFilter)) return false;
-      if (classFilter !== 'ALL' && !window.examEngine.matchesClassLevel(classFilter, row.class || '')) return false;
+      if (classFilter !== 'ALL') {
+        if (classFilter.startsWith('ROOM:')) {
+          const targetRoom = classFilter.slice(5);
+          if (!(smMon && typeof smMon.matchesRoom === 'function'
+            ? smMon.matchesRoom(row.examRoom, targetRoom)
+            : String(row.examRoom || '').trim().toUpperCase() === targetRoom.trim().toUpperCase())) {
+            return false;
+          }
+        } else if (!window.examEngine.matchesClassLevel(classFilter, row.class || '')) {
+          return false;
+        }
+      }
       return true;
     });
 
@@ -4388,7 +4496,8 @@ document.addEventListener('DOMContentLoaded', () => {
       displayRows = displayRows.filter(r =>
         (r.name && r.name.toLowerCase().includes(searchQ)) ||
         (r.nisn && r.nisn.toLowerCase().includes(searchQ)) ||
-        (r.class && r.class.toLowerCase().includes(searchQ))
+        (r.class && r.class.toLowerCase().includes(searchQ)) ||
+        (r.examRoom && r.examRoom.toLowerCase().includes(searchQ))
       );
     }
 
@@ -4433,18 +4542,22 @@ document.addEventListener('DOMContentLoaded', () => {
         lastActDisplay = isNaN(parsedDt.getTime()) ? r.updatedAt : parsedDt.toLocaleString('id-ID');
       }
 
+      const roomBadgeHtml = r.examRoom
+        ? `<span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px] ml-1">🏫 ${escapeHtmlSafe(r.examRoom)}</span>`
+        : '';
+
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition";
       tr.innerHTML = `
         <td class="p-3 text-center text-slate-400 font-bold">${idx + 1}</td>
         <td class="p-3">
-          <div class="font-bold text-slate-900">${r.name}</div>
-          <div class="font-mono text-[11px] text-slate-500">${r.nisn}</div>
+          <div class="font-bold text-slate-900">${escapeHtmlSafe(r.name)}</div>
+          <div class="font-mono text-[11px] text-slate-500">${escapeHtmlSafe(r.nisn)}</div>
         </td>
         <td class="p-3 whitespace-nowrap">
-          <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">Kelas ${r.class}</span>
+          <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">Kelas ${escapeHtmlSafe(r.class)}</span>${roomBadgeHtml}
         </td>
-        <td class="p-3 font-semibold text-slate-700">${r.subject}</td>
+        <td class="p-3 font-semibold text-slate-700">${escapeHtmlSafe(r.subject)}</td>
         <td class="p-3 text-center whitespace-nowrap">${badgeHtml}</td>
         <td class="p-3 text-center whitespace-nowrap">${progressText}</td>
         <td class="p-3 text-center whitespace-nowrap">
@@ -5540,8 +5653,13 @@ document.addEventListener('DOMContentLoaded', () => {
     Array.from(selectedQuestionIds).forEach(id => {
       if (!allIdsSet.has(id)) selectedQuestionIds.delete(id);
     });
-    const trialScopedCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'trial').length;
-    const totalAll = window.cbtAdmin.getAllQuestions().length;
+    const isPassageFn = (item) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(item));
+    const isEmptyOptsFn = (item) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isEmptyOptionsQuestion === 'function' && window.cbtAdmin.isEmptyOptionsQuestion(item));
+    const scorableQuestions = questions.filter(q => !isPassageFn(q));
+    const passageOnlyCount = questions.length - scorableQuestions.length;
+
+    const trialScopedCount = window.cbtAdmin.getQuestionsFiltered(subjFilter, classFilter, 'trial').filter(q => !isPassageFn(q)).length;
+    const totalAll = window.cbtAdmin.getAllQuestions().filter(q => !isPassageFn(q)).length;
     const analysisResult = (window.cbtAdmin && typeof window.cbtAdmin.computeItemAnalysis === 'function')
       ? window.cbtAdmin.computeItemAnalysis(questions)
       : { items: [], summary: null };
@@ -5556,32 +5674,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const catLabel = catFilter === 'trial' ? ' • Simulasi' : (catFilter === 'exam' ? ' • Soal Asli' : '');
 
     if (totalCountEl) {
-      totalCountEl.innerText = `${questions.length} Soal (${subjLabel}${clsLabel}${catLabel}) — Total Bank: ${totalAll}`;
+      totalCountEl.innerText = `${scorableQuestions.length} Soal${passageOnlyCount > 0 ? ` + ${passageOnlyCount} Wacana` : ''} (${subjLabel}${clsLabel}${catLabel}) — Total Bank: ${totalAll}`;
     }
 
     const totalWeightEl = document.getElementById('questionTotalWeightBadge');
     const totalWeightFormulaEl = document.getElementById('questionTotalWeightFormula');
     if (totalWeightEl) {
-      const weights = questions.map(q => parseInt(q?.weight, 10) || 10);
+      const weights = scorableQuestions.map(q => parseInt(q?.weight, 10) || 10);
       const sumWeight = weights.reduce((acc, w) => acc + w, 0);
       totalWeightEl.innerText = sumWeight.toLocaleString('id-ID');
       if (totalWeightFormulaEl) {
-        if (questions.length === 0) {
+        if (scorableQuestions.length === 0) {
           totalWeightFormulaEl.innerText = '';
         } else {
           const uniqueWeights = Array.from(new Set(weights));
           if (uniqueWeights.length === 1) {
-            totalWeightFormulaEl.innerText = `(${questions.length} soal × bobot ${uniqueWeights[0]})`;
+            totalWeightFormulaEl.innerText = `(${scorableQuestions.length} soal × bobot ${uniqueWeights[0]})`;
           } else {
             const previewW = uniqueWeights.slice(0, 3).join(', ') + (uniqueWeights.length > 3 ? ', ...' : '');
-            totalWeightFormulaEl.innerText = `(${questions.length} soal • bobot: ${previewW})`;
+            totalWeightFormulaEl.innerText = `(${scorableQuestions.length} soal • bobot: ${previewW})`;
           }
         }
       }
     }
 
     const bulkWeightBarInp = document.getElementById('bulkWeightValueInput');
-    if (bulkWeightBarInp && document.activeElement !== bulkWeightBarInp && subjFilter !== 'ALL' && questions.length > 0) {
+    if (bulkWeightBarInp && document.activeElement !== bulkWeightBarInp && subjFilter !== 'ALL' && scorableQuestions.length > 0) {
       const recBarW = getRecommendedWeightForScope(subjFilter === 'UMUM' ? 'Umum' : subjFilter, classFilter, 25);
       bulkWeightBarInp.value = String(recBarW);
     }
@@ -5654,21 +5772,165 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const suspiciousWacanaQs = scorableQuestions.filter(q => isEmptyOptsFn(q));
+    if (suspiciousWacanaQs.length > 0) {
+      const warnCard = document.createElement('div');
+      warnCard.className = 'p-3.5 rounded-2xl bg-amber-50 border border-amber-300 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-950 shadow-2xs';
+      warnCard.innerHTML = `
+        <div>
+          <p class="font-bold">⚠️ Ditemukan ${suspiciousWacanaQs.length} item dengan pilihan jawaban A–D kosong (kemungkinan Teks Wacana yang masih ikut bernomor).</p>
+          <p class="text-[11px] text-amber-800 mt-0.5">Ubah menjadi <strong>Wacana Tanpa Nomor &amp; Pilihan</strong> agar tidak diberi nomor soal, tidak muncul opsi A–D kosong, dan tidak masuk bobot nilai.</p>
+        </div>
+        <button id="btnConvertAllSuspiciousPassages" type="button" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer transition shrink-0">
+          📖 Ubah Semua (${suspiciousWacanaQs.length}) Jadi Wacana Tanpa Nomor
+        </button>
+      `;
+      listContainer.appendChild(warnCard);
+      const btnConvAll = warnCard.querySelector('#btnConvertAllSuspiciousPassages');
+      if (btnConvAll) {
+        btnConvAll.addEventListener('click', () => {
+          const ids = suspiciousWacanaQs.map(item => item.id);
+          const res = window.cbtAdmin.convertQuestionsBatchToPassage(ids, 5);
+          if (res && res.success) {
+            renderAdminQuestionList();
+            renderAdminTeacherQuestionProgress();
+            renderAdminSchedulesList();
+          }
+        });
+      }
+    }
+
+    // Petakan nomor urut soal aktif (mengabaikan item Wacana agar Wacana tidak ikut bernomor)
+    const scorableNumById = new Map();
+    let preCounter = 0;
+    questions.forEach(item => {
+      if (!isPassageFn(item)) {
+        preCounter += 1;
+        scorableNumById.set(String(item.id), preCounter);
+      }
+    });
+
+    let scorableIdxCounter = 0;
+    const seenCardPassages = new Set();
+
     questions.forEach((q, index) => {
       const type = q.type || 'single';
+      const isPassageQ = isPassageFn(q);
       const isTrialQ = window.cbtAdmin && typeof window.cbtAdmin.isTrialQuestion === 'function'
         ? window.cbtAdmin.isTrialQuestion(q)
         : false;
       const qSubj = q.subject && String(q.subject).trim() !== '' ? q.subject : 'Umum / Demo';
       const qClass = q.classLevel && String(q.classLevel).trim() !== '' ? q.classLevel : 'Semua Kelas';
-      const itemStat = analysisResult.items[index] || null;
-      const preExamStat = preExamResult.items[index] || null;
       const qIdStr = String(q.id);
       const isSelectedQ = selectedQuestionIds.has(qIdStr);
       const card = document.createElement('div');
+
+      if (isPassageQ) {
+        const pSpan = Math.max(1, parseInt(q.passageSpan || q.passageGroupSize, 10) || 5);
+        const pGid = q.passageGroupId ? String(q.passageGroupId).trim() : '';
+        let coveredNums = [];
+        if (pGid) {
+          questions.forEach(cand => {
+            if (!isPassageFn(cand) && String(cand.passageGroupId || '').trim() === pGid) {
+              const n = scorableNumById.get(String(cand.id));
+              if (n) coveredNums.push(n);
+            }
+          });
+        }
+        if (coveredNums.length === 0) {
+          for (let j = index + 1; j < questions.length && coveredNums.length < pSpan; j++) {
+            const cand = questions[j];
+            if (!cand || isPassageFn(cand)) break;
+            const n = scorableNumById.get(String(cand.id));
+            if (n) coveredNums.push(n);
+          }
+        }
+        const rangeHint = coveredNums.length > 1
+          ? `Untuk Soal No. ${coveredNums[0]} s.d. ${coveredNums[coveredNums.length - 1]}`
+          : (coveredNums.length === 1 ? `Untuk Soal No. ${coveredNums[0]}` : `Cakupan ${pSpan} soal berikutnya`);
+        const pTitle = String(q.passageTitle || '').trim();
+        const pBody = String(q.passageText || q.question || '').trim();
+
+        card.className = "bg-indigo-50/70 dark:bg-indigo-950/30 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-indigo-200 dark:border-indigo-800 shadow-xs transition"
+          + (isSelectedQ ? " ring-2 ring-blue-500 border-blue-400" : "");
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <label class="inline-flex items-center cursor-pointer p-1 rounded-lg hover:bg-indigo-100" title="Centang wacana untuk edit massal">
+                <input type="checkbox" class="chk-q-select w-4 h-4 rounded accent-indigo-600 cursor-pointer" data-q-id="${escapeHtmlSafe(qIdStr)}" ${isSelectedQ ? 'checked' : ''}>
+              </label>
+              <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black text-[11px] tracking-wide">
+                📖 WACANA
+              </span>
+              <span class="text-[11px] font-bold px-2 py-0.5 bg-white text-indigo-800 border border-indigo-200 rounded-md">
+                Tanpa Nomor &amp; Pilihan
+              </span>
+              <span class="text-[11px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-md">
+                📚 ${qSubj}
+              </span>
+              <span class="text-[11px] font-bold px-2 py-0.5 bg-teal-100 text-teal-800 rounded-md">
+                🏫 ${qClass}
+              </span>
+              <span class="text-[11px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                📌 ${escapeHtmlSafe(rangeHint)}
+              </span>
+              ${isTrialQ ? `<span class="text-[11px] font-bold px-2 py-0.5 bg-violet-100 text-violet-800 border border-violet-200 rounded-md">🧪 Simulasi</span>` : ''}
+              ${q.createdBy ? `<span class="text-[11px] font-semibold px-2 py-0.5 bg-white text-slate-600 rounded-md">✍️ ${escapeHtmlSafe(q.createdBy)}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" class="btn-edit-q text-indigo-700 hover:text-indigo-900 px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 border border-indigo-200 text-xs font-semibold cursor-pointer transition" title="Edit Wacana Ini">
+                ✏️ Edit Wacana
+              </button>
+              <button type="button" class="btn-delete-q text-red-600 hover:text-red-800 px-2 py-1 rounded-lg hover:bg-red-50 text-xs font-medium cursor-pointer transition" title="Hapus Wacana Ini">
+                🗑️ Hapus
+              </button>
+            </div>
+          </div>
+          ${pTitle ? `<div class="font-bold text-slate-900 text-sm sm:text-base mt-3 text-center">${escapeHtmlSafe(pTitle)}</div>` : ''}
+          <p class="text-slate-800 text-xs sm:text-sm mt-2 whitespace-pre-line leading-relaxed bg-white/80 p-3 rounded-xl border border-indigo-100">${escapeHtmlSafe(pBody)}</p>
+          ${q.image ? `<div class="mt-2.5 p-1.5 bg-white rounded-xl border border-indigo-200 inline-block max-w-xs"><img src="${q.image}" alt="Gambar Wacana" class="rounded-lg max-h-28 object-contain"></div>` : ''}
+        `;
+
+        const qChk = card.querySelector('.chk-q-select');
+        if (qChk) {
+          qChk.addEventListener('change', () => {
+            if (qChk.checked) {
+              selectedQuestionIds.add(qIdStr);
+              card.classList.add('ring-2', 'ring-blue-500', 'border-blue-400');
+            } else {
+              selectedQuestionIds.delete(qIdStr);
+              card.classList.remove('ring-2', 'ring-blue-500', 'border-blue-400');
+            }
+            syncBulkSelectionUI(questions);
+          });
+        }
+        card.querySelector('.btn-edit-q').addEventListener('click', () => {
+          openQuestionModal(q, null);
+        });
+        card.querySelector('.btn-delete-q').addEventListener('click', () => {
+          if (confirm(`Yakin ingin menghapus Wacana "${pTitle || pBody.slice(0, 40)}" (${qSubj})?`)) {
+            selectedQuestionIds.delete(qIdStr);
+            window.cbtAdmin.deleteQuestion(q.id);
+            renderAdminQuestionList();
+            renderAdminSchedulesList();
+          }
+        });
+        listContainer.appendChild(card);
+        return;
+      }
+
+      const scorableIdx = scorableIdxCounter;
+      const displayNo = scorableIdx + 1;
+      scorableIdxCounter += 1;
+      const itemStat = analysisResult.items[scorableIdx] || null;
+      const preExamStat = preExamResult.items[scorableIdx] || null;
+      const isSuspiciousEmpty = isEmptyOptsFn(q);
+
       card.className = (isTrialQ
         ? "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-violet-200 dark:border-violet-800/70 shadow-xs hover:border-violet-300 transition"
-        : "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition")
+        : (isSuspiciousEmpty
+          ? "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-amber-300 shadow-xs transition"
+          : "bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs hover:border-slate-300 transition"))
         + (isSelectedQ ? " ring-2 ring-blue-500 border-blue-400" : "");
 
       let typeBadge = '';
@@ -5779,10 +6041,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const cardStemChartHtml = (q.chartData && window.cbtAdmin && typeof window.cbtAdmin.renderChartSvgHtml === 'function')
         ? window.cbtAdmin.renderChartSvgHtml(q.chartData, { isPrint: false, compact: true })
         : '';
-      const cardPassageHtml = (q.passageGroupId || q.passageText || q.passageTitle)
-        ? `<div class="mt-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs">
+
+      let cardPassageHtml = '';
+      if (q.passageGroupId || q.passageText || q.passageTitle) {
+        const gidKey = q.passageGroupId ? String(q.passageGroupId).trim() : '';
+        const alreadyShown = gidKey && seenCardPassages.has(gidKey);
+        if (gidKey) seenCardPassages.add(gidKey);
+        if (alreadyShown) {
+          cardPassageHtml = `<div class="mt-2 px-2.5 py-1 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] font-semibold text-indigo-800 inline-block">📖 Mengacu Wacana [${escapeHtmlSafe(gidKey)}]${q.passageTitle ? ` — ${escapeHtmlSafe(q.passageTitle)}` : ''}${q.passageOrder ? ` (Urutan #${q.passageOrder})` : ''}</div>`;
+        } else {
+          cardPassageHtml = `<div class="mt-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs">
              <div class="font-bold text-indigo-900 mb-0.5">📖 Wacana ${q.passageGroupId ? `[${escapeHtmlSafe(q.passageGroupId)}${q.passageOrder ? ` • Urutan #${q.passageOrder}` : ''}]` : ''}${q.passageTitle ? ` — ${escapeHtmlSafe(q.passageTitle)}` : ''}</div>
              ${q.passageText ? `<div class="text-slate-700 whitespace-pre-line line-clamp-3">${escapeHtmlSafe(q.passageText)}</div>` : ''}
+           </div>`;
+        }
+      }
+
+      const suspiciousConvertHtml = isSuspiciousEmpty
+        ? `<div class="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-300 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
+             <span class="font-semibold">⚠️ Opsi A–D kosong! Jika ini teks Wacana/Bacaan, ubah agar tidak punya nomor soal &amp; pilihan:</span>
+             <button type="button" class="btn-convert-to-passage px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] cursor-pointer transition shrink-0">📖 Jadikan Wacana Tanpa Nomor</button>
            </div>`
         : '';
 
@@ -5793,7 +6071,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <input type="checkbox" class="chk-q-select w-4 h-4 rounded accent-blue-600 cursor-pointer" data-q-id="${escapeHtmlSafe(qIdStr)}" ${isSelectedQ ? 'checked' : ''}>
             </label>
             <span class="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 font-black text-xs flex items-center justify-center">
-              ${index + 1}
+              ${displayNo}
             </span>
             <span class="text-[11px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-md">
               📚 ${qSubj}
@@ -5820,6 +6098,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </button>
           </div>
         </div>
+        ${suspiciousConvertHtml}
         ${cardPassageHtml}
         <p class="text-slate-800 text-xs sm:text-sm font-medium mt-2.5 whitespace-pre-line leading-relaxed">${q.question}</p>
         ${cardStemTableHtml}
@@ -5828,6 +6107,18 @@ document.addEventListener('DOMContentLoaded', () => {
         ${answerDetailsHtml}
         ${analysisStripHtml}
       `;
+
+      const btnConvPassage = card.querySelector('.btn-convert-to-passage');
+      if (btnConvPassage) {
+        btnConvPassage.addEventListener('click', () => {
+          const res = window.cbtAdmin.convertQuestionToPassage(q.id, { passageSpan: 5 });
+          if (res && res.success) {
+            renderAdminQuestionList();
+            renderAdminTeacherQuestionProgress();
+            renderAdminSchedulesList();
+          }
+        });
+      }
 
       const qChk = card.querySelector('.chk-q-select');
       if (qChk) {
@@ -5844,11 +6135,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       card.querySelector('.btn-edit-q').addEventListener('click', () => {
-        openQuestionModal(q, index + 1);
+        openQuestionModal(q, displayNo);
       });
 
       card.querySelector('.btn-delete-q').addEventListener('click', () => {
-        if (confirm(`Yakin ingin menghapus Soal No. ${index + 1} (${qSubj})?`)) {
+        if (confirm(`Yakin ingin menghapus Soal No. ${displayNo} (${qSubj})?`)) {
           selectedQuestionIds.delete(qIdStr);
           window.cbtAdmin.deleteQuestion(q.id);
           renderAdminQuestionList();
@@ -5867,23 +6158,57 @@ document.addEventListener('DOMContentLoaded', () => {
   const boxKeySingle = document.getElementById('boxKeySingle');
   const boxKeyMultiple = document.getElementById('boxKeyMultiple');
   const sectionTrueFalse = document.getElementById('sectionTrueFalse');
+  const sectionPassageOnly = document.getElementById('sectionPassageOnly');
+  const qPassageDetailsWrap = document.getElementById('qPassageDetails');
+  const qQuestionTextSection = document.getElementById('qQuestionTextSection');
+  const qTableDetailsWrap = document.getElementById('qTableDetails');
+  const qWeightSection = document.getElementById('qWeightSection');
 
   if (qInputType) {
     qInputType.addEventListener('change', () => {
       const selectedType = qInputType.value;
-      if (selectedType === 'single') {
-        sectionOptionsAE.classList.remove('hidden');
-        boxKeySingle.classList.remove('hidden');
-        boxKeyMultiple.classList.add('hidden');
-        sectionTrueFalse.classList.add('hidden');
-      } else if (selectedType === 'multiple') {
-        sectionOptionsAE.classList.remove('hidden');
-        boxKeySingle.classList.add('hidden');
-        boxKeyMultiple.classList.remove('hidden');
-        sectionTrueFalse.classList.add('hidden');
-      } else if (selectedType === 'true_false') {
-        sectionOptionsAE.classList.add('hidden');
-        sectionTrueFalse.classList.remove('hidden');
+      const isPassageMode = selectedType === 'passage';
+      const valAlertEl = document.getElementById('qFormValidationAlert');
+      if (valAlertEl) valAlertEl.classList.add('hidden');
+
+      if (sectionPassageOnly) sectionPassageOnly.classList.toggle('hidden', !isPassageMode);
+      if (qPassageDetailsWrap) qPassageDetailsWrap.classList.toggle('hidden', isPassageMode);
+      if (qQuestionTextSection) qQuestionTextSection.classList.toggle('hidden', isPassageMode);
+      if (qTableDetailsWrap) qTableDetailsWrap.classList.toggle('hidden', isPassageMode);
+      if (qWeightSection) qWeightSection.classList.toggle('hidden', isPassageMode);
+
+      const qTextInp = document.getElementById('qInputText');
+      const qWeightInp = document.getElementById('qInputWeight');
+      const pOnlyTextInp = document.getElementById('qPassageOnlyText');
+      if (qTextInp) qTextInp.required = !isPassageMode;
+      if (qWeightInp) qWeightInp.required = !isPassageMode;
+      if (pOnlyTextInp) pOnlyTextInp.required = isPassageMode;
+
+      const isEditing = Boolean(document.getElementById('editQuestionId')?.value.trim());
+      const submitBtnEl = document.getElementById('btnSubmitQuestionForm');
+      const contBtnEl = document.getElementById('btnSubmitAndContinueQuestion');
+      if (isPassageMode) {
+        if (submitBtnEl) submitBtnEl.innerText = isEditing ? 'Simpan Perubahan Wacana' : 'Simpan Wacana (Tanpa Nomor)';
+        if (contBtnEl) contBtnEl.innerText = '➕ Simpan Wacana & Isi Soal No. 1';
+        sectionOptionsAE?.classList.add('hidden');
+        sectionTrueFalse?.classList.add('hidden');
+      } else {
+        if (submitBtnEl) submitBtnEl.innerText = isEditing ? 'Simpan Perubahan Soal' : 'Simpan Soal Ujian';
+        if (contBtnEl) contBtnEl.innerText = '➕ Simpan & Tambah Soal Berikutnya';
+        if (selectedType === 'single') {
+          sectionOptionsAE?.classList.remove('hidden');
+          boxKeySingle?.classList.remove('hidden');
+          boxKeyMultiple?.classList.add('hidden');
+          sectionTrueFalse?.classList.add('hidden');
+        } else if (selectedType === 'multiple') {
+          sectionOptionsAE?.classList.remove('hidden');
+          boxKeySingle?.classList.add('hidden');
+          boxKeyMultiple?.classList.remove('hidden');
+          sectionTrueFalse?.classList.add('hidden');
+        } else if (selectedType === 'true_false') {
+          sectionOptionsAE?.classList.add('hidden');
+          sectionTrueFalse?.classList.remove('hidden');
+        }
       }
     });
   }
@@ -6618,6 +6943,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reset panel wacana & tabel
     const pDetails = document.getElementById('qPassageDetails');
     const tDetails = document.getElementById('qTableDetails');
+    const valAlertEl = document.getElementById('qFormValidationAlert');
+    if (valAlertEl) valAlertEl.classList.add('hidden');
     if (pDetails) pDetails.open = false;
     if (tDetails) tDetails.open = false;
     if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = '';
@@ -6625,10 +6952,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('qInputPassageGroupSize')) document.getElementById('qInputPassageGroupSize').value = '5';
     if (document.getElementById('qInputPassageTitle')) document.getElementById('qInputPassageTitle').value = '';
     if (document.getElementById('qInputPassageText')) document.getElementById('qInputPassageText').value = '';
+    if (document.getElementById('qPassageOnlyTitle')) document.getElementById('qPassageOnlyTitle').value = '';
+    if (document.getElementById('qPassageOnlyText')) document.getElementById('qPassageOnlyText').value = '';
+    if (document.getElementById('qPassageOnlySpan')) document.getElementById('qPassageOnlySpan').value = '5';
 
     if (question) {
-      if (titleEl) titleEl.innerText = displayNumber ? `Edit Soal No. ${displayNumber}` : "Edit Butir Soal Ujian";
-      if (submitBtnEl) submitBtnEl.innerText = "Simpan Perubahan Soal";
+      const isEditingPassage = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(question));
+      if (titleEl) {
+        titleEl.innerText = isEditingPassage
+          ? "Edit Wacana / Teks Bacaan (Tanpa Nomor)"
+          : (displayNumber ? `Edit Soal No. ${displayNumber}` : "Edit Butir Soal Ujian");
+      }
+      if (submitBtnEl) submitBtnEl.innerText = isEditingPassage ? "Simpan Perubahan Wacana" : "Simpan Perubahan Soal";
       if (editIdEl) editIdEl.value = question.id;
 
       if (qInputCategory) {
@@ -6674,8 +7009,15 @@ document.addEventListener('DOMContentLoaded', () => {
         setImageUploaderPreview(question.image);
       }
 
-      // Muat Wacana
-      if (question.passageGroupId || question.passageText || question.passageTitle) {
+      if (qType === 'passage') {
+        if (document.getElementById('qPassageOnlyTitle')) document.getElementById('qPassageOnlyTitle').value = question.passageTitle || '';
+        if (document.getElementById('qPassageOnlyText')) document.getElementById('qPassageOnlyText').value = question.passageText || question.question || '';
+        const spanEl = document.getElementById('qPassageOnlySpan');
+        if (spanEl) {
+          const spanVal = String(question.passageSpan || question.passageGroupSize || 5);
+          if (Array.from(spanEl.options).some(o => o.value === spanVal)) spanEl.value = spanVal;
+        }
+      } else if (question.passageGroupId || question.passageText || question.passageTitle) {
         if (pDetails) pDetails.open = true;
         if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = question.passageGroupId || '';
         if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = question.passageOrder || 1;
@@ -6798,6 +7140,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function saveSingleQuestionFromForm({ keepOpenForNext = false } = {}) {
     const editId = document.getElementById('editQuestionId')?.value.trim() || '';
+    const valAlertEl = document.getElementById('qFormValidationAlert');
+    const valMsgEl = document.getElementById('qFormValidationMsg');
+    if (valAlertEl) valAlertEl.classList.add('hidden');
+
     const rawSubjectInput = document.getElementById('qInputSubject')?.value.trim() || '';
     const matchedSubject = resolveRegisteredQuestionSubject(rawSubjectInput);
     if (!matchedSubject) {
@@ -6817,6 +7163,85 @@ document.addEventListener('DOMContentLoaded', () => {
     const classLevel = document.getElementById('qInputClassLevel')?.value || 'Semua Kelas';
     const isTrial = (document.getElementById('qInputCategory')?.value || 'exam') === 'trial';
     const type = qInputType.value;
+    const image = currentUploadedImageBase64 || "";
+
+    if (type === 'passage') {
+      const pOnlyTitle = document.getElementById('qPassageOnlyTitle')?.value.trim() || '';
+      const pOnlyTextEl = document.getElementById('qPassageOnlyText');
+      const pOnlyText = pOnlyTextEl ? pOnlyTextEl.value.trim() : '';
+      const pSpan = Math.max(1, parseInt(document.getElementById('qPassageOnlySpan')?.value, 10) || 5);
+
+      if (!pOnlyText && !pOnlyTitle && !image) {
+        if (valMsgEl && valAlertEl) {
+          valMsgEl.innerText = 'Isi Teks Wacana / Bacaan terlebih dahulu sebelum menyimpan.';
+          valAlertEl.classList.remove('hidden');
+        }
+        if (pOnlyTextEl) pOnlyTextEl.focus();
+        return false;
+      }
+
+      const existingPassage = editId ? window.cbtAdmin.getAllQuestions().find(item => String(item.id) === String(editId)) : null;
+      const pGroupId = (existingPassage && existingPassage.passageGroupId) || `WACANA-${Date.now()}`;
+      const passagePayload = {
+        subject,
+        classLevel,
+        isTrial,
+        type: 'passage',
+        question: pOnlyText || pOnlyTitle,
+        passageTitle: pOnlyTitle,
+        passageText: pOnlyText,
+        passageSpan: pSpan,
+        passageGroupId: pGroupId,
+        image,
+        weight: 0
+      };
+
+      if (editId) {
+        const res = window.cbtAdmin.updateQuestion(editId, passagePayload);
+        if (!res.success) {
+          alert(res.message || "Gagal memperbarui wacana.");
+          return false;
+        }
+      } else {
+        window.cbtAdmin.addQuestion(passagePayload);
+      }
+
+      setupQuestionBankFilters();
+      const subjFilterEl = document.getElementById('filterQuestionsSubject');
+      if (subjFilterEl && subject && subject !== 'Umum' && Array.from(subjFilterEl.options).some(o => o.value === subject)) {
+        subjFilterEl.value = subject;
+      }
+      renderAdminQuestionList();
+      renderAdminSchedulesList();
+
+      if (keepOpenForNext && !editId) {
+        qInputType.value = 'single';
+        qInputType.dispatchEvent(new Event('change'));
+        resetImageUploader();
+        const pDet = document.getElementById('qPassageDetails');
+        if (pDet) pDet.open = true;
+        if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = pGroupId;
+        if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = '1';
+        if (document.getElementById('qInputPassageGroupSize')) {
+          const gSel = document.getElementById('qInputPassageGroupSize');
+          const sVal = String(Math.min(5, Math.max(3, pSpan)));
+          if (Array.from(gSel.options).some(o => o.value === sVal)) gSel.value = sVal;
+        }
+        if (document.getElementById('qInputPassageTitle')) document.getElementById('qInputPassageTitle').value = pOnlyTitle;
+        if (document.getElementById('qInputPassageText')) document.getElementById('qInputPassageText').value = pOnlyText;
+        const noticeEl = document.getElementById('qSaveContinueNotice');
+        if (noticeEl) {
+          noticeEl.innerText = `✅ Wacana tersimpan tanpa nomor! Sekarang isi Soal No. 1 yang mengacu pada wacana tersebut.`;
+          noticeEl.classList.remove('hidden');
+        }
+        document.getElementById('qInputText')?.focus();
+        return true;
+      }
+
+      closeQuestionModal();
+      return true;
+    }
+
     const questionTextEl = document.getElementById('qInputText');
     const questionText = questionTextEl ? questionTextEl.value.trim() : '';
     if (!questionText) {
@@ -6825,7 +7250,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
     const weight = parseInt(document.getElementById('qInputWeight').value, 10) || 10;
-    const image = currentUploadedImageBase64 || "";
 
     let qData = { subject, classLevel, isTrial, type, question: questionText, image, weight };
 
@@ -6851,32 +7275,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (Object.keys(optTablesClean).length > 0) qData.optionTables = optTablesClean;
 
-    if (type === 'single') {
-      const correctSingle = document.getElementById('qInputCorrectSingle').value;
+    if (type === 'single' || type === 'multiple') {
       const opts = [
         { key: "A", text: document.getElementById('qInputOptA').value.trim() },
         { key: "B", text: document.getElementById('qInputOptB').value.trim() },
         { key: "C", text: document.getElementById('qInputOptC').value.trim() },
         { key: "D", text: document.getElementById('qInputOptD').value.trim() }
       ];
-      qData.options = opts;
-      qData.correctAnswer = ['A', 'B', 'C', 'D'].includes(correctSingle) ? correctSingle : 'A';
-    } else if (type === 'multiple') {
-      const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked'))
-        .map(el => el.value)
-        .filter(v => ['A', 'B', 'C', 'D'].includes(v));
-      if (checkedBoxes.length === 0) {
-        alert("Pilih minimal 1 kunci jawaban untuk soal pilihan ganda kompleks!");
+      const hasAnyOption = opts.some(o => o.text !== '') || Object.keys(optTablesClean).length > 0;
+      if (!hasAnyOption) {
+        if (valMsgEl && valAlertEl) {
+          valMsgEl.innerText = '⚠️ Pilihan jawaban A–D masih kosong semua! Soal pilihan ganda wajib memiliki pilihan jawaban. Jika yang Anda tulis adalah Wacana / Teks Bacaan (tanpa nomor & pilihan), klik tombol di bawah untuk menyimpannya sebagai Wacana.';
+          valAlertEl.classList.remove('hidden');
+        }
+        document.getElementById('qInputOptA')?.focus();
         return false;
       }
-      const opts = [
-        { key: "A", text: document.getElementById('qInputOptA').value.trim() },
-        { key: "B", text: document.getElementById('qInputOptB').value.trim() },
-        { key: "C", text: document.getElementById('qInputOptC').value.trim() },
-        { key: "D", text: document.getElementById('qInputOptD').value.trim() }
-      ];
       qData.options = opts;
-      qData.correctAnswer = checkedBoxes;
+      if (type === 'single') {
+        const correctSingle = document.getElementById('qInputCorrectSingle').value;
+        qData.correctAnswer = ['A', 'B', 'C', 'D'].includes(correctSingle) ? correctSingle : 'A';
+      } else {
+        const checkedBoxes = Array.from(document.querySelectorAll('input[name="multiCorrect"]:checked'))
+          .map(el => el.value)
+          .filter(v => ['A', 'B', 'C', 'D'].includes(v));
+        if (checkedBoxes.length === 0) {
+          alert("Pilih minimal 1 kunci jawaban untuk soal pilihan ganda kompleks!");
+          return false;
+        }
+        qData.correctAnswer = checkedBoxes;
+      }
     } else if (type === 'true_false') {
       const statements = [];
       for (let i = 1; i <= 4; i++) {
@@ -6949,6 +7377,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  document.getElementById('btnSwitchAlertToPassageMode')?.addEventListener('click', () => {
+    const curText = document.getElementById('qInputText')?.value || '';
+    const pOnlyTextEl = document.getElementById('qPassageOnlyText');
+    if (qInputType) {
+      qInputType.value = 'passage';
+      qInputType.dispatchEvent(new Event('change'));
+    }
+    if (pOnlyTextEl && !pOnlyTextEl.value.trim() && curText.trim()) {
+      pOnlyTextEl.value = curText.trim();
+    }
+    pOnlyTextEl?.focus();
+  });
+
   const formQuestionItem = document.getElementById('formQuestionItem');
   if (formQuestionItem) {
     formQuestionItem.addEventListener('submit', (e) => {
@@ -7014,17 +7455,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const infoEl = document.getElementById('bulkTotalWeightInfo');
     const formulaEl = document.getElementById('bulkTotalWeightFormula');
     if (!infoEl) return;
-    const weights = bulkRowsState.map(r => parseInt(r.weight, 10) || 10);
+    const scorableRows = bulkRowsState.filter(r => r.type !== 'passage');
+    const weights = scorableRows.map(r => parseInt(r.weight, 10) || 10);
     const sum = weights.reduce((acc, w) => acc + w, 0);
     infoEl.innerText = sum.toLocaleString('id-ID');
     if (formulaEl) {
-      if (bulkRowsState.length === 0) {
+      if (scorableRows.length === 0) {
         formulaEl.innerText = '';
       } else {
         const allSame = weights.every(w => w === weights[0]);
         formulaEl.innerText = allSame
-          ? `(${bulkRowsState.length} soal × bobot ${weights[0]})`
-          : `(${bulkRowsState.length} soal)`;
+          ? `(${scorableRows.length} soal × bobot ${weights[0]})`
+          : `(${scorableRows.length} soal)`;
       }
     }
   }
@@ -7037,11 +7479,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderBulkQuestionRows() {
     if (!bulkQuestionsListContainer) return;
+    let bulkScorableNum = 0;
     bulkQuestionsListContainer.innerHTML = bulkRowsState.map((row, idx) => {
       const isSingle = row.type === 'single';
       const isMultiple = row.type === 'multiple';
       const isTf = row.type === 'true_false';
-      const tblHtml = row.hasTable ? `
+      const isPassageRow = row.type === 'passage';
+      if (!isPassageRow) bulkScorableNum += 1;
+      const tblHtml = (!isPassageRow && row.hasTable) ? `
         <div class="p-2.5 rounded-xl bg-sky-50/70 border border-sky-200 space-y-1.5">
           <div class="text-[11px] font-bold text-sky-900">📊 Tabel Pertanyaan Baris #${idx + 1} (2×2 cepat — atau edit detail setelah simpan)</div>
           <div class="grid grid-cols-2 gap-1.5">
@@ -7059,68 +7504,86 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `<span class="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 text-[10px] font-bold">📚 ${escapeHtmlSafe(row.originalSubject || 'Umum')} • 🏫 ${escapeHtmlSafe(row.originalClassLevel || 'Semua Kelas')}${row.originalIsTrial ? ' • 🧪 Simulasi' : ''}${row.hasImage ? ' • 🖼️ Gambar' : ''}${row.hasOptionTables ? ' • 📊 Tabel Opsi' : ''}</span>`
         : '';
 
+      const rowBadgeHtml = isPassageRow
+        ? `<span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">📖 WACANA (Tanpa Nomor)</span>`
+        : `<span class="px-2.5 py-0.5 rounded-lg ${bulkModalActionMode === 'edit_existing' ? 'bg-amber-600' : 'bg-indigo-600'} text-white font-black text-xs">Soal #${bulkScorableNum}</span>`;
+
       return `
-        <div class="p-3.5 rounded-2xl border ${bulkModalActionMode === 'edit_existing' ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} space-y-2.5">
+        <div class="p-3.5 rounded-2xl border ${isPassageRow ? 'border-indigo-300 bg-indigo-50/50' : (bulkModalActionMode === 'edit_existing' ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50')} space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-lg ${bulkModalActionMode === 'edit_existing' ? 'bg-amber-600' : 'bg-indigo-600'} text-white font-black text-xs">Soal #${idx + 1}</span>
+              ${rowBadgeHtml}
               ${rowMetaBadge}
               <select data-b-idx="${idx}" data-b-field="type" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-xs text-blue-700 outline-none">
                 <option value="single" ${isSingle ? 'selected' : ''}>PG Tunggal</option>
                 <option value="multiple" ${isMultiple ? 'selected' : ''}>PG Kompleks (&gt;1 Benar)</option>
                 <option value="true_false" ${isTf ? 'selected' : ''}>Benar / Salah (4 Pernyataan)</option>
+                <option value="passage" ${isPassageRow ? 'selected' : ''}>📖 Wacana (Tanpa Nomor &amp; Pilihan)</option>
               </select>
-              <label class="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
-                <span>Bobot:</span>
-                <input type="number" data-b-idx="${idx}" data-b-field="weight" min="1" max="100" value="${row.weight}" class="w-14 px-2 py-1 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
-              </label>
+              ${!isPassageRow ? `
+                <label class="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
+                  <span>Bobot:</span>
+                  <input type="number" data-b-idx="${idx}" data-b-field="weight" min="1" max="100" value="${row.weight}" class="w-14 px-2 py-1 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
+                </label>
+              ` : `
+                <label class="inline-flex items-center gap-1 text-xs font-bold text-indigo-800">
+                  <span>Cakupan:</span>
+                  <input type="number" data-b-idx="${idx}" data-b-field="passageSpan" min="1" max="20" value="${row.passageSpan || 5}" class="w-14 px-2 py-1 rounded-lg border border-indigo-200 bg-white text-center font-bold text-indigo-700 outline-none">
+                  <span>soal</span>
+                </label>
+              `}
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
-              <button type="button" data-b-toggle-tbl="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasTable ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">📊 Tabel</button>
+              ${!isPassageRow ? `<button type="button" data-b-toggle-tbl="${idx}" class="px-2 py-1 rounded-lg text-[11px] font-bold border ${row.hasTable ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-300'} cursor-pointer">📊 Tabel</button>` : ''}
               ${(bulkModalActionMode === 'create' && bulkRowsState.length > 1) ? `<button type="button" data-b-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
             </div>
           </div>
 
-          <textarea rows="2" data-b-idx="${idx}" data-b-field="question" placeholder="Tuliskan teks pertanyaan nomor ${idx + 1}..." class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500">${escapeHtmlSafe(row.question)}</textarea>
+          ${isPassageRow ? `
+            <input type="text" data-b-idx="${idx}" data-b-field="passageTitle" value="${escapeHtmlSafe(row.passageTitle || '')}" placeholder="Judul Wacana (Opsional, misal: Pangeran Diponegoro)" class="w-full px-3 py-1.5 rounded-xl border border-indigo-200 bg-white text-xs font-bold outline-none">
+            <textarea rows="4" data-b-idx="${idx}" data-b-field="question" placeholder="Tuliskan teks bacaan wacana di sini (tidak diberi nomor &amp; pilihan jawaban)..." class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500">${escapeHtmlSafe(row.passageText || row.question)}</textarea>
+          ` : `
+            <textarea rows="2" data-b-idx="${idx}" data-b-field="question" placeholder="Tuliskan teks pertanyaan nomor ${bulkScorableNum}..." class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500">${escapeHtmlSafe(row.question)}</textarea>
 
-          ${tblHtml}
+            ${tblHtml}
 
-          ${!isTf ? `
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">A</span><input type="text" data-b-idx="${idx}" data-b-field="optA" value="${escapeHtmlSafe(row.optA)}" placeholder="Pilihan A" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
-              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">B</span><input type="text" data-b-idx="${idx}" data-b-field="optB" value="${escapeHtmlSafe(row.optB)}" placeholder="Pilihan B" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
-              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">C</span><input type="text" data-b-idx="${idx}" data-b-field="optC" value="${escapeHtmlSafe(row.optC)}" placeholder="Pilihan C" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
-              <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">D</span><input type="text" data-b-idx="${idx}" data-b-field="optD" value="${escapeHtmlSafe(row.optD)}" placeholder="Pilihan D" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
-            </div>
-            ${isSingle ? `
-              <div class="flex items-center gap-2 text-xs">
-                <span class="font-bold text-slate-700">Kunci Jawaban:</span>
-                <select data-b-idx="${idx}" data-b-field="correctSingle" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
-                  ${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${row.correctSingle === k ? 'selected' : ''}>${k}</option>`).join('')}
-                </select>
+            ${!isTf ? `
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">A</span><input type="text" data-b-idx="${idx}" data-b-field="optA" value="${escapeHtmlSafe(row.optA)}" placeholder="Pilihan A" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+                <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">B</span><input type="text" data-b-idx="${idx}" data-b-field="optB" value="${escapeHtmlSafe(row.optB)}" placeholder="Pilihan B" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+                <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">C</span><input type="text" data-b-idx="${idx}" data-b-field="optC" value="${escapeHtmlSafe(row.optC)}" placeholder="Pilihan C" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
+                <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5">D</span><input type="text" data-b-idx="${idx}" data-b-field="optD" value="${escapeHtmlSafe(row.optD)}" placeholder="Pilihan D" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none"></div>
               </div>
+              ${isSingle ? `
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="font-bold text-slate-700">Kunci Jawaban:</span>
+                  <select data-b-idx="${idx}" data-b-field="correctSingle" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+                    ${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${row.correctSingle === k ? 'selected' : ''}>${k}</option>`).join('')}
+                  </select>
+                </div>
+              ` : `
+                <div class="flex flex-wrap items-center gap-3 text-xs">
+                  <span class="font-bold text-slate-700">Kunci PG Kompleks:</span>
+                  ${['A', 'B', 'C', 'D'].map(k => `
+                    <label class="inline-flex items-center gap-1 font-bold">
+                      <input type="checkbox" data-b-idx="${idx}" data-b-multi="${k}" ${row.correctMulti.includes(k) ? 'checked' : ''}> ${k}
+                    </label>
+                  `).join('')}
+                </div>
+              `}
             ` : `
-              <div class="flex flex-wrap items-center gap-3 text-xs">
-                <span class="font-bold text-slate-700">Kunci PG Kompleks:</span>
-                ${['A', 'B', 'C', 'D'].map(k => `
-                  <label class="inline-flex items-center gap-1 font-bold">
-                    <input type="checkbox" data-b-idx="${idx}" data-b-multi="${k}" ${row.correctMulti.includes(k) ? 'checked' : ''}> ${k}
-                  </label>
+              <div class="space-y-1.5">
+                ${row.tfStmts.map((st, sIdx) => `
+                  <div class="flex items-center gap-2">
+                    <input type="text" data-b-idx="${idx}" data-b-tf-text="${sIdx}" value="${escapeHtmlSafe(st.text)}" placeholder="Pernyataan ${sIdx + 1}${sIdx < 2 ? ' (Wajib)' : ' (Opsional)'}" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none">
+                    <select data-b-idx="${idx}" data-b-tf-corr="${sIdx}" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold outline-none">
+                      <option value="B" ${st.correct === 'B' ? 'selected' : ''}>Benar</option>
+                      <option value="S" ${st.correct === 'S' ? 'selected' : ''}>Salah</option>
+                    </select>
+                  </div>
                 `).join('')}
               </div>
             `}
-          ` : `
-            <div class="space-y-1.5">
-              ${row.tfStmts.map((st, sIdx) => `
-                <div class="flex items-center gap-2">
-                  <input type="text" data-b-idx="${idx}" data-b-tf-text="${sIdx}" value="${escapeHtmlSafe(st.text)}" placeholder="Pernyataan ${sIdx + 1}${sIdx < 2 ? ' (Wajib)' : ' (Opsional)'}" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none">
-                  <select data-b-idx="${idx}" data-b-tf-corr="${sIdx}" class="w-24 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold outline-none">
-                    <option value="B" ${st.correct === 'B' ? 'selected' : ''}>Benar</option>
-                    <option value="S" ${st.correct === 'S' ? 'selected' : ''}>Salah</option>
-                  </select>
-                </div>
-              `).join('')}
-            </div>
           `}
         </div>
       `;
@@ -7138,8 +7601,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (field === 'weight') {
           bulkRowsState[idx].weight = Math.max(1, parseInt(el.value, 10) || 10);
           updateBulkTotalWeightInfo();
+        } else if (field === 'passageSpan') {
+          bulkRowsState[idx].passageSpan = Math.max(1, parseInt(el.value, 10) || 5);
         } else {
           bulkRowsState[idx][field] = el.value;
+          if (field === 'question' && bulkRowsState[idx].type === 'passage') {
+            bulkRowsState[idx].passageText = el.value;
+          }
           if (field === 'type') renderBulkQuestionRows();
         }
       });
@@ -7342,7 +7810,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? q.correctAnswer.map(k => String(k).toUpperCase())
         : [String(q.correctAnswer || 'A').toUpperCase()],
       tfStmts,
-      weight: Math.max(1, parseInt(q.weight, 10) || 10),
+      weight: q.type === 'passage' ? 0 : Math.max(1, parseInt(q.weight, 10) || 10),
       hasTable: Boolean(q.tableData),
       tableData: clonedTable,
       existingChartData: q.chartData ? JSON.parse(JSON.stringify(q.chartData)) : null,
@@ -7350,9 +7818,10 @@ document.addEventListener('DOMContentLoaded', () => {
       hasOptionTables: Boolean(q.optionTables && Object.keys(q.optionTables).length > 0),
       passageGroupId: q.passageGroupId || '',
       passageTitle: q.passageTitle || '',
-      passageText: q.passageText || '',
+      passageText: q.passageText || (q.type === 'passage' ? (q.question || '') : ''),
       passageOrder: q.passageOrder || 0,
-      passageGroupSize: q.passageGroupSize || 0
+      passageGroupSize: q.passageGroupSize || 0,
+      passageSpan: q.passageSpan || q.passageGroupSize || 5
     };
   }
 
@@ -7478,12 +7947,28 @@ document.addEventListener('DOMContentLoaded', () => {
             isTrial: applyHeaderMeta ? isTrial : Boolean(r.originalIsTrial),
             type: r.type,
             question: qText,
-            weight: Math.max(1, parseInt(r.weight, 10) || 10)
+            weight: r.type === 'passage' ? 0 : Math.max(1, parseInt(r.weight, 10) || 10)
           };
+          if (r.type === 'passage') {
+            upd.passageTitle = (r.passageTitle || '').trim();
+            upd.passageText = qText;
+            upd.passageSpan = Math.max(1, parseInt(r.passageSpan, 10) || 5);
+            upd.passageGroupId = r.passageGroupId || `WACANA-${Date.now()}`;
+            updatesList.push(upd);
+            continue;
+          }
           if (r.hasTable && r.tableData) upd.tableData = JSON.parse(JSON.stringify(r.tableData));
           else if (!r.hasTable) upd.removeTable = true;
 
           if (r.existingChartData) upd.chartData = JSON.parse(JSON.stringify(r.existingChartData));
+
+          if (r.type === 'single' || r.type === 'multiple') {
+            const hasAnyBulkOpt = [r.optA, r.optB, r.optC, r.optD].some(v => String(v || '').trim() !== '') || Boolean(r.hasOptionTables);
+            if (!hasAnyBulkOpt) {
+              alert(`Pilihan jawaban A–D pada item #${i + 1} masih kosong semua!\n\nJika item ini adalah Wacana / Teks Bacaan (tanpa nomor & pilihan), ubah jenisnya menjadi "📖 Wacana / Bacaan".`);
+              return;
+            }
+          }
 
           if (r.type === 'single') {
             upd.options = [
@@ -7559,8 +8044,16 @@ document.addEventListener('DOMContentLoaded', () => {
           isTrial,
           type: r.type,
           question: qText,
-          weight: Math.max(1, parseInt(r.weight, 10) || 10)
+          weight: r.type === 'passage' ? 0 : Math.max(1, parseInt(r.weight, 10) || 10)
         };
+        if (r.type === 'passage') {
+          item.passageTitle = (r.passageTitle || '').trim();
+          item.passageText = qText;
+          item.passageSpan = Math.max(1, parseInt(r.passageSpan, 10) || 5);
+          item.passageGroupId = `WACANA-${Date.now()}-${i + 1}`;
+          payloadList.push(item);
+          continue;
+        }
         if (mode === 'passage') {
           item.passageGroupId = passageGroupId;
           item.passageTitle = passageTitle;
@@ -7569,6 +8062,14 @@ document.addEventListener('DOMContentLoaded', () => {
           item.passageGroupSize = bulkRowsState.length;
         }
         if (r.hasTable && r.tableData) item.tableData = JSON.parse(JSON.stringify(r.tableData));
+
+        if (r.type === 'single' || r.type === 'multiple') {
+          const hasAnyBulkOpt = [r.optA, r.optB, r.optC, r.optD].some(v => String(v || '').trim() !== '') || Boolean(r.hasOptionTables);
+          if (!hasAnyBulkOpt) {
+            alert(`Pilihan jawaban A–D pada item #${i + 1} masih kosong semua!\n\nJika item ini adalah Wacana / Teks Bacaan (tanpa nomor & pilihan), ubah jenisnya menjadi "📖 Wacana / Bacaan".`);
+            return;
+          }
+        }
 
         if (r.type === 'single') {
           item.options = [
@@ -7854,7 +8355,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (q && q.subject) pushUniqueSubj(q.subject);
     });
 
-    const umumCount = isAdmin ? window.cbtAdmin.getQuestionsFiltered('UMUM', 'ALL', activeCat).length : 0;
+    const isPassageFn = (q) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(q));
+    const countScorable = (arr) => Array.isArray(arr) ? arr.filter(q => !isPassageFn(q)).length : 0;
+
+    const scopedAllScorableCount = countScorable(scopedAll);
+    const umumList = isAdmin ? window.cbtAdmin.getQuestionsFiltered('UMUM', 'ALL', activeCat) : [];
+    const umumCount = isAdmin ? countScorable(umumList) : 0;
 
     // Susun daftar paket "Mapel per Kelas" (mis. Matematika — Kelas 7, Matematika — Kelas 8, dst.)
     const packages = [];
@@ -7862,8 +8368,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const allSchedules = window.cbtAdmin.getAllSchedules() || [];
 
     subjectNames.forEach(subj => {
-      const subjAllCount = window.cbtAdmin.getQuestionsFiltered(subj, 'ALL', activeCat).length;
-      if (subjAllCount === 0) return;
+      const subjQuestions = window.cbtAdmin.getQuestionsFiltered(subj, 'ALL', activeCat);
+      if (subjQuestions.length === 0) return;
+      const subjAllCount = countScorable(subjQuestions);
 
       const candidateClasses = [];
       const addCandidateClass = (cls) => {
@@ -7877,7 +8384,6 @@ document.addEventListener('DOMContentLoaded', () => {
       standardGrades.forEach(g => addCandidateClass(g));
 
       // Cek apakah ada kelas spesifik di soal atau jadwal untuk mapel ini
-      const subjQuestions = window.cbtAdmin.getQuestionsFiltered(subj, 'ALL', activeCat);
       let hasGenericAllClassQ = false;
       subjQuestions.forEach(q => {
         const rawCls = String(q.classLevel || 'Semua Kelas').trim();
@@ -7908,18 +8414,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const matchedTiersForSubj = [];
       standardGrades.forEach(g => {
-        const cnt = window.cbtAdmin.getQuestionsFiltered(subj, g, activeCat).length;
-        if (cnt > 0) {
-          matchedTiersForSubj.push({ subject: subj, classLevel: g, count: cnt, isCustomClass: false });
+        const qsGrade = window.cbtAdmin.getQuestionsFiltered(subj, g, activeCat);
+        if (qsGrade.length > 0) {
+          matchedTiersForSubj.push({ subject: subj, classLevel: g, count: countScorable(qsGrade), isCustomClass: false });
         }
       });
 
       // Tambahkan kelas non-standar (mis. X, 10A, atau 7A jika berbeda isinya dari Kelas 7 umum)
       candidateClasses.filter(c => !standardGrades.includes(c)).forEach(customCls => {
-        const cnt = window.cbtAdmin.getQuestionsFiltered(subj, customCls, activeCat).length;
-        if (cnt > 0) {
+        const qsCustom = window.cbtAdmin.getQuestionsFiltered(subj, customCls, activeCat);
+        if (qsCustom.length > 0) {
           const customLabel = /^Kelas\s+/i.test(customCls) ? customCls : `Kelas ${customCls}`;
-          matchedTiersForSubj.push({ subject: subj, classLevel: customCls, classLabel: customLabel, count: cnt, isCustomClass: true });
+          matchedTiersForSubj.push({ subject: subj, classLevel: customCls, classLabel: customLabel, count: countScorable(qsCustom), isCustomClass: true });
         }
       });
 
@@ -7936,7 +8442,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    if (umumCount > 0) {
+    if (umumList.length > 0) {
       packages.push({
         subject: 'UMUM',
         subjectLabel: 'Umum / Soal Demo',
@@ -7964,10 +8470,10 @@ document.addEventListener('DOMContentLoaded', () => {
           opt.innerText = `${prefixIcon} ${subText} — ${clsText} (${pkg.count} soal)`;
           nqSubjectClassCombo.appendChild(opt);
         });
-        if (scopedAll.length > 0 && (subjectNames.length > 1 || umumCount > 0)) {
+        if (scopedAll.length > 0 && (subjectNames.length > 1 || umumList.length > 0)) {
           const optAllAll = document.createElement('option');
           optAllAll.value = makeNqComboKey('ALL', 'ALL');
-          optAllAll.innerText = `🗂️ Semua Mapel & Semua Kelas (${scopedAll.length} soal)`;
+          optAllAll.innerText = `🗂️ Semua Mapel & Semua Kelas (${scopedAllScorableCount} soal)`;
           nqSubjectClassCombo.appendChild(optAllAll);
         }
       }
@@ -7979,17 +8485,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAdmin || teacherSubjects.length !== 1) {
         const optAllSub = document.createElement('option');
         optAllSub.value = 'ALL';
-        optAllSub.innerText = `Semua Mapel (${scopedAll.length})`;
+        optAllSub.innerText = `Semua Mapel (${scopedAllScorableCount})`;
         nqSubjectSelect.appendChild(optAllSub);
       }
       subjectNames.forEach(s => {
-        const cnt = window.cbtAdmin.getQuestionsFiltered(s, 'ALL', activeCat).length;
+        const cnt = countScorable(window.cbtAdmin.getQuestionsFiltered(s, 'ALL', activeCat));
         const opt = document.createElement('option');
         opt.value = s;
         opt.innerText = `${s} (${cnt})`;
         nqSubjectSelect.appendChild(opt);
       });
-      if (umumCount > 0) {
+      if (umumList.length > 0) {
         const optU = document.createElement('option');
         optU.value = 'UMUM';
         optU.innerText = `Umum / Demo (${umumCount})`;
@@ -8120,13 +8626,36 @@ document.addEventListener('DOMContentLoaded', () => {
     return { questions, options };
   }
 
+  let lastPreviewSuspiciousWacanaIds = [];
+
   function refreshQuestionsPaperPreview() {
     const container = document.getElementById('questionsPaperPreviewContainer');
     const countBadge = document.getElementById('questionsPreviewCountBadge');
+    const warnBanner = document.getElementById('nqSuspiciousWacanaBanner');
+    const warnText = document.getElementById('nqSuspiciousWacanaText');
     const { questions, options } = getSelectedQuestionsAndPaperOptions();
+
+    const isPassageFn = (q) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(q));
+    const isEmptyOptsFn = (q) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isEmptyOptionsQuestion === 'function' && window.cbtAdmin.isEmptyOptionsQuestion(q));
+    const scorableCount = questions.filter(q => !isPassageFn(q)).length;
+    const passageCount = questions.length - scorableCount;
+    const suspiciousQs = questions.filter(q => isEmptyOptsFn(q));
+    lastPreviewSuspiciousWacanaIds = suspiciousQs.map(q => q.id);
+
+    if (warnBanner) {
+      if (suspiciousQs.length > 0) {
+        if (warnText) {
+          warnText.innerText = `⚠️ Ditemukan ${suspiciousQs.length} item tanpa pilihan A–D (kemungkinan Wacana masih diberi nomor & opsi kosong).`;
+        }
+        warnBanner.classList.remove('hidden');
+      } else {
+        warnBanner.classList.add('hidden');
+      }
+    }
+
     if (countBadge) {
       const clsPart = options.classLevel ? ` • ${options.classLevel}` : ' • Semua Kelas';
-      countBadge.innerText = `${questions.length} Soal (${options.subject}${clsPart})`;
+      countBadge.innerText = `${scorableCount} Soal${passageCount > 0 ? ` + ${passageCount} Wacana` : ''} (${options.subject}${clsPart})`;
     }
     if (!container) return;
 
@@ -8136,6 +8665,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     container.innerHTML = window.cbtAdmin.generateExamPaperHtml(questions, options);
   }
+
+  document.getElementById('btnFixSuspiciousWacanaInPreview')?.addEventListener('click', () => {
+    if (!window.cbtAdmin || lastPreviewSuspiciousWacanaIds.length === 0) return;
+    const res = window.cbtAdmin.convertQuestionsBatchToPassage(lastPreviewSuspiciousWacanaIds, 5);
+    if (res && res.success) {
+      renderAdminQuestionList();
+      renderAdminTeacherQuestionProgress();
+      refreshQuestionsPaperPreview();
+    }
+  });
 
   if (nqSubjectClassCombo) {
     nqSubjectClassCombo.addEventListener('change', () => {
@@ -8517,36 +9056,94 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ===================== TAB 3: MANAJEMEN 250 SISWA & KARTU PESERTA =====================
+  function populateStudentRoomFilterOptions() {
+    const roomFilterEl = document.getElementById('filterStudentsRoom');
+    const summaryBadgeEl = document.getElementById('studentRoomSummaryBadge');
+    if (!window.studentManager) return;
+    const allStudents = window.studentManager.getAllStudents();
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+    const assignedCount = allStudents.filter(s => Boolean(s.examRoom && String(s.examRoom).trim())).length;
+
+    if (summaryBadgeEl) {
+      if (rooms.length > 0) {
+        summaryBadgeEl.innerText = `🏫 ${rooms.length} Ruang Ujian (${assignedCount}/${allStudents.length} siswa ditempatkan)`;
+      } else {
+        summaryBadgeEl.innerText = 'Format Biodata Lengkap Kartu 9,0 x 5,3 cm • Belum diatur ruang acak';
+      }
+    }
+
+    if (!roomFilterEl) return;
+    const prev = roomFilterEl.value || 'ALL';
+    let html = `<option value="ALL">Semua Ruang (${allStudents.length})</option>`;
+    rooms.forEach(rm => {
+      const members = typeof window.studentManager.getStudentsByRoom === 'function'
+        ? window.studentManager.getStudentsByRoom(rm)
+        : [];
+      const gradeNums = [...new Set(members.map(m => {
+        const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
+        return gm ? gm[1] : String(m.class || '');
+      }).filter(Boolean))].sort().join(',');
+      html += `<option value="${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length}${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
+    });
+    const unassignedCount = allStudents.length - assignedCount;
+    if (unassignedCount > 0 && rooms.length > 0) {
+      html += `<option value="__UNASSIGNED__">Belum Diatur Ruang (${unassignedCount})</option>`;
+    }
+    roomFilterEl.innerHTML = html;
+    if (prev && Array.from(roomFilterEl.options).some(o => o.value === prev)) {
+      roomFilterEl.value = prev;
+    } else {
+      roomFilterEl.value = 'ALL';
+    }
+  }
+
   function renderAdminStudentsList(searchQuery = "") {
     const tbody = document.getElementById('adminStudentsTbody');
     const badge = document.getElementById('studentCountBadge');
     if (!tbody || !window.studentManager) return;
 
-    const students = searchQuery
+    populateStudentRoomFilterOptions();
+    const roomFilterVal = document.getElementById('filterStudentsRoom')?.value || 'ALL';
+
+    let students = searchQuery
       ? window.studentManager.searchStudents(searchQuery)
       : window.studentManager.getAllStudents();
+
+    if (roomFilterVal === '__UNASSIGNED__') {
+      students = students.filter(s => !s.examRoom || !String(s.examRoom).trim());
+    } else if (roomFilterVal !== 'ALL') {
+      students = students.filter(s =>
+        typeof window.studentManager.matchesRoom === 'function'
+          ? window.studentManager.matchesRoom(s.examRoom, roomFilterVal)
+          : String(s.examRoom || '').trim() === roomFilterVal
+      );
+    }
 
     if (badge) badge.innerText = `${window.studentManager.getStudentCount()} Siswa`;
 
     tbody.innerHTML = '';
     if (students.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-400">Tidak ada data siswa ditemukan.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-slate-400">Tidak ada data siswa ditemukan.</td></tr>`;
       return;
     }
 
     students.forEach((s, idx) => {
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition";
+      const roomCellHtml = s.examRoom
+        ? `<span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">🏫 ${escapeHtmlSafe(s.examRoom)}</span>`
+        : `<span class="text-slate-400 text-[11px]">—</span>`;
       tr.innerHTML = `
         <td class="p-3 text-center text-slate-400 font-bold">${idx + 1}</td>
-        <td class="p-3 font-mono font-bold text-blue-700">${s.nisn}</td>
-        <td class="p-3 font-semibold text-slate-800">${s.name}</td>
-        <td class="p-3 text-slate-600">${s.birthPlace || '-'}</td>
-        <td class="p-3 text-slate-600 whitespace-nowrap">${s.birthDate || '-'}</td>
-        <td class="p-3 text-slate-600">${s.gender || '-'}</td>
-        <td class="p-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px]">Kelas ${s.class}</span></td>
-        <td class="p-3 text-slate-600 max-w-[180px] truncate" title="${s.address || ''}">${s.address || '-'}</td>
-        <td class="p-3 font-mono text-slate-500">${s.password}</td>
+        <td class="p-3 font-mono font-bold text-blue-700">${escapeHtmlSafe(s.nisn)}</td>
+        <td class="p-3 font-semibold text-slate-800">${escapeHtmlSafe(s.name)}</td>
+        <td class="p-3 text-slate-600">${escapeHtmlSafe(s.birthPlace || '-')}</td>
+        <td class="p-3 text-slate-600 whitespace-nowrap">${escapeHtmlSafe(s.birthDate || '-')}</td>
+        <td class="p-3 text-slate-600">${escapeHtmlSafe(s.gender || '-')}</td>
+        <td class="p-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px]">Kelas ${escapeHtmlSafe(s.class)}</span></td>
+        <td class="p-3 text-center whitespace-nowrap">${roomCellHtml}</td>
+        <td class="p-3 text-slate-600 max-w-[180px] truncate" title="${escapeHtmlSafe(s.address || '')}">${escapeHtmlSafe(s.address || '-')}</td>
+        <td class="p-3 font-mono text-slate-500">${escapeHtmlSafe(s.password)}</td>
         <td class="p-3 text-center whitespace-nowrap">
           <button type="button" class="btn-edit-student text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded text-xs cursor-pointer mr-1" title="Edit Siswa">✏️</button>
           <button type="button" class="btn-delete-student text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded text-xs cursor-pointer" title="Hapus Siswa">🗑️</button>
@@ -8575,6 +9172,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openStudentModal(student = null) {
     if (!modalStudentForm) return;
     const titleEl = document.getElementById('modalStudentFormTitle');
+    const roomInput = document.getElementById('stuInputRoom');
     if (student) {
       if (titleEl) titleEl.innerText = "Edit Data Siswa";
       document.getElementById('editStudentOriginalNisn').value = student.nisn;
@@ -8582,6 +9180,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('stuInputNisn').readOnly = true;
       document.getElementById('stuInputName').value = student.name || '';
       document.getElementById('stuInputClass').value = student.class || '9A';
+      if (roomInput) roomInput.value = student.examRoom || '';
       document.getElementById('stuInputBirthPlace').value = student.birthPlace || '';
       document.getElementById('stuInputBirthDate').value = student.birthDate || '';
       document.getElementById('stuInputGender').value = student.gender || 'Laki-laki';
@@ -8594,6 +9193,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('stuInputNisn').readOnly = false;
       document.getElementById('stuInputName').value = '';
       document.getElementById('stuInputClass').value = '9A';
+      if (roomInput) roomInput.value = '';
       document.getElementById('stuInputBirthPlace').value = '';
       document.getElementById('stuInputBirthDate').value = '';
       document.getElementById('stuInputGender').value = 'Laki-laki';
@@ -8611,10 +9211,12 @@ document.addEventListener('DOMContentLoaded', () => {
     formStudentItem.addEventListener('submit', (e) => {
       e.preventDefault();
       const origNisn = document.getElementById('editStudentOriginalNisn').value;
+      const roomInput = document.getElementById('stuInputRoom');
       const payload = {
         nisn: document.getElementById('stuInputNisn').value.trim(),
         name: document.getElementById('stuInputName').value.trim(),
         class: document.getElementById('stuInputClass').value.trim(),
+        examRoom: roomInput ? roomInput.value.trim() : '',
         birthPlace: document.getElementById('stuInputBirthPlace').value.trim(),
         birthDate: document.getElementById('stuInputBirthDate').value.trim(),
         gender: document.getElementById('stuInputGender').value,
@@ -8633,6 +9235,136 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         alert(res.message);
       }
+    });
+  }
+
+  // Modal Atur & Acak Ruang Ujian Lintas Kelas (7-8-9)
+  const modalAssignExamRooms = document.getElementById('modalAssignExamRooms');
+  const formAssignExamRooms = document.getElementById('formAssignExamRooms');
+  const btnOpenAssignExamRooms = document.getElementById('btnOpenAssignExamRooms');
+  const btnCloseAssignExamRooms = document.getElementById('btnCloseAssignExamRooms');
+  const btnCancelAssignExamRooms = document.getElementById('btnCancelAssignExamRooms');
+  const assignRoomMode = document.getElementById('assignRoomMode');
+  const assignRoomOptionsWrap = document.getElementById('assignRoomOptionsWrap');
+  const assignRoomCount = document.getElementById('assignRoomCount');
+  const assignRoomPrefix = document.getElementById('assignRoomPrefix');
+  const assignExamRoomsPreview = document.getElementById('assignExamRoomsPreview');
+
+  function updateAssignExamRoomsPreview() {
+    if (!assignExamRoomsPreview || !window.studentManager) return;
+    const allStudents = window.studentManager.getAllStudents();
+    const mode = assignRoomMode ? assignRoomMode.value : 'mixed_random';
+    if (assignRoomOptionsWrap) {
+      if (mode === 'clear') assignRoomOptionsWrap.classList.add('hidden');
+      else assignRoomOptionsWrap.classList.remove('hidden');
+    }
+    if (allStudents.length === 0) {
+      assignExamRoomsPreview.innerHTML = 'Belum ada data siswa di pangkalan data.';
+      return;
+    }
+    if (mode === 'clear') {
+      assignExamRoomsPreview.innerHTML = `<strong>🧹 Kosongkan Ruang Ujian:</strong> Kolom Ruang Ujian pada seluruh <strong>${allStudents.length} siswa</strong> akan dihapus agar kembali dikelompokkan berdasarkan kelas asli (7A, 8B, dst).`;
+      return;
+    }
+
+    const rCount = Math.max(1, Math.min(50, parseInt(assignRoomCount ? assignRoomCount.value : '8', 10) || 8));
+    const rPrefix = (assignRoomPrefix ? assignRoomPrefix.value.trim() : '') || 'Ruang';
+    const basePerRoom = Math.floor(allStudents.length / rCount);
+    const extra = allStudents.length % rCount;
+    const sizeRange = extra > 0 ? `${basePerRoom}–${basePerRoom + 1}` : `${basePerRoom}`;
+
+    const gradeTotals = {};
+    allStudents.forEach(s => {
+      const m = String(s.class || '').trim().match(/^(VII|VIII|IX|\d+)/i);
+      const g = m ? m[1].toUpperCase() : 'Lain';
+      const lbl = `Kls ${g}`;
+      gradeTotals[lbl] = (gradeTotals[lbl] || 0) + 1;
+    });
+    const gradeBreakdown = Object.entries(gradeTotals)
+      .sort((a, b) => a[0].localeCompare(b[0], 'id', { numeric: true }))
+      .map(([k, v]) => `${escapeHtmlSafe(k)}: <strong>${v}</strong> (~${Math.round(v / rCount)}/ruang)`)
+      .join(' • ');
+
+    if (mode === 'mixed_random') {
+      assignExamRoomsPreview.innerHTML = `
+        <div><strong>📊 Simulasi Acak Lintas Kelas:</strong> <strong>${allStudents.length} siswa</strong> akan diacak merata ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>
+        <div class="mt-1 text-slate-600">Komposisi jenjang: ${gradeBreakdown}</div>
+      `;
+    } else {
+      assignExamRoomsPreview.innerHTML = `
+        <div><strong>📋 Simulasi Urut Kelas:</strong> <strong>${allStudents.length} siswa</strong> akan diurutkan per kelas lalu dibagi ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>
+      `;
+    }
+  }
+
+  function closeAssignExamRoomsModal() {
+    if (modalAssignExamRooms) modalAssignExamRooms.classList.add('hidden');
+  }
+
+  if (btnOpenAssignExamRooms && modalAssignExamRooms) {
+    btnOpenAssignExamRooms.addEventListener('click', () => {
+      if (!window.studentManager || window.studentManager.getStudentCount() === 0) {
+        alert("Belum ada data siswa. Silakan impor data siswa atau isi siswa demo terlebih dahulu.");
+        return;
+      }
+      const existingRooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+      if (assignRoomCount && existingRooms.length > 0) {
+        assignRoomCount.value = String(existingRooms.length);
+      } else if (assignRoomCount) {
+        const totalStu = window.studentManager.getStudentCount();
+        assignRoomCount.value = String(Math.max(1, Math.min(20, Math.ceil(totalStu / 32))));
+      }
+      updateAssignExamRoomsPreview();
+      modalAssignExamRooms.classList.remove('hidden');
+    });
+  }
+  if (btnCloseAssignExamRooms) btnCloseAssignExamRooms.addEventListener('click', closeAssignExamRoomsModal);
+  if (btnCancelAssignExamRooms) btnCancelAssignExamRooms.addEventListener('click', closeAssignExamRoomsModal);
+  if (assignRoomMode) assignRoomMode.addEventListener('change', updateAssignExamRoomsPreview);
+  if (assignRoomCount) assignRoomCount.addEventListener('input', updateAssignExamRoomsPreview);
+  if (assignRoomPrefix) assignRoomPrefix.addEventListener('input', updateAssignExamRoomsPreview);
+
+  if (formAssignExamRooms) {
+    formAssignExamRooms.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!window.studentManager) return;
+      const mode = assignRoomMode ? assignRoomMode.value : 'mixed_random';
+      const roomCount = assignRoomCount ? parseInt(assignRoomCount.value, 10) : 8;
+      const roomPrefix = assignRoomPrefix ? assignRoomPrefix.value.trim() : 'Ruang';
+
+      if (mode === 'clear' && !confirm("Kosongkan pembagian Ruang Ujian untuk seluruh siswa?")) {
+        return;
+      }
+
+      const res = window.studentManager.assignExamRooms({ mode, roomCount, roomPrefix });
+      if (!res || !res.success) {
+        alert((res && res.message) || "Gagal mengatur ruang ujian.");
+        return;
+      }
+
+      closeAssignExamRoomsModal();
+      const roomFilterEl = document.getElementById('filterStudentsRoom');
+      if (roomFilterEl) roomFilterEl.value = 'ALL';
+      renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
+      setupMonitoringControls();
+
+      if (mode === 'clear') {
+        alert(`Sukses! Ruang ujian seluruh ${res.assignedCount} siswa telah dikosongkan.`);
+      } else {
+        const previewLines = (res.roomsSummary || []).slice(0, 6).map(item => {
+          const gradesTxt = Object.entries(item.gradeCounts || {}).map(([g, n]) => `${g}: ${n}`).join(', ');
+          return `• ${item.room}: ${item.total} siswa (${gradesTxt})`;
+        }).join('\n');
+        const extraLine = (res.roomsSummary || []).length > 6 ? `\n...dan ${res.roomsSummary.length - 6} ruang lainnya.` : '';
+        alert(`Sukses! ${res.assignedCount} siswa berhasil dibagi ke ${res.roomCount} ruang ujian.\n\n${previewLines}${extraLine}\n\nKelas asli siswa (7A, 8B, 9C) tetap terjaga untuk pencocokan jadwal & soal.`);
+      }
+    });
+  }
+
+  const filterStudentsRoom = document.getElementById('filterStudentsRoom');
+  if (filterStudentsRoom) {
+    filterStudentsRoom.addEventListener('change', () => {
+      renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
     });
   }
 
@@ -8660,6 +9392,7 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(`Sukses! Berhasil mengimpor ${result.count} data siswa dari file Excel.`);
           renderAdminStudentsList();
           setupSubjectAndClassFilters();
+          setupMonitoringControls();
         } else {
           alert(`Gagal impor Excel: ${result.message}`);
         }
@@ -8693,19 +9426,36 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDownloadCardsPdf = document.getElementById('btnDownloadCardsPdf');
 
   function getFilteredPreviewCardStudents() {
-    const selectedClass = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
+    const selectedFilter = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
     let students = window.studentManager.getAllStudents();
-    if (selectedClass !== "ALL") {
-      students = students.filter(s => String(s.class).trim().toUpperCase() === String(selectedClass).trim().toUpperCase());
+    if (selectedFilter.startsWith("ROOM:")) {
+      const targetRoom = selectedFilter.slice(5);
+      students = students.filter(s =>
+        typeof window.studentManager.matchesRoom === 'function'
+          ? window.studentManager.matchesRoom(s.examRoom, targetRoom)
+          : String(s.examRoom || '').trim().toUpperCase() === targetRoom.trim().toUpperCase()
+      );
+    } else if (selectedFilter !== "ALL") {
+      students = students.filter(s => String(s.class).trim().toUpperCase() === String(selectedFilter).trim().toUpperCase());
     }
     return students;
   }
 
-  function updateCardModalButtonLabels(selectedClass = "ALL") {
+  function updateCardModalButtonLabels(selectedFilter = "ALL") {
+    const rooms = (window.studentManager && typeof window.studentManager.getAllRooms === 'function')
+      ? window.studentManager.getAllRooms()
+      : [];
     if (btnDownloadCardsPerClassPdf) {
-      btnDownloadCardsPerClassPdf.innerHTML = selectedClass === "ALL"
-        ? '<span>📥 Download PDF Per Kelas</span>'
-        : `<span>📥 Download PDF Kelas ${escapeHtmlSafe(selectedClass)}</span>`;
+      if (selectedFilter === "ALL") {
+        btnDownloadCardsPerClassPdf.innerHTML = rooms.length > 0
+          ? '<span>📥 Download PDF Per Ruang</span>'
+          : '<span>📥 Download PDF Per Kelas</span>';
+      } else if (selectedFilter.startsWith("ROOM:")) {
+        const rm = selectedFilter.slice(5);
+        btnDownloadCardsPerClassPdf.innerHTML = `<span>📥 Download PDF ${escapeHtmlSafe(rm)}</span>`;
+      } else {
+        btnDownloadCardsPerClassPdf.innerHTML = `<span>📥 Download PDF Kelas ${escapeHtmlSafe(selectedFilter)}</span>`;
+      }
     }
   }
 
@@ -8718,15 +9468,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (cardPreviewClassFilter) {
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
       const classes = window.studentManager.getAllClasses();
-      cardPreviewClassFilter.innerHTML = `<option value="ALL">Semua Kelas (${students.length} Siswa)</option>`;
-      classes.forEach(c => {
-        const count = students.filter(s => String(s.class).trim().toUpperCase() === String(c).trim().toUpperCase()).length;
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.innerText = `Kelas ${c} (${count} Siswa)`;
-        cardPreviewClassFilter.appendChild(opt);
-      });
+      let filterHtml = `<option value="ALL">${rooms.length > 0 ? 'Semua Ruang &amp; Kelas' : 'Semua Kelas'} (${students.length} Siswa)</option>`;
+      if (rooms.length > 0) {
+        filterHtml += '<optgroup label="🏫 Berdasarkan Ruang Ujian">';
+        rooms.forEach(rm => {
+          const members = window.studentManager.getStudentsByRoom(rm);
+          filterHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length} Siswa)</option>`;
+        });
+        filterHtml += '</optgroup>';
+      }
+      if (classes.length > 0) {
+        filterHtml += (rooms.length > 0 ? '<optgroup label="🎓 Berdasarkan Kelas Asli">' : '');
+        classes.forEach(c => {
+          const count = students.filter(s => String(s.class).trim().toUpperCase() === String(c).trim().toUpperCase()).length;
+          filterHtml += `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)} (${count} Siswa)</option>`;
+        });
+        filterHtml += (rooms.length > 0 ? '</optgroup>' : '');
+      }
+      cardPreviewClassFilter.innerHTML = filterHtml;
       cardPreviewClassFilter.value = "ALL";
     }
 
@@ -8734,21 +9495,57 @@ document.addEventListener('DOMContentLoaded', () => {
     modalPrintCardsPreview.classList.remove('hidden');
   }
 
-  function renderCardPreviewContent(selectedClass = "ALL") {
+  function renderCardPreviewContent(selectedFilter = "ALL") {
     if (!cardPreviewContainer || !window.studentManager) return;
     const allStudents = window.studentManager.getAllStudents();
-    let students = allStudents;
-    if (selectedClass !== "ALL") {
-      students = allStudents.filter(s => String(s.class).trim().toUpperCase() === String(selectedClass).trim().toUpperCase());
-    }
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+    const students = getFilteredPreviewCardStudents();
 
-    updateCardModalButtonLabels(selectedClass);
+    updateCardModalButtonLabels(selectedFilter);
 
     if (cardPreviewCountBadge) {
-      cardPreviewCountBadge.innerText = `${students.length} Kartu (${selectedClass === "ALL" ? "Semua Kelas" : "Kelas " + selectedClass})`;
+      const scopeText = selectedFilter === "ALL"
+        ? (rooms.length > 0 ? "Semua Ruang" : "Semua Kelas")
+        : (selectedFilter.startsWith("ROOM:") ? selectedFilter.slice(5) : "Kelas " + selectedFilter);
+      cardPreviewCountBadge.innerText = `${students.length} Kartu (${scopeText})`;
     }
 
-    if (selectedClass === "ALL") {
+    if (selectedFilter === "ALL" && rooms.length > 0) {
+      const groupedByRoom = rooms.map(rm => {
+        const rmStudents = window.studentManager.getStudentsByRoom(rm);
+        if (rmStudents.length === 0) return '';
+        const rmCardsHtml = window.studentManager.generateCardsHtml(rmStudents, window.examEngine.config.examTitle);
+        return `
+          <div class="mb-6 last:mb-0">
+            <div class="max-w-4xl mx-auto mb-3 px-3.5 py-2 rounded-xl bg-white border border-indigo-200 flex items-center justify-between shadow-xs">
+              <span class="text-xs font-extrabold text-indigo-900">🏫 ${escapeHtmlSafe(rm)}</span>
+              <span class="text-[11px] font-bold text-indigo-700">${rmStudents.length} Siswa</span>
+            </div>
+            <div class="cards-grid grid grid-cols-1 md:grid-cols-2 gap-4 justify-items-center max-w-4xl mx-auto">
+              ${rmCardsHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+      const unassigned = allStudents.filter(s => !s.examRoom || !String(s.examRoom).trim());
+      const unassignedHtml = unassigned.length > 0
+        ? `
+          <div class="mb-6 last:mb-0">
+            <div class="max-w-4xl mx-auto mb-3 px-3.5 py-2 rounded-xl bg-white border border-slate-200 flex items-center justify-between shadow-xs">
+              <span class="text-xs font-extrabold text-slate-700">Belum Diatur Ruang</span>
+              <span class="text-[11px] font-bold text-slate-600">${unassigned.length} Siswa</span>
+            </div>
+            <div class="cards-grid grid grid-cols-1 md:grid-cols-2 gap-4 justify-items-center max-w-4xl mx-auto">
+              ${window.studentManager.generateCardsHtml(unassigned, window.examEngine.config.examTitle)}
+            </div>
+          </div>
+        `
+        : '';
+      cardPreviewContainer.innerHTML = groupedByRoom + unassignedHtml;
+      return;
+    }
+
+    if (selectedFilter === "ALL") {
       const classes = window.studentManager.getAllClasses();
       if (classes.length > 1) {
         const groupedHtml = classes.map(cls => {
@@ -8792,23 +9589,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnExecuteDirectPrintCards) {
     btnExecuteDirectPrintCards.addEventListener('click', () => {
-      const selectedClass = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
+      const selectedFilter = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
       const students = getFilteredPreviewCardStudents();
       closeCardPreviewModal();
-      window.studentManager.printExamCards(students, window.examEngine.config.examTitle, {
-        classLabel: selectedClass === "ALL" ? "" : selectedClass,
-        groupByClass: selectedClass === "ALL"
-      });
+      if (selectedFilter.startsWith("ROOM:")) {
+        window.studentManager.printExamCards(students, window.examEngine.config.examTitle, {
+          roomLabel: selectedFilter.slice(5),
+          groupByClass: false,
+          groupByRoom: false
+        });
+      } else {
+        window.studentManager.printExamCards(students, window.examEngine.config.examTitle, {
+          classLabel: selectedFilter === "ALL" ? "" : selectedFilter,
+          groupByRoom: selectedFilter === "ALL" && rooms.length > 0,
+          groupByClass: selectedFilter === "ALL" && rooms.length === 0
+        });
+      }
     });
   }
 
   if (btnDownloadCardsPerClassPdf) {
     btnDownloadCardsPerClassPdf.addEventListener('click', async () => {
-      const selectedClass = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
+      const selectedFilter = cardPreviewClassFilter ? cardPreviewClassFilter.value : "ALL";
       const allStudents = window.studentManager.getAllStudents();
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
       const classes = window.studentManager.getAllClasses();
 
-      if (selectedClass === "ALL" && classes.length > 1) {
+      if (selectedFilter === "ALL" && rooms.length > 1) {
+        if (!confirm(`Akan mengunduh ${rooms.length} file PDF terpisah (1 file PDF untuk setiap ruang: ${rooms.join(', ')}). Lanjutkan?`)) {
+          return;
+        }
+      } else if (selectedFilter === "ALL" && rooms.length === 0 && classes.length > 1) {
         if (!confirm(`Akan mengunduh ${classes.length} file PDF terpisah (1 file PDF untuk setiap kelas: ${classes.join(', ')}). Lanjutkan?`)) {
           return;
         }
@@ -8817,13 +9629,30 @@ document.addEventListener('DOMContentLoaded', () => {
       btnDownloadCardsPerClassPdf.disabled = true;
       if (btnDownloadCardsPdf) btnDownloadCardsPdf.disabled = true;
       try {
-        if (selectedClass !== "ALL") {
-          btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(selectedClass)}...</span>`;
+        if (selectedFilter.startsWith("ROOM:")) {
+          const rm = selectedFilter.slice(5);
+          btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(rm)}...</span>`;
           const students = getFilteredPreviewCardStudents();
           await window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle, {
-            classLabel: selectedClass,
+            roomLabel: rm,
+            groupByClass: false,
+            groupByRoom: false
+          });
+        } else if (selectedFilter !== "ALL") {
+          btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(selectedFilter)}...</span>`;
+          const students = getFilteredPreviewCardStudents();
+          await window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle, {
+            classLabel: selectedFilter,
             groupByClass: false
           });
+        } else if (rooms.length > 0 && typeof window.studentManager.downloadCardsPerRoomSeparatePdfs === 'function') {
+          await window.studentManager.downloadCardsPerRoomSeparatePdfs(
+            allStudents,
+            window.examEngine.config.examTitle,
+            (done, total, rm) => {
+              btnDownloadCardsPerClassPdf.innerHTML = `<span>⏳ PDF ${done}/${total} (${escapeHtmlSafe(rm)})...</span>`;
+            }
+          );
         } else {
           await window.studentManager.downloadCardsPerClassSeparatePdfs(
             allStudents,
@@ -8845,6 +9674,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnDownloadCardsPdf) {
     btnDownloadCardsPdf.addEventListener('click', async () => {
       const students = window.studentManager.getAllStudents();
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
       const prevHtml = btnDownloadCardsPdf.innerHTML;
       btnDownloadCardsPdf.disabled = true;
       if (btnDownloadCardsPerClassPdf) btnDownloadCardsPerClassPdf.disabled = true;
@@ -8852,7 +9682,8 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await window.studentManager.downloadCardsPdf(students, window.examEngine.config.examTitle, {
           classLabel: "",
-          groupByClass: true
+          groupByRoom: rooms.length > 0,
+          groupByClass: rooms.length === 0
         });
         closeCardPreviewModal();
       } finally {
@@ -8904,7 +9735,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncNqKopUi();
   }
 
-  function applyPengawasForSelectedClass(selectedClass) {
+  function applyPengawasForSelectedClass(selectedFilter) {
     if (!window.cbtAdmin) return;
     const allTeachers = window.cbtAdmin.getAllTeachers() || [];
     const pengawasList = allTeachers.filter(t => t && window.cbtAdmin.isPengawasUser(t));
@@ -8924,20 +9755,40 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    const isRoomTarget = Boolean(selectedFilter && String(selectedFilter).startsWith('ROOM:'));
+    const cleanTarget = isRoomTarget ? String(selectedFilter).slice(5) : String(selectedFilter || '').trim();
+    const normTargetRoomKey = typeof window.cbtAdmin.normalizeRoomKey === 'function'
+      ? window.cbtAdmin.normalizeRoomKey(cleanTarget)
+      : cleanTarget.toUpperCase();
+
+    const matchesTargetStr = (rawAssigned) => {
+      if (!rawAssigned || !cleanTarget) return false;
+      if (isRoomTarget && normTargetRoomKey && typeof window.cbtAdmin.parseTeacherClasses === 'function') {
+        const tokens = window.cbtAdmin.parseTeacherClasses(rawAssigned);
+        if (tokens.some(tok => window.cbtAdmin.normalizeRoomKey(tok) === normTargetRoomKey)) {
+          return true;
+        }
+      }
+      if (!isRoomTarget && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+        return window.examEngine.matchesClassLevel(rawAssigned, cleanTarget);
+      }
+      return false;
+    };
+
     let matched = null;
-    if (selectedClass && selectedClass !== 'ALL' && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+    if (cleanTarget && cleanTarget !== 'ALL') {
       if (attDayVal) {
         matched = pengawasList.find(t => {
           const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
           const dayKey = Object.keys(normSched).find(k => k.toLowerCase() === attDayVal.toLowerCase());
-          return dayKey && normSched[dayKey] && window.examEngine.matchesClassLevel(normSched[dayKey], selectedClass);
+          return dayKey && normSched[dayKey] && matchesTargetStr(normSched[dayKey]);
         });
       }
       if (!matched) {
         matched = pengawasList.find(t => {
-          if (t.classes && window.examEngine.matchesClassLevel(t.classes, selectedClass)) return true;
+          if (t.classes && matchesTargetStr(t.classes)) return true;
           const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
-          return Object.values(normSched).some(rm => rm && window.examEngine.matchesClassLevel(rm, selectedClass));
+          return Object.values(normSched).some(rm => rm && matchesTargetStr(rm));
         });
       }
     }
@@ -8960,6 +9811,25 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyScheduleToAttendanceFields(scheduleId) {
     if (!window.cbtAdmin) return;
     const schedules = window.cbtAdmin.getAllSchedules() || [];
+    if (scheduleId === '__AUTO_PER_GRADE__') {
+      const activeList = schedules.filter(s => s.isActive);
+      const subjEl = document.getElementById('attSubjectName');
+      const dayEl = document.getElementById('attDayText');
+      const dateEl = document.getElementById('attDateText');
+      const timeEl = document.getElementById('attTimeRange');
+      const uniqueSubs = [...new Set(activeList.map(s => String(s.subject || '').trim()).filter(Boolean))];
+      if (subjEl && uniqueSubs.length > 0) subjEl.value = uniqueSubs.join(' / ');
+      const firstSch = activeList[0] || schedules[0];
+      if (firstSch) {
+        if (dayEl && firstSch.day) dayEl.value = firstSch.day;
+        if (dateEl) {
+          const dStr = firstSch.dateFormatted || (firstSch.dateIso && window.cbtAdmin.formatIndonesianDate ? window.cbtAdmin.formatIndonesianDate(firstSch.dateIso) : '');
+          if (dStr) dateEl.value = dStr;
+        }
+        if (timeEl && firstSch.timeRange) timeEl.value = firstSch.timeRange;
+      }
+      return;
+    }
     const sch = schedules.find(s => String(s.id) === String(scheduleId));
     if (!sch) return;
     const subjEl = document.getElementById('attSubjectName');
@@ -8976,22 +9846,54 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getAttendanceStudentsAndOptions() {
-    const selectedClass = attClassFilter ? attClassFilter.value : 'ALL';
+    const selectedFilter = attClassFilter ? attClassFilter.value : 'ALL';
+    const isRoomMode = Boolean(selectedFilter && selectedFilter.startsWith('ROOM:'));
+    const roomName = isRoomMode ? selectedFilter.slice(5) : '';
     let students = window.studentManager ? window.studentManager.getAllStudents() : [];
-    if (selectedClass && selectedClass !== 'ALL') {
+    if (isRoomMode) {
+      students = students.filter(s =>
+        typeof window.studentManager.matchesRoom === 'function'
+          ? window.studentManager.matchesRoom(s.examRoom, roomName)
+          : String(s.examRoom || '').trim().toUpperCase() === roomName.trim().toUpperCase()
+      );
+    } else if (selectedFilter && selectedFilter !== 'ALL') {
       students = students.filter(s => {
         if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
-          return window.examEngine.matchesClassLevel(s.class, selectedClass);
+          return window.examEngine.matchesClassLevel(s.class, selectedFilter);
         }
-        return String(s.class || '').trim().toUpperCase() === String(selectedClass).trim().toUpperCase();
+        return String(s.class || '').trim().toUpperCase() === String(selectedFilter).trim().toUpperCase();
       });
     }
-    students = [...students].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+    students = [...students].sort((a, b) => {
+      if (isRoomMode && window.studentManager && typeof window.studentManager.compareClassNames === 'function') {
+        const clsCmp = window.studentManager.compareClassNames(a.class, b.class);
+        if (clsCmp !== 0) return clsCmp;
+      }
+      return String(a.name || '').localeCompare(String(b.name || ''), 'id');
+    });
+
+    const uniqueClassesInSelection = new Set(students.map(s => String(s.class || '').trim()).filter(Boolean));
+    const isMixedRoom = Boolean(isRoomMode || uniqueClassesInSelection.size > 1);
+    const activeSchedules = window.cbtAdmin && typeof window.cbtAdmin.getActiveSchedules === 'function'
+      ? window.cbtAdmin.getActiveSchedules()
+      : [];
+    const schSelVal = attScheduleSelect ? attScheduleSelect.value : '';
+    const resolveSubjectForStudent = (schSelVal === '__AUTO_PER_GRADE__' && activeSchedules.length > 0 && window.examEngine)
+      ? (st) => {
+          const matched = activeSchedules.find(sch =>
+            window.examEngine.matchesClassLevel(sch.classLevel || sch.targetClass || 'Semua Kelas', st && st.class || '')
+          );
+          return matched ? matched.subject : (document.getElementById('attSubjectName')?.value.trim() || '');
+        }
+      : null;
 
     const paperVal = attPaperSize ? attPaperSize.value : 'F4';
     const rowsVal = attRowsPerPage ? parseInt(attRowsPerPage.value, 10) : 25;
     const options = {
-      classLabel: selectedClass && selectedClass !== 'ALL' ? selectedClass : '',
+      classLabel: (!isRoomMode && selectedFilter && selectedFilter !== 'ALL') ? selectedFilter : '',
+      roomLabel: roomName,
+      isMixedRoom,
+      resolveSubjectForStudent,
       docTitle: document.getElementById('attDocTitle')?.value.trim() || 'DAFTAR HADIR PESERTA',
       examTitle: document.getElementById('attExamTitle')?.value.trim() || 'ASESMEN SUMATIF AKHIR SEMESTER (ASAS)',
       academicYear: document.getElementById('attAcademicYear')?.value.trim() || 'TAHUN PELAJARAN 2026/2027',
@@ -8999,7 +9901,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cityCode: document.getElementById('attCityCode')?.value.trim() || '',
       schoolName: document.getElementById('attSchoolName')?.value.trim() || 'SMP NEGERI 2 PACET',
       schoolCode: document.getElementById('attSchoolCode')?.value.trim() || '',
-      serverRoom: document.getElementById('attServerRoom')?.value.trim() || (selectedClass && selectedClass !== 'ALL' ? `Ruang Ujian ${selectedClass}` : 'Ruang Ujian 1'),
+      serverRoom: document.getElementById('attServerRoom')?.value.trim() || (roomName || (selectedFilter && selectedFilter !== 'ALL' ? `Ruang Ujian ${selectedFilter}` : 'Ruang Ujian 1')),
       session: document.getElementById('attSession')?.value.trim() || '1',
       dayText: document.getElementById('attDayText')?.value.trim() || '',
       dateText: document.getElementById('attDateText')?.value.trim() || '',
@@ -9024,7 +9926,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.cbtAdmin) return;
     const { students, options } = getAttendanceStudentsAndOptions();
     if (countBadge) {
-      const roomLbl = options.classLabel ? `Kelas ${options.classLabel}` : 'Semua Kelas';
+      const roomLbl = options.roomLabel
+        ? options.roomLabel
+        : (options.classLabel ? `Kelas ${options.classLabel}` : 'Semua Peserta');
       countBadge.innerText = `${students.length} Peserta (${roomLbl})`;
     }
     if (paperBadge) {
@@ -9047,24 +9951,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const att = cfg.attendanceIdentity || window.cbtAdmin.getDefaultAttendanceIdentity(cfg);
     const examCfg = window.examEngine ? window.examEngine.config : {};
 
-    // Isi dropdown kelas
+    // Isi dropdown ruang ujian & kelas
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
     const classes = window.studentManager.getAllClasses();
     if (attClassFilter) {
-      attClassFilter.innerHTML = '';
-      classes.forEach(c => {
-        const count = allStudents.filter(s => String(s.class || '').trim().toUpperCase() === String(c).trim().toUpperCase()).length;
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.innerText = `Kelas ${c} (${count} Siswa)`;
-        attClassFilter.appendChild(opt);
-      });
-      const allOpt = document.createElement('option');
-      allOpt.value = 'ALL';
-      allOpt.innerText = `Semua Kelas (${allStudents.length} Siswa)`;
-      attClassFilter.appendChild(allOpt);
+      let optHtml = '';
+      if (rooms.length > 0) {
+        optHtml += '<optgroup label="🏫 Berdasarkan Ruang Ujian (Campur Kelas)">';
+        rooms.forEach(rm => {
+          const members = window.studentManager.getStudentsByRoom(rm);
+          const gradeNums = [...new Set(members.map(m => {
+            const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
+            return gm ? gm[1] : String(m.class || '');
+          }).filter(Boolean))].sort().join(',');
+          optHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length} Siswa${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
+        });
+        optHtml += '</optgroup>';
+      }
+      if (classes.length > 0) {
+        optHtml += (rooms.length > 0 ? '<optgroup label="🎓 Berdasarkan Kelas Asli">' : '');
+        classes.forEach(c => {
+          const count = allStudents.filter(s => String(s.class || '').trim().toUpperCase() === String(c).trim().toUpperCase()).length;
+          optHtml += `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)} (${count} Siswa)</option>`;
+        });
+        optHtml += (rooms.length > 0 ? '</optgroup>' : '');
+      }
+      optHtml += `<option value="ALL">Semua Peserta (${allStudents.length} Siswa)</option>`;
+      attClassFilter.innerHTML = optHtml;
 
-      if (preferredClass && preferredClass !== 'ALL' && classes.some(c => String(c).toUpperCase() === String(preferredClass).toUpperCase())) {
-        attClassFilter.value = classes.find(c => String(c).toUpperCase() === String(preferredClass).toUpperCase());
+      if (preferredClass && preferredClass !== 'ALL') {
+        if (String(preferredClass).startsWith('ROOM:')) {
+          const rmName = String(preferredClass).slice(5);
+          const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, rmName));
+          attClassFilter.value = matchedRoom ? `ROOM:${matchedRoom}` : (rooms.length > 0 ? `ROOM:${rooms[0]}` : 'ALL');
+        } else if (rooms.some(r => window.studentManager.matchesRoom(r, preferredClass))) {
+          const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, preferredClass));
+          attClassFilter.value = `ROOM:${matchedRoom}`;
+        } else if (classes.some(c => String(c).toUpperCase() === String(preferredClass).toUpperCase())) {
+          attClassFilter.value = classes.find(c => String(c).toUpperCase() === String(preferredClass).toUpperCase());
+        } else {
+          attClassFilter.value = rooms.length > 0 ? `ROOM:${rooms[0]}` : (classes[0] || 'ALL');
+        }
+      } else if (rooms.length > 0) {
+        attClassFilter.value = `ROOM:${rooms[0]}`;
       } else if (classes.length > 0) {
         attClassFilter.value = classes[0];
       } else {
@@ -9074,8 +10003,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Isi dropdown jadwal ujian
     const schedules = window.cbtAdmin.getAllSchedules() || [];
+    const activeSchedules = schedules.filter(s => s.isActive);
     if (attScheduleSelect) {
       attScheduleSelect.innerHTML = '';
+      if (activeSchedules.length > 1) {
+        const autoOpt = document.createElement('option');
+        autoOpt.value = '__AUTO_PER_GRADE__';
+        autoOpt.innerText = '🔀 Otomatis Sesuai Jadwal Kelas Aktif (Campur 7–8–9)';
+        attScheduleSelect.appendChild(autoOpt);
+      }
       schedules.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
@@ -9116,27 +10052,50 @@ document.addEventListener('DOMContentLoaded', () => {
     if (attPaperSize) attPaperSize.value = att.paperSize === 'A4' ? 'A4' : 'F4';
     if (attRowsPerPage) attRowsPerPage.value = String(att.rowsPerPage !== undefined ? att.rowsPerPage : 25);
 
-    const chosenClass = attClassFilter ? attClassFilter.value : 'ALL';
-    setVal('attServerRoom', att.serverRoom || (chosenClass !== 'ALL' ? `Ruang Ujian ${chosenClass}` : 'Ruang Ujian 1'));
+    const chosenFilter = attClassFilter ? attClassFilter.value : 'ALL';
+    const isChosenRoom = String(chosenFilter).startsWith('ROOM:');
+    const defaultRoomTitle = isChosenRoom
+      ? String(chosenFilter).slice(5)
+      : (chosenFilter !== 'ALL' ? `Ruang Ujian ${chosenFilter}` : 'Ruang Ujian 1');
+    setVal('attServerRoom', isChosenRoom ? defaultRoomTitle : (att.serverRoom || defaultRoomTitle));
 
-    // Pilih jadwal paling relevan (aktif atau sesuai filter monitoring)
+    // Pilih jadwal paling relevan (aktif / per-jenjang jika ruang campur / filter monitoring)
     if (attScheduleSelect) {
       let matchedSch = null;
       if (preferredSubject && preferredSubject !== 'ALL' && window.examEngine) {
         matchedSch = schedules.find(s => window.examEngine.matchesSubject(s.subject, preferredSubject));
       }
-      if (!matchedSch) {
-        matchedSch = schedules.find(s => s.isActive) || schedules[0] || null;
-      }
       if (matchedSch) {
         attScheduleSelect.value = matchedSch.id;
         applyScheduleToAttendanceFields(matchedSch.id);
+      } else if (isChosenRoom && activeSchedules.length > 1) {
+        const roomMembers = window.studentManager.getStudentsByRoom(String(chosenFilter).slice(5));
+        const activeMatchingRoom = activeSchedules.filter(sch =>
+          roomMembers.some(m => window.examEngine.matchesClassLevel(sch.classLevel || sch.targetClass || 'Semua Kelas', m.class || ''))
+        );
+        if (activeMatchingRoom.length > 1) {
+          attScheduleSelect.value = '__AUTO_PER_GRADE__';
+          applyScheduleToAttendanceFields('__AUTO_PER_GRADE__');
+        } else if (activeMatchingRoom.length === 1) {
+          attScheduleSelect.value = activeMatchingRoom[0].id;
+          applyScheduleToAttendanceFields(activeMatchingRoom[0].id);
+        } else {
+          const fallbackSch = activeSchedules[0] || schedules[0];
+          attScheduleSelect.value = fallbackSch ? fallbackSch.id : '__MANUAL__';
+          if (fallbackSch) applyScheduleToAttendanceFields(fallbackSch.id);
+        }
       } else {
-        attScheduleSelect.value = '__MANUAL__';
+        matchedSch = schedules.find(s => s.isActive) || schedules[0] || null;
+        if (matchedSch) {
+          attScheduleSelect.value = matchedSch.id;
+          applyScheduleToAttendanceFields(matchedSch.id);
+        } else {
+          attScheduleSelect.value = '__MANUAL__';
+        }
       }
     }
 
-    applyPengawasForSelectedClass(chosenClass);
+    applyPengawasForSelectedClass(chosenFilter);
     syncAttKopUi();
     refreshAttendancePreview();
     modalAttendanceSheet.classList.remove('hidden');
@@ -9177,10 +10136,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const cls = attClassFilter.value;
       const roomEl = document.getElementById('attServerRoom');
       if (roomEl) {
-        const curRoom = roomEl.value.trim();
-        if (!curRoom || /^Ruang\s+Ujian/i.test(curRoom) || curRoom.includes('/')) {
-          const basePrefix = curRoom.includes('/') ? curRoom.split('/')[0].trim() + ' / ' : '';
-          roomEl.value = cls && cls !== 'ALL' ? `${basePrefix}Ruang Ujian ${cls}` : `${basePrefix}Ruang Ujian 1`;
+        if (cls && cls.startsWith('ROOM:')) {
+          roomEl.value = cls.slice(5);
+        } else {
+          const curRoom = roomEl.value.trim();
+          if (!curRoom || /^Ruang/i.test(curRoom) || /^Lab/i.test(curRoom) || curRoom.includes('/')) {
+            const basePrefix = curRoom.includes('/') ? curRoom.split('/')[0].trim() + ' / ' : '';
+            roomEl.value = cls && cls !== 'ALL' ? `${basePrefix}Ruang Ujian ${cls}` : `${basePrefix}Ruang Ujian 1`;
+          }
         }
       }
       applyPengawasForSelectedClass(cls);
@@ -9803,7 +10766,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const sched = window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule);
       const dayInputs = PENGAWAS_WEEKLY_DAYS.map(day => `
         <td class="p-2 text-center">
-          <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-day="${day}" value="${escapeHtmlSafe(sched[day] || '')}" placeholder="-" class="w-16 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-white uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-teal-500">
+          <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-day="${day}" value="${escapeHtmlSafe(sched[day] || '')}" placeholder="-" class="w-20 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-white uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-teal-500">
         </td>
       `).join('');
       return `
@@ -9813,7 +10776,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="text-[10px] font-mono text-slate-500">${escapeHtmlSafe(t.nip)}</div>
           </td>
           <td class="p-2 text-center">
-            <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-fixed="1" value="${escapeHtmlSafe(t.classes || '')}" placeholder="Kosong" class="w-20 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-slate-50 uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="text" data-pw-id="${escapeHtmlSafe(t.id)}" data-pw-fixed="1" value="${escapeHtmlSafe(t.classes || '')}" placeholder="Kosong" class="w-24 px-1.5 py-1.5 rounded-lg border border-slate-300 bg-slate-50 uppercase font-bold text-center text-xs outline-none focus:ring-2 focus:ring-blue-500">
           </td>
           ${dayInputs}
         </tr>

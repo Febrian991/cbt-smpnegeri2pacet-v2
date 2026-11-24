@@ -480,7 +480,8 @@ BEGIN
     'student', jsonb_build_object(
       'nisn', BTRIM(v_stu->>'nisn'),
       'name', COALESCE(v_stu->>'name', '-'),
-      'class', COALESCE(v_stu->>'class', 'Umum')
+      'class', COALESCE(v_stu->>'class', 'Umum'),
+      'examRoom', COALESCE(NULLIF(BTRIM(COALESCE(v_stu->>'examRoom', v_stu->>'room', v_stu->>'ruang', '')), ''), '')
     )
   );
 END;
@@ -526,7 +527,8 @@ BEGIN
   RETURN jsonb_build_object(
     'found', true,
     'name', COALESCE(v_stu->>'name', '-'),
-    'class', COALESCE(v_stu->>'class', 'Umum')
+    'class', COALESCE(v_stu->>'class', 'Umum'),
+    'examRoom', COALESCE(NULLIF(BTRIM(COALESCE(v_stu->>'examRoom', v_stu->>'room', v_stu->>'ruang', '')), ''), '')
   );
 END;
 $$;

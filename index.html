@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=3.77">
+  <link rel="stylesheet" href="css/styles.css?v=3.78">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -400,6 +400,10 @@
           <div class="flex justify-between">
             <span class="text-slate-500 font-medium">Kelas / Rombel:</span>
             <span id="confirmClass" class="font-bold text-blue-700 text-right">-</span>
+          </div>
+          <div id="confirmExamRoomRow" class="hidden flex justify-between">
+            <span class="text-slate-500 font-medium">Ruang Ujian:</span>
+            <span id="confirmExamRoom" class="font-bold text-indigo-700 text-right">-</span>
           </div>
           <div class="flex justify-between">
             <span class="text-slate-500 font-medium">Mata Pelajaran:</span>
@@ -1171,7 +1175,7 @@
                 <tr>
                   <th class="p-3 text-center w-10">No</th>
                   <th class="p-3">Nama Siswa &amp; NISN</th>
-                  <th class="p-3">Kelas</th>
+                  <th class="p-3">Kelas &amp; Ruang</th>
                   <th class="p-3">Mata Pelajaran</th>
                   <th class="p-3 text-center">Status Ujian</th>
                   <th class="p-3 text-center">Progres &amp; Percobaan</th>
@@ -1739,6 +1743,10 @@
               <span>📥 Impor dari Excel (.xlsx)</span>
             </button>
 
+            <button id="btnOpenAssignExamRooms" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 transition cursor-pointer flex items-center gap-1.5" title="Bagi atau acak ruang ujian siswa (campur lintas kelas 7, 8, 9 secara merata ke tiap ruang)">
+              <span>🏫 Atur / Acak Ruang</span>
+            </button>
+
             <button id="btnPrintStudentCards" type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center gap-1.5">
               <span>🪪 Kartu Peserta Ujian</span>
             </button>
@@ -1762,9 +1770,14 @@
         </div>
 
         <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-          <div class="p-3 border-b border-slate-100 flex items-center justify-between gap-3">
-            <input type="text" id="searchStudentInput" placeholder="Cari nama, NISN, kelas, atau alamat..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-72 outline-none focus:ring-2 focus:ring-blue-500">
-            <span class="text-xs text-slate-400">Format Biodata Lengkap Kartu 9,0 x 5,3 cm</span>
+          <div class="p-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="text" id="searchStudentInput" placeholder="Cari nama, NISN, kelas, ruang, atau alamat..." class="px-3 py-1.5 rounded-xl border border-slate-300 text-xs w-72 outline-none focus:ring-2 focus:ring-blue-500">
+              <select id="filterStudentsRoom" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="ALL">Semua Ruang Ujian</option>
+              </select>
+            </div>
+            <span id="studentRoomSummaryBadge" class="text-xs text-slate-500 font-semibold">Format Biodata Lengkap Kartu 9,0 x 5,3 cm</span>
           </div>
 
           <div class="overflow-x-auto max-h-[480px]">
@@ -1778,6 +1791,7 @@
                   <th class="p-3">Tanggal Lahir</th>
                   <th class="p-3">Jenis Kelamin</th>
                   <th class="p-3">Kelas</th>
+                  <th class="p-3">Ruang Ujian</th>
                   <th class="p-3">Alamat</th>
                   <th class="p-3">Password</th>
                   <th class="p-3 text-center w-24">Aksi</th>
@@ -2519,12 +2533,44 @@
               <option value="single">Pilihan Ganda Tunggal (1 Jawaban Benar)</option>
               <option value="multiple">Pilihan Ganda Kompleks (Jawaban &gt; 1)</option>
               <option value="true_false">Tabel Pernyataan Benar / Salah (Maks. 4 Pernyataan)</option>
+              <option value="passage">📖 Wacana / Teks Bacaan (Tanpa Nomor, Pilihan &amp; Bobot)</option>
             </select>
           </div>
         </div>
         <p id="qCategoryHelper" class="hidden text-[11px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-800 font-medium">
           🧪 <strong>Mode Simulasi:</strong> Soal ini ditandai khusus sebagai soal simulasi dan bisa disaring atau dihapus 1 klik sebelum ujian asli dimulai.
         </p>
+
+        <!-- PANEL KHUSUS MODE WACANA / TEKS BACAAN (TANPA NOMOR, PILIHAN, & BOBOT) -->
+        <div id="sectionPassageOnly" class="hidden bg-indigo-50/75 dark:bg-indigo-950/30 p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800 space-y-3 text-xs sm:text-sm">
+          <div class="p-2.5 rounded-xl bg-white/90 border border-indigo-200 text-[11px] text-indigo-950 leading-relaxed">
+            📖 <strong>Mode Wacana (Tanpa Nomor &amp; Pilihan):</strong> Teks bacaan ini <strong>tidak diberi nomor soal</strong>, <strong>tidak memiliki pilihan A–D</strong>, dan <strong>tidak dihitung bobot nilai</strong>. Saat dicetak atau dikerjakan siswa, wacana otomatis muncul sebagai bacaan untuk soal-soal berikutnya.
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div class="sm:col-span-2">
+              <label class="block font-bold text-slate-700 mb-1" for="qPassageOnlyTitle">Judul Wacana / Bacaan (Opsional)</label>
+              <input type="text" id="qPassageOnlyTitle" placeholder="Contoh: Pangeran Diponegoro" class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1" for="qPassageOnlySpan">Berlaku Untuk Soal</label>
+              <select id="qPassageOnlySpan" class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white font-bold text-indigo-800 outline-none">
+                <option value="2">2 Soal Berikutnya</option>
+                <option value="3">3 Soal Berikutnya</option>
+                <option value="4">4 Soal Berikutnya</option>
+                <option value="5" selected>5 Soal Berikutnya</option>
+                <option value="6">6 Soal Berikutnya</option>
+                <option value="7">7 Soal Berikutnya</option>
+                <option value="8">8 Soal Berikutnya</option>
+                <option value="9">9 Soal Berikutnya</option>
+                <option value="10">10 Soal Berikutnya</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="qPassageOnlyText">Isi Teks Wacana / Bacaan</label>
+            <textarea id="qPassageOnlyText" rows="6" placeholder="Tempel atau ketik paragraf bacaan wacana di sini..." class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"></textarea>
+          </div>
+        </div>
 
         <!-- PANEL KELOMPOK WACANA / STIMULUS (3 S.D 5 SOAL) -->
         <details id="qPassageDetails" class="bg-indigo-50/60 dark:bg-indigo-950/30 p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800">
@@ -2565,7 +2611,7 @@
           </div>
         </details>
 
-        <div>
+        <div id="qQuestionTextSection">
           <label class="block font-bold text-slate-700 mb-1" for="qInputText">Teks Pertanyaan</label>
           <textarea id="qInputText" rows="3" required placeholder="Tuliskan butir soal di sini..." class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
         </div>
@@ -2708,7 +2754,7 @@
           </div>
         </div>
 
-        <div class="pt-1">
+        <div id="qWeightSection" class="pt-1">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
             <label class="block font-bold text-slate-700" for="qInputWeight">Bobot Nilai Soal (Poin)</label>
             <div class="flex flex-wrap items-center gap-1 text-[11px]">
@@ -2722,6 +2768,15 @@
             </div>
           </div>
           <input type="number" id="qInputWeight" min="1" max="100" value="10" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-blue-700 outline-none">
+        </div>
+
+        <div id="qFormValidationAlert" class="hidden p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs space-y-2">
+          <div id="qFormValidationMsg" class="font-semibold leading-relaxed"></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="btnSwitchAlertToPassageMode" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer transition">
+              📖 Ubah Jadi Wacana (Tanpa Nomor &amp; Pilihan)
+            </button>
+          </div>
         </div>
 
         <div class="pt-3 border-t border-slate-100 flex flex-wrap gap-2">
@@ -2876,9 +2931,14 @@
             <input type="text" id="stuInputNisn" required placeholder="0081234513" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono outline-none focus:ring-2 focus:ring-blue-500">
           </div>
           <div>
-            <label class="block font-bold text-slate-700 mb-1" for="stuInputClass">Kelas / Rombel</label>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputClass">Kelas / Rombel Asli</label>
             <input type="text" id="stuInputClass" required placeholder="9A" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
           </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="stuInputRoom">Ruang Ujian (Opsional — untuk ruang acak lintas kelas)</label>
+          <input type="text" id="stuInputRoom" placeholder="Misal: Ruang 1 (kosongkan jika mengikuti kelas asli)" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
         </div>
 
         <div>
@@ -2922,6 +2982,56 @@
           </button>
           <button type="submit" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer">
             Simpan Data Siswa
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ATUR & ACAK RUANG UJIAN LINTAS KELAS (7-8-9) -->
+  <div id="modalAssignExamRooms" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+          <h3 class="font-bold text-base text-slate-900">🏫 Atur &amp; Acak Ruang Ujian Lintas Kelas</h3>
+          <p class="text-xs text-slate-500">Campur siswa kelas 7, 8, dan 9 secara merata ke Ruang Ujian tanpa mengubah kelas asli &amp; paket soalnya.</p>
+        </div>
+        <button id="btnCloseAssignExamRooms" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
+      </div>
+
+      <form id="formAssignExamRooms" class="space-y-3.5 text-xs sm:text-sm">
+        <div class="p-3 rounded-2xl bg-indigo-50/80 border border-indigo-200 text-[11px] text-indigo-950 leading-relaxed">
+          <strong>💡 Cara Kerja Aman:</strong> Kolom <strong>Kelas</strong> (misal <code>7A</code>, <code>8B</code>, <code>9C</code>) tetap dijaga agar siswa tetap mendapat jadwal &amp; soal sesuai tingkat kelasnya. Pembagian tempat duduk disimpan terpisah di kolom <strong>Ruang Ujian</strong> (misal <code>Ruang 1</code>).
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1" for="assignRoomMode">Metode Pembagian Ruang</label>
+          <select id="assignRoomMode" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="mixed_random">🎲 Acak Campur Lintas Kelas (7–8–9 Merata di Tiap Ruang)</option>
+            <option value="by_class_sequential">📋 Urut per Rombel / Kelas Asli (7A, 7B, ..., 9C)</option>
+            <option value="clear">🧹 Kosongkan Semua Ruang Ujian (Kembali per Kelas)</option>
+          </select>
+        </div>
+
+        <div id="assignRoomOptionsWrap" class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="assignRoomCount">Jumlah Ruang Ujian</label>
+            <input type="number" id="assignRoomCount" min="1" max="50" value="8" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="assignRoomPrefix">Nama Awalan Ruang</label>
+            <input type="text" id="assignRoomPrefix" value="Ruang" placeholder="Ruang / Lab" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+        </div>
+
+        <div id="assignExamRoomsPreview" class="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 leading-relaxed"></div>
+
+        <div class="pt-3 border-t border-slate-100 flex gap-2">
+          <button id="btnCancelAssignExamRooms" type="button" class="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Batal
+          </button>
+          <button type="submit" id="btnSubmitAssignExamRooms" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm cursor-pointer">
+            🎲 Terapkan Pembagian Ruang
           </button>
         </div>
       </form>
@@ -3015,20 +3125,20 @@
             <span class="text-[10px] font-semibold text-teal-700">Kosong = Fleksibel</span>
           </div>
           <p class="text-[11px] text-teal-800 leading-relaxed">
-            Isi jika pengawas berganti ruang tiap hari (misal Senin <strong>7A</strong>, Selasa <strong>8B</strong>). Kosongkan semua jika ingin <strong>Pengawas memilih sendiri ruangnya saat login</strong>.
+            Isi jika pengawas berganti ruang tiap hari (misal Senin <strong>Ruang 1</strong>, Selasa <strong>Ruang 2</strong>, atau per kelas <strong>7A</strong>). Kosongkan semua jika ingin <strong>Pengawas memilih sendiri ruangnya saat login</strong>.
           </p>
           <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
             <div>
               <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomSenin">Senin</label>
-              <input type="text" id="editTeacherRoomSenin" placeholder="7A" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+              <input type="text" id="editTeacherRoomSenin" placeholder="Ruang 1" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomSelasa">Selasa</label>
-              <input type="text" id="editTeacherRoomSelasa" placeholder="8B" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+              <input type="text" id="editTeacherRoomSelasa" placeholder="Ruang 2" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomRabu">Rabu</label>
-              <input type="text" id="editTeacherRoomRabu" placeholder="9C" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
+              <input type="text" id="editTeacherRoomRabu" placeholder="Ruang 3" class="w-full px-2 py-1.5 rounded-lg border border-teal-300 bg-white uppercase font-bold text-center outline-none focus:ring-2 focus:ring-teal-500">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-teal-900 mb-0.5" for="editTeacherRoomKamis">Kamis</label>
@@ -3068,13 +3178,13 @@
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
         <div>
           <h3 class="font-bold text-base text-slate-900">🗓️ Jadwal Ruang Pengawas Mingguan (Senin – Sabtu)</h3>
-          <p class="text-xs text-slate-500">Atur ruang/kelas berbeda tiap hari untuk setiap akun Pengawas, atau kosongkan agar Pengawas memilih ruang sendiri saat login.</p>
+          <p class="text-xs text-slate-500">Atur ruang ujian (misal <strong>Ruang 1</strong>) atau kelas (misal <strong>7A</strong>) tiap hari untuk setiap akun Pengawas, atau kosongkan agar Pengawas memilih ruang sendiri saat login.</p>
         </div>
         <button id="btnClosePengawasWeeklyMatrix" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base">✕</button>
       </div>
       <div class="p-3 rounded-2xl bg-teal-50/80 border border-teal-200 text-[11px] text-teal-900 mb-3 leading-relaxed">
         <strong>💡 Cara Kerja:</strong><br>
-        • Jika kolom <strong>Senin s.d. Jumat</strong> diisi (misal: Senin <code>7A</code>, Selasa <code>8B</code>), maka saat Pengawas login pada hari tersebut ruangnya <strong>otomatis terkunci</strong> sesuai jadwal harinya.<br>
+        • Jika kolom <strong>Senin s.d. Jumat</strong> diisi (misal: Senin <code>Ruang 1</code>, Selasa <code>Ruang 2</code>, atau <code>7A</code>), maka saat Pengawas login pada hari tersebut ruangnya <strong>otomatis terkunci</strong> sesuai jadwal harinya.<br>
         • Jika <strong>Ruang Tetap &amp; Jadwal Senin–Sabtu dikosongkan</strong>, akun bersifat <strong>Fleksibel</strong>: Pengawas memilih sendiri ruang yang diawasi ketika login di hari ujian.
       </div>
       <div class="overflow-auto flex-1 border border-slate-200 rounded-2xl">
@@ -3119,9 +3229,9 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-slate-600">Pilih Kelas:</span>
+          <span class="text-xs font-bold text-slate-600">Pilih Ruang / Kelas:</span>
           <select id="cardPreviewClassFilter" class="px-3 py-1.5 rounded-xl border border-slate-300 font-bold text-xs bg-white text-blue-700 outline-none">
-            <option value="ALL">Semua Kelas</option>
+            <option value="ALL">Semua Peserta</option>
           </select>
           <button id="btnCloseCardPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
         </div>
@@ -3287,6 +3397,14 @@
             </label>
           </div>
         </div>
+      </div>
+
+      <!-- Peringatan Jika Masih Ada Wacana Bernomor (Opsi A-D Kosong) -->
+      <div id="nqSuspiciousWacanaBanner" class="hidden px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
+        <span id="nqSuspiciousWacanaText" class="font-semibold">⚠️ Ditemukan item tanpa pilihan jawaban A–D (kemungkinan Wacana masih diberi nomor).</span>
+        <button id="btnFixSuspiciousWacanaInPreview" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] cursor-pointer transition shrink-0">
+          📖 Ubah Jadi Wacana Tanpa Nomor &amp; Pilihan
+        </button>
       </div>
 
       <!-- Area Pratinjau Kertas F4 (21cm x 33cm) -->
@@ -3539,11 +3657,11 @@
   <!-- ======================== SCRIPTS ======================== -->
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
-  <script src="js/default-students.js?v=3.58"></script>
+  <script src="js/default-students.js?v=3.78"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
-  <script src="js/exam-engine.js?v=3.70"></script>
-  <script src="js/admin.js?v=3.77"></script>
-  <script src="js/app.js?v=3.77"></script>
+  <script src="js/exam-engine.js?v=3.79"></script>
+  <script src="js/admin.js?v=3.79"></script>
+  <script src="js/app.js?v=3.79"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
