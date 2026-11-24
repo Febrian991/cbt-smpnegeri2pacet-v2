@@ -2735,6 +2735,7 @@ class CBTAdmin {
         { key: 'admin_btn_import_export_students', group: 'Data Siswa Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Siswa', selector: '#btnDownloadStudentTemplate, #btnTriggerImportStudents' },
         { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
         { key: 'admin_btn_print_attendance', group: 'Data Siswa Admin', label: 'Tombol: 📋 Daftar Hadir Peserta', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
+        { key: 'admin_btn_print_room_docs', group: 'Data Siswa Admin', label: 'Tombol: 🗺️ Daftar Peserta & Denah Ruang', selector: '#btnOpenRoomDocsModal, #btnOpenRoomDocsFromMonitoring' },
         { key: 'admin_btn_reset_student_passwords', group: 'Data Siswa Admin', label: 'Tombol: 🔄 Reset Password Siswa (123)', selector: '#btnResetAllStudentPasswords' },
         { key: 'admin_btn_demo_students', group: 'Data Siswa Admin', label: 'Tombol: 🎲 Isi 250 Siswa Demo', selector: '#btnGenerate250Demo' },
         { key: 'admin_btn_clear_students', group: 'Data Siswa Admin', label: 'Tombol: 🗑️ Hapus Semua Siswa', selector: '#btnClearStudents' },
@@ -2808,6 +2809,49 @@ class CBTAdmin {
     };
   }
 
+  getDefaultRoomDocsFormat(schoolCfg = null) {
+    const cfg = schoolCfg || {};
+    const att = cfg.attendanceIdentity || {};
+    const schoolSub = String(cfg.schoolSubtitle || '').toUpperCase();
+    let inferredCity = att.cityRegency || 'KABUPATEN MOJOKERTO';
+    if (!att.cityRegency && !schoolSub.includes('MOJOKERTO') && cfg.city) {
+      const c = String(cfg.city).trim().toUpperCase();
+      inferredCity = c.startsWith('KABUPATEN') || c.startsWith('KOTA') ? c : `KABUPATEN ${c}`;
+    }
+    let inferredProvince = 'JAWA TIMUR';
+    if (inferredCity.includes('CIANJUR') || inferredCity.includes('BANDUNG') || inferredCity.includes('BOGOR')) {
+      inferredProvince = 'JAWA BARAT';
+    }
+    return {
+      paperSize: att.paperSize === 'A4' ? 'A4' : 'F4',
+      provinceName: inferredProvince,
+      cityRegency: inferredCity,
+      schoolName: String(cfg.schoolName || 'SMP NEGERI 2 PACET').toUpperCase(),
+      examSubtitle: att.examTitle || 'UJIAN SEKOLAH / ASESMEN SUMATIF AKHIR SEMESTER',
+      academicYear: att.academicYear || 'TAHUN PELAJARAN 2026 – 2027',
+      signCity: cfg.city || 'Pacet',
+      signDate: cfg.date || '',
+      signerRole: 'Kepala Sekolah,',
+      headmasterName: cfg.headmasterName || 'Drs. H. Mulyono, M.Pd.',
+      headmasterNip: cfg.headmasterNip || '19680512 199403 1 004',
+
+      rosterTitle: 'DAFTAR NAMA PESERTA UJIAN SEKOLAH',
+      rosterShowClassInName: true,
+      rosterKetMode: 'class',
+      rosterMinRows: 0,
+
+      seatingTitle: 'DENAH POSISI DUDUK PESERTA UJIAN SEKOLAH',
+      seatingCols: 4,
+      seatingFlow: 'zigzag',
+      proctorPos: 'left',
+      seatingNumberMode: 'nisn',
+      seatingBottomMode: 'seat_class',
+      seatingAccentColor: '#b2a1c7',
+      seatingProctorColor: '#c5be97',
+      seatingShowLegend: true
+    };
+  }
+
   getSchoolConfig() {
     try {
       const saved = localStorage.getItem('cbt_school_config');
@@ -2831,6 +2875,10 @@ class CBTAdmin {
         baseCfg.attendanceIdentity = (parsed.attendanceIdentity && typeof parsed.attendanceIdentity === 'object')
           ? { ...defAtt, ...parsed.attendanceIdentity }
           : defAtt;
+        const defRoomDocs = this.getDefaultRoomDocsFormat(baseCfg);
+        baseCfg.roomDocsFormat = (parsed.roomDocsFormat && typeof parsed.roomDocsFormat === 'object')
+          ? { ...defRoomDocs, ...parsed.roomDocsFormat }
+          : defRoomDocs;
         return baseCfg;
       }
     } catch (e) {}
@@ -2849,6 +2897,7 @@ class CBTAdmin {
       buttonPermissions: this.getDefaultButtonPermissions()
     };
     fallback.attendanceIdentity = this.getDefaultAttendanceIdentity(fallback);
+    fallback.roomDocsFormat = this.getDefaultRoomDocsFormat(fallback);
     return fallback;
   }
 
@@ -2860,7 +2909,10 @@ class CBTAdmin {
         buttonPermissions: this.normalizeButtonPermissions(cfg?.buttonPermissions || existing.buttonPermissions),
         attendanceIdentity: (cfg?.attendanceIdentity && typeof cfg.attendanceIdentity === 'object')
           ? { ...this.getDefaultAttendanceIdentity(cfg), ...cfg.attendanceIdentity }
-          : existing.attendanceIdentity
+          : existing.attendanceIdentity,
+        roomDocsFormat: (cfg?.roomDocsFormat && typeof cfg.roomDocsFormat === 'object')
+          ? { ...this.getDefaultRoomDocsFormat(cfg), ...cfg.roomDocsFormat }
+          : existing.roomDocsFormat
       };
       localStorage.setItem('cbt_school_config', JSON.stringify(normalizedCfg));
       if (!skipCloudPush && typeof window !== 'undefined' && window.supabaseSync) {
@@ -6163,6 +6215,637 @@ class CBTAdmin {
       return;
     }
     printArea.innerHTML = this.buildAttendanceSheetHtml(studentsList, options);
+    printArea.classList.remove('hidden');
+    document.body.classList.add('printing-attendance');
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        printArea.classList.add('hidden');
+        document.body.classList.remove('printing-attendance');
+      }, 1000);
+    }, 250);
+  }
+
+  // ===================== STUDIO DAFTAR PESERTA PER RUANGAN & DENAH POSISI DUDUK =====================
+  _formatRoomBadgeNumber(roomLabel) {
+    const txt = String(roomLabel || '').trim();
+    if (!txt) return '01';
+    const numMatch = txt.match(/(\d+)\s*$/);
+    if (numMatch) {
+      const n = parseInt(numMatch[1], 10);
+      return Number.isFinite(n) && n < 10 ? `0${n}` : String(numMatch[1]);
+    }
+    return txt.toUpperCase();
+  }
+
+  _formatGenderShort(gender) {
+    const g = String(gender || '').trim().toUpperCase();
+    if (!g) return '-';
+    if (g.startsWith('L') || g.startsWith('M') || g.includes('PRIA')) return 'L';
+    if (g.startsWith('P') || g.startsWith('W') || g.startsWith('F')) return 'P';
+    return g.slice(0, 1);
+  }
+
+  _buildRoomDocKopHtml(cfg, fmt) {
+    const customKopImg = cfg.kopSuratImage || '';
+    if (customKopImg && String(customKopImg).trim() !== '') {
+      return `
+        <div style="width:100%; margin:0 0 8px 0; padding:0; text-align:center;">
+          <img src="${customKopImg}" alt="Kop Surat Sekolah" style="width:100%; max-height:110px; height:auto; object-fit:contain; display:block; margin:0 auto;">
+        </div>
+      `;
+    }
+    const logoLeftHtml = cfg.logoLeft
+      ? `<img src="${cfg.logoLeft}" alt="Logo Dinas" style="width:58px; height:58px; object-fit:contain; display:block;">`
+      : '';
+    const logoRightHtml = cfg.logoRight
+      ? `<img src="${cfg.logoRight}" alt="Logo Sekolah" style="width:58px; height:58px; object-fit:contain; display:block; margin-left:auto;">`
+      : '';
+    const schoolName = String(fmt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    return `
+      <table style="width:100%; border-collapse:collapse; margin:0 0 3px 0;">
+        <tbody>
+          <tr>
+            <td style="width:68px; vertical-align:middle; text-align:left; padding-bottom:4px;">
+              ${logoLeftHtml || '<div style="width:52px;height:52px;"></div>'}
+            </td>
+            <td style="vertical-align:middle; text-align:center; padding-bottom:4px;">
+              <div style="font-size:11px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; line-height:1.2;">${this.escapePrintHtml(cfg.schoolSubtitle || 'PEMERINTAH KABUPATEN MOJOKERTO — DINAS PENDIDIKAN')}</div>
+              <div style="font-size:16px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; line-height:1.2; margin-top:1px;">${this.escapePrintHtml(schoolName)}</div>
+              <div style="font-size:9.5px; line-height:1.25; margin-top:2px;">${this.escapePrintHtml(cfg.schoolAddress || '')}</div>
+            </td>
+            <td style="width:68px; vertical-align:middle; text-align:right; padding-bottom:4px;">
+              ${logoRightHtml || '<div style="width:52px;height:52px;"></div>'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="border-top:2.4px solid #000000; border-bottom:1px solid #000000; height:2px; margin-bottom:10px;"></div>
+    `;
+  }
+
+  buildRoomRosterSheetHtml(roomGroups = [], formatOverride = {}) {
+    const cfg = this.getSchoolConfig();
+    const fmt = { ...(cfg.roomDocsFormat || this.getDefaultRoomDocsFormat(cfg)), ...(formatOverride || {}) };
+    const groups = Array.isArray(roomGroups) && roomGroups.length > 0
+      ? roomGroups
+      : [{ roomLabel: 'RUANG 1', students: [] }];
+
+    const paperSize = String(fmt.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
+    const kopHtml = this._buildRoomDocKopHtml(cfg, fmt);
+
+    const rosterTitle = String(fmt.rosterTitle || 'DAFTAR NAMA PESERTA UJIAN SEKOLAH').trim().toUpperCase();
+    const provinceName = String(fmt.provinceName || 'JAWA TIMUR').trim().toUpperCase();
+    const cityRegency = String(fmt.cityRegency || 'KABUPATEN MOJOKERTO').trim().toUpperCase();
+    const schoolName = String(fmt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim().toUpperCase();
+    const signCity = String(fmt.signCity || cfg.city || 'Pacet').trim();
+    const signDate = String(fmt.signDate || cfg.date || '').trim();
+    const signerRole = String(fmt.signerRole || 'Kepala Sekolah,').trim();
+    const headmasterName = String(fmt.headmasterName || cfg.headmasterName || 'Kepala Sekolah').trim();
+    const headmasterNip = String(fmt.headmasterNip || cfg.headmasterNip || '').trim();
+    const showClassInName = fmt.rosterShowClassInName !== false;
+    const ketMode = String(fmt.rosterKetMode || 'class');
+    const minRows = Math.max(0, Math.min(60, parseInt(fmt.rosterMinRows, 10) || 0));
+
+    const pagesHtml = groups.map((grp, gIdx) => {
+      const students = Array.isArray(grp.students) ? grp.students : [];
+      const roomTitle = String(grp.roomLabel || 'RUANG 1').trim().toUpperCase();
+      const uniqueClasses = new Set(students.map(s => String((s && s.class) || '').trim()).filter(Boolean));
+      const isMixed = uniqueClasses.size > 1;
+      const totalRows = Math.max(students.length, minRows);
+
+      const rowsHtml = totalRows > 0
+        ? Array.from({ length: totalRows }, (_, i) => {
+            const st = students[i] || null;
+            const no = i + 1;
+            if (!st) {
+              return `
+                <tr>
+                  <td style="border:1px solid #000000; padding:3.5px 5px; text-align:center; font-size:10.5px;">${no}</td>
+                  <td style="border:1px solid #000000; padding:3.5px 6px; text-align:center; font-size:10.5px;">......</td>
+                  <td style="border:1px solid #000000; padding:3.5px 6px; font-size:10.5px;">............................................</td>
+                  <td style="border:1px solid #000000; padding:3.5px 4px; text-align:center; font-size:10.5px;">&nbsp;</td>
+                  <td style="border:1px solid #000000; padding:3.5px 6px; font-size:10.5px;">&nbsp;</td>
+                </tr>
+              `;
+            }
+            const clsTxt = String(st.class || '').trim();
+            const nameSuffix = showClassInName && isMixed && clsTxt
+              ? ` <span style="font-size:9px; font-weight:600;">(${this.escapePrintHtml(clsTxt)})</span>`
+              : '';
+            const seatNum = Number(st.seatOrder) > 0 ? Number(st.seatOrder) : no;
+            let ketTxt = '';
+            if (ketMode === 'class') {
+              ketTxt = clsTxt ? `Kelas ${clsTxt}` : '';
+            } else if (ketMode === 'seat') {
+              ketTxt = `Kursi ${seatNum < 10 ? '0' + seatNum : seatNum}`;
+            }
+            return `
+              <tr>
+                <td style="border:1px solid #000000; padding:3.5px 5px; text-align:center; font-size:10.5px;">${no}</td>
+                <td style="border:1px solid #000000; padding:3.5px 6px; font-size:10.5px; white-space:nowrap;">${this.escapePrintHtml(st.nisn || '-')}</td>
+                <td style="border:1px solid #000000; padding:3.5px 6px; font-size:10.5px;">${this.escapePrintHtml(st.name || '-')}${nameSuffix}</td>
+                <td style="border:1px solid #000000; padding:3.5px 4px; text-align:center; font-size:10.5px; font-weight:600;">${this.escapePrintHtml(this._formatGenderShort(st.gender))}</td>
+                <td style="border:1px solid #000000; padding:3.5px 6px; font-size:10.5px;">${ketTxt ? this.escapePrintHtml(ketTxt) : '&nbsp;'}</td>
+              </tr>
+            `;
+          }).join('')
+        : `
+          <tr>
+            <td colspan="5" style="border:1px solid #000000; padding:16px; text-align:center; font-size:11px;">Belum ada data siswa pada ruang ini.</td>
+          </tr>
+        `;
+
+      const pageBreakClass = gIdx > 0 ? ' room-doc-page-break' : '';
+      const signLine = signDate ? `${signCity}, ${signDate}` : signCity;
+
+      return `
+        <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:10mm 14mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+          ${kopHtml}
+
+          <div style="text-align:center; font-weight:700; text-transform:uppercase; margin-bottom:10px; line-height:1.35;">
+            <div style="font-size:11.5px;">${this.escapePrintHtml(rosterTitle)}</div>
+            <div style="font-size:13px; font-weight:800; margin-top:2px;">${this.escapePrintHtml(roomTitle)}</div>
+          </div>
+
+          <table style="width:100%; border-collapse:collapse; font-size:10.5px; line-height:1.4; margin-bottom:8px;">
+            <tbody>
+              <tr>
+                <td style="width:118px; padding:1px 4px 1px 0;">Propinsi</td>
+                <td style="width:10px; padding:1px 4px;">:</td>
+                <td style="padding:1px 0; font-weight:600;">${this.escapePrintHtml(provinceName)}</td>
+              </tr>
+              <tr>
+                <td style="padding:1px 4px 1px 0;">Kota/Kabupaten</td>
+                <td style="padding:1px 4px;">:</td>
+                <td style="padding:1px 0; font-weight:600;">${this.escapePrintHtml(cityRegency)}</td>
+              </tr>
+              <tr>
+                <td style="padding:1px 4px 1px 0;">Sekolah</td>
+                <td style="padding:1px 4px;">:</td>
+                <td style="padding:1px 0; font-weight:600;">${this.escapePrintHtml(schoolName)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table style="width:100%; border-collapse:collapse; border:1.2px solid #000000;">
+            <thead>
+              <tr>
+                <th style="border:1.2px solid #000000; padding:5px 4px; text-align:center; font-size:10.5px; font-weight:700; width:34px;">NO</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700; width:110px;">NISN</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700;">NAMA PESERTA</th>
+                <th style="border:1.2px solid #000000; padding:5px 4px; text-align:center; font-size:10.5px; font-weight:700; width:44px;">L/P</th>
+                <th style="border:1.2px solid #000000; padding:5px 6px; text-align:center; font-size:10.5px; font-weight:700; width:135px;">KETERANGAN</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+
+          <table style="width:100%; border-collapse:collapse; margin-top:16px; break-inside:avoid; page-break-inside:avoid;">
+            <tbody>
+              <tr>
+                <td style="width:62%;"></td>
+                <td style="width:38%; text-align:left; font-size:10.5px; line-height:1.35;">
+                  <div>${this.escapePrintHtml(signLine)}</div>
+                  <div style="font-weight:600;">${this.escapePrintHtml(signerRole)}</div>
+                  <div style="height:48px;"></div>
+                  <div style="font-weight:700; text-decoration:underline;">${this.escapePrintHtml(headmasterName)}</div>
+                  <div style="font-size:10px;">${headmasterNip ? `NIP. ${this.escapePrintHtml(headmasterNip)}` : ''}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    return pagesHtml;
+  }
+
+  buildRoomSeatingPlanHtml(roomGroups = [], formatOverride = {}) {
+    const cfg = this.getSchoolConfig();
+    const fmt = { ...(cfg.roomDocsFormat || this.getDefaultRoomDocsFormat(cfg)), ...(formatOverride || {}) };
+    const groups = Array.isArray(roomGroups) && roomGroups.length > 0
+      ? roomGroups
+      : [{ roomLabel: 'RUANG 1', students: [] }];
+
+    const paperSize = String(fmt.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
+
+    const seatingTitle = String(fmt.seatingTitle || 'DENAH POSISI DUDUK PESERTA UJIAN SEKOLAH').trim().toUpperCase();
+    const examSubtitle = String(fmt.examSubtitle || fmt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim().toUpperCase();
+    const academicYear = String(fmt.academicYear || 'TAHUN PELAJARAN 2026 – 2027').trim().toUpperCase();
+    const cols = Math.max(2, Math.min(6, parseInt(fmt.seatingCols, 10) || 4));
+    const flow = String(fmt.seatingFlow || 'zigzag') === 'ltr' ? 'ltr' : 'zigzag';
+    const proctorPos = ['left', 'center', 'right', 'none'].includes(String(fmt.proctorPos || 'left'))
+      ? String(fmt.proctorPos || 'left')
+      : 'left';
+    const numMode = String(fmt.seatingNumberMode || 'nisn');
+    const bottomMode = String(fmt.seatingBottomMode || 'seat_class');
+    const accentColor = /^#[0-9a-f]{3,8}$/i.test(String(fmt.seatingAccentColor || ''))
+      ? String(fmt.seatingAccentColor)
+      : '#b2a1c7';
+    const proctorColor = /^#[0-9a-f]{3,8}$/i.test(String(fmt.seatingProctorColor || ''))
+      ? String(fmt.seatingProctorColor)
+      : '#c5be97';
+    const showLegend = fmt.seatingShowLegend !== false;
+
+    const colWidthPct = (100 / cols).toFixed(2);
+    const maxPerPage = cols <= 4 ? cols * 6 : cols * 7;
+
+    const buildDeskCellHtml = (entry) => {
+      if (!entry || !entry.student) {
+        return `<td style="width:${colWidthPct}%; vertical-align:top; padding:0;"></td>`;
+      }
+      const st = entry.student;
+      const seatNo = entry.seatNo;
+      const seatPad = seatNo < 10 ? `0${seatNo}` : String(seatNo);
+      const nisnTxt = String(st.nisn || '-').trim();
+      const clsTxt = String(st.class || '').trim();
+      const nameTxt = String(st.name || '-').trim();
+
+      const participantNumberText = numMode === 'seat_nisn'
+        ? `${seatPad} / ${nisnTxt}`
+        : nisnTxt;
+
+      const fontSizeNum = cols >= 5 ? '8.8px' : (participantNumberText.length > 12 ? '9.2px' : '10px');
+      const fontSizeHdr = cols >= 5 ? '7.5px' : '8.5px';
+      const bottomHeight = cols >= 5 ? '24px' : '30px';
+
+      let leftBottomHtml = '&nbsp;';
+      let rightBottomHtml = '&nbsp;';
+      if (bottomMode === 'seat_class') {
+        leftBottomHtml = `<div style="font-size:8px; font-weight:800; line-height:1.15;">${seatPad}</div><div style="font-size:8px; font-weight:700; line-height:1.15;">${this.escapePrintHtml(clsTxt || '-')}</div>`;
+      } else if (bottomMode === 'seat_name') {
+        leftBottomHtml = `<div style="font-size:8px; font-weight:800; line-height:1.15;">${seatPad}</div><div style="font-size:7.5px; font-weight:700; line-height:1.15;">${this.escapePrintHtml(clsTxt || '-')}</div>`;
+        rightBottomHtml = `<div style="font-size:7px; font-weight:700; line-height:1.12; overflow:hidden; max-height:24px;">${this.escapePrintHtml(nameTxt)}</div>`;
+      }
+
+      return `
+        <td style="width:${colWidthPct}%; vertical-align:top; padding:0;">
+          <table style="width:100%; border-collapse:collapse; border:1.3px solid #000000; table-layout:fixed; break-inside:avoid; page-break-inside:avoid;">
+            <tbody>
+              <tr>
+                <td colspan="2" style="border-bottom:1px solid #000000; padding:3px 2px; text-align:center; font-size:${fontSizeHdr}; font-weight:800; letter-spacing:0.2px; background:#ffffff;" data-preserve-bg="1">NOMOR PESERTA</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="border-bottom:1px solid #000000; padding:4px 2px; text-align:center; font-size:${fontSizeNum}; font-weight:800; font-family:'Courier New', monospace; background:#ffffff; white-space:nowrap; overflow:hidden;" data-preserve-bg="1">${this.escapePrintHtml(participantNumberText)}</td>
+              </tr>
+              <tr>
+                <td style="width:50%; height:${bottomHeight}; border-right:1px solid #000000; text-align:center; vertical-align:middle; padding:2px; background:#ffffff;" data-preserve-bg="1">${leftBottomHtml}</td>
+                <td style="width:50%; height:${bottomHeight}; text-align:center; vertical-align:middle; padding:2px; background:${accentColor}; background-color:${accentColor};" data-preserve-bg="1">${rightBottomHtml}</td>
+              </tr>
+            </tbody>
+          </table>
+        </td>
+      `;
+    };
+
+    const allPages = [];
+    groups.forEach((grp) => {
+      const students = Array.isArray(grp.students) ? grp.students : [];
+      const roomBadge = this._formatRoomBadgeNumber(grp.roomLabel);
+      const badgeFontSize = roomBadge.length > 4 ? '14px' : '26px';
+
+      const gradeTotals = {};
+      students.forEach(s => {
+        const cls = String((s && s.class) || '').trim();
+        const m = cls.match(/^(VIII|VII|IX|\d+)/i);
+        const g = m ? `Kls ${m[1].toUpperCase()}` : (cls || 'Umum');
+        gradeTotals[g] = (gradeTotals[g] || 0) + 1;
+      });
+      const legendParts = Object.entries(gradeTotals)
+        .sort((a, b) => a[0].localeCompare(b[0], 'id', { numeric: true }))
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' • ');
+
+      const indexed = students.map((st, idx) => ({
+        student: st,
+        seatNo: Number(st && st.seatOrder) > 0 ? Number(st.seatOrder) : (idx + 1)
+      }));
+
+      const chunks = [];
+      if (indexed.length === 0) {
+        chunks.push([]);
+      } else {
+        for (let i = 0; i < indexed.length; i += maxPerPage) {
+          chunks.push(indexed.slice(i, i + maxPerPage));
+        }
+      }
+
+      chunks.forEach((pageEntries, pageIdx) => {
+        const rows = [];
+        for (let i = 0; i < pageEntries.length; i += cols) {
+          const rowItems = pageEntries.slice(i, i + cols);
+          const padded = Array.from({ length: cols }, (_, cIdx) => rowItems[cIdx] || null);
+          const rowIndex = Math.floor(i / cols);
+          const orderedRow = (flow === 'zigzag' && rowIndex % 2 === 1)
+            ? padded.reverse()
+            : padded;
+          rows.push(`<tr>${orderedRow.map(buildDeskCellHtml).join('')}</tr>`);
+        }
+
+        const proctorTdHtml = `
+          <div style="display:inline-block; border:1.3px solid #000000; background:${proctorColor}; background-color:${proctorColor}; padding:7px 16px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px;" data-preserve-bg="1">MEJA PENGAWAS</div>
+        `;
+        const proctorRowHtml = proctorPos === 'none'
+          ? ''
+          : `
+            <table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
+              <tbody>
+                <tr>
+                  <td style="text-align:${proctorPos}; padding:0 5px;">${proctorTdHtml}</td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+
+        const pageBreakClass = allPages.length > 0 ? ' room-doc-page-break' : '';
+        const pageSub = chunks.length > 1 ? ` (Bagian ${pageIdx + 1}/${chunks.length})` : '';
+
+        allPages.push(`
+          <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:10mm 13mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+            <table style="width:94%; margin:0 auto 14px auto; border-collapse:collapse; border:1.5px solid #000000;">
+              <tbody>
+                <tr>
+                  <td style="padding:8px 12px; text-align:center; line-height:1.38;">
+                    <div style="font-size:13.5px; font-weight:800; text-transform:uppercase;">${this.escapePrintHtml(seatingTitle)}</div>
+                    <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; margin-top:2px;">${this.escapePrintHtml(examSubtitle)}</div>
+                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; margin-top:2px;">${this.escapePrintHtml(academicYear)}</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table style="width:126px; margin:0 auto 16px auto; border-collapse:collapse; border:1.3px solid #000000;">
+              <tbody>
+                <tr>
+                  <td style="border-bottom:1.2px solid #000000; padding:3px 6px; text-align:center; font-size:11px; font-weight:800; text-transform:uppercase;">RUANGAN</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 6px; text-align:center; font-size:${badgeFontSize}; font-weight:800; line-height:1.1;">${this.escapePrintHtml(roomBadge)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            ${pageIdx === 0 ? proctorRowHtml : ''}
+
+            ${rows.length > 0
+              ? `<table style="width:100%; border-collapse:separate; border-spacing:10px 14px; table-layout:fixed;"><tbody>${rows.join('')}</tbody></table>`
+              : `<div style="border:1px dashed #000000; padding:24px; text-align:center; font-size:11px;">Belum ada siswa di ruang ini.</div>`
+            }
+
+            ${showLegend
+              ? `<div style="margin-top:12px; padding-top:6px; border-top:1px solid #cbd5e1; font-size:9.5px; text-align:center;">
+                  <strong>${this.escapePrintHtml(grp.roomLabel || 'Ruang')}</strong>${this.escapePrintHtml(pageSub)} &bull; Total: <strong>${students.length} Peserta</strong>${legendParts ? ` (${this.escapePrintHtml(legendParts)})` : ''} &bull; Nomor Peserta diambil dari NISN
+                </div>`
+              : ''
+            }
+          </div>
+        `);
+      });
+    });
+
+    return allPages.join('');
+  }
+
+  async downloadRoomDocsPDF(sheetsHtml, options = {}) {
+    if (!sheetsHtml || !String(sheetsHtml).trim()) {
+      alert("Tidak ada dokumen untuk di-download.");
+      return;
+    }
+    if (typeof html2pdf === 'undefined') {
+      alert("Library pembuat PDF belum termuat. Silakan muat ulang halaman dan coba lagi.");
+      return;
+    }
+
+    const btnPdf = document.getElementById('btnDownloadRoomDocPdf');
+    const prevBtnHtml = btnPdf ? btnPdf.innerHTML : '';
+    if (btnPdf) {
+      btnPdf.disabled = true;
+      btnPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+    }
+
+    const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const pdfHeightMm = paperSize === 'A4' ? 297 : 330;
+    const prevScrollY = window.scrollY || window.pageYOffset || 0;
+    const prevScrollX = window.scrollX || window.pageXOffset || 0;
+    const docSlug = options.docType === 'seating' ? 'Denah_Peserta' : 'Daftar_Peserta';
+    const scopeSlug = String(options.scopeLabel || 'Ruang').replace(/[^a-z0-9]+/gi, '_');
+    const filename = `${docSlug}_${scopeSlug}_${Date.now()}.pdf`;
+
+    try {
+      try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
+      window.scrollTo(0, 0);
+      const tempWrapper = document.createElement('div');
+      tempWrapper.innerHTML = sheetsHtml;
+      const sheets = Array.from(tempWrapper.querySelectorAll('.room-doc-paper-sheet'));
+      if (sheets.length === 0) {
+        throw new Error('Tidak ada halaman dokumen untuk diekspor.');
+      }
+
+      const sheetOpt = {
+        margin: [0, 0, 0, 0],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
+            try { clonedDoc.getSelection && clonedDoc.getSelection().removeAllRanges(); } catch (e) {}
+            const resetStyle = clonedDoc.createElement('style');
+            resetStyle.textContent = `
+              .room-doc-paper-sheet { background: #ffffff !important; background-color: #ffffff !important; }
+            `;
+            if (clonedDoc.head) clonedDoc.head.appendChild(resetStyle);
+            const container = clonedDoc.querySelector('.html2pdf__container');
+            if (container) {
+              container.style.left = '0px';
+              container.style.right = 'auto';
+              container.style.top = '0px';
+              container.style.margin = '0px';
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: [210, pdfHeightMm], orientation: 'portrait' }
+      };
+
+      const seedHtml = '<div style="width:10px;height:10px;background:#ffffff;"></div>';
+      const pdfDoc = await html2pdf().set(sheetOpt).from(seedHtml).toPdf().get('pdf');
+
+      for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i];
+        sheet.classList.remove('room-doc-page-break');
+        sheet.style.margin = '0';
+        sheet.style.boxShadow = 'none';
+        sheet.style.pageBreakBefore = 'auto';
+        sheet.style.breakBefore = 'auto';
+        sheet.style.width = '210mm';
+        sheet.style.maxWidth = '210mm';
+        sheet.style.minHeight = 'auto';
+        sheet.style.padding = '8mm 12mm';
+        sheet.style.background = '#ffffff';
+        sheet.style.color = '#000000';
+
+        const canvas = await html2pdf().set(sheetOpt).from(sheet.outerHTML).toCanvas().get('canvas');
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+        if (i > 0) {
+          pdfDoc.addPage([210, pdfHeightMm], 'portrait');
+        }
+
+        const pageW = 210;
+        const maxPageH = pdfHeightMm - 2;
+        const naturalH = (canvas.height * pageW) / canvas.width;
+        if (naturalH > maxPageH) {
+          const ratio = maxPageH / naturalH;
+          const fitW = pageW * ratio;
+          const offsetX = (pageW - fitW) / 2;
+          pdfDoc.addImage(imgData, 'JPEG', offsetX, 0, fitW, maxPageH);
+        } else {
+          pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageW, naturalH);
+        }
+      }
+
+      pdfDoc.save(filename);
+    } catch (err) {
+      console.error("Gagal export PDF Dokumen Ruang:", err);
+      alert("Gagal mengunduh file PDF: " + (err && err.message ? err.message : "Terjadi kesalahan."));
+    } finally {
+      window.scrollTo(prevScrollX, prevScrollY);
+      if (btnPdf) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = prevBtnHtml;
+      }
+    }
+  }
+
+  async downloadRoomDocsDOC(sheetsHtml, options = {}) {
+    if (!sheetsHtml || !String(sheetsHtml).trim()) {
+      alert("Tidak ada dokumen untuk di-download.");
+      return;
+    }
+
+    const btnDoc = document.getElementById('btnDownloadRoomDocWord');
+    const prevBtnHtml = btnDoc ? btnDoc.innerHTML : '';
+    if (btnDoc) {
+      btnDoc.disabled = true;
+      btnDoc.innerHTML = '<span>⏳ Membuat Word...</span>';
+    }
+
+    try {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = sheetsHtml;
+      const sheets = Array.from(tempDiv.querySelectorAll('.room-doc-paper-sheet'));
+      sheets.forEach((sheet, idx) => {
+        sheet.style.width = '100%';
+        sheet.style.maxWidth = '100%';
+        sheet.style.margin = '0';
+        sheet.style.padding = '0';
+        sheet.style.boxShadow = 'none';
+        sheet.style.minHeight = 'auto';
+        sheet.style.background = '#ffffff';
+        if (idx > 0) {
+          sheet.style.pageBreakBefore = 'always';
+          sheet.style.breakBefore = 'page';
+        }
+      });
+
+      const imgs = Array.from(tempDiv.querySelectorAll('img'));
+      for (const img of imgs) {
+        const alt = String(img.getAttribute('alt') || '');
+        const src = img.getAttribute('src') || '';
+        const dims = await this.measureImageDimensions(src);
+        const natW = dims.width || 800;
+        const natH = dims.height || 200;
+        if (alt === 'Kop Surat Sekolah') {
+          const ratio = Math.min(665 / natW, 105 / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+        } else {
+          img.setAttribute('width', '58');
+          img.setAttribute('height', '58');
+          img.style.width = '58px';
+          img.style.height = '58px';
+        }
+      }
+
+      const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+      const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
+      const docTitle = options.docType === 'seating' ? 'Denah Posisi Duduk Peserta Ujian' : 'Daftar Nama Peserta Ujian';
+      const wordDocHtml = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:w="urn:schemas-microsoft-com:office:word"
+              xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <title>${this.escapePrintHtml(docTitle)}</title>
+          <style>
+            @page Section1 {
+              size: ${sizeCss};
+              mso-page-orientation: portrait;
+              margin: 0.9cm 1.2cm 0.9cm 1.2cm;
+            }
+            div.Section1 { page: Section1; }
+            body { font-family: Arial, Helvetica, sans-serif; color: #000000; background: #ffffff !important; margin: 0; padding: 0; }
+            .room-doc-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
+            .room-doc-page-break { page-break-before: always; break-before: page; }
+          </style>
+        </head>
+        <body><div class="Section1">${tempDiv.innerHTML}</div></body>
+        </html>
+      `;
+
+      const docSlug = options.docType === 'seating' ? 'Denah_Peserta' : 'Daftar_Peserta';
+      const scopeSlug = String(options.scopeLabel || 'Ruang').replace(/[^a-z0-9]+/gi, '_');
+      const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${docSlug}_${scopeSlug}_${Date.now()}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Gagal export Word Dokumen Ruang:", err);
+      alert("Gagal mengunduh file Word: " + (err && err.message ? err.message : "Terjadi kesalahan."));
+    } finally {
+      if (btnDoc) {
+        btnDoc.disabled = false;
+        btnDoc.innerHTML = prevBtnHtml;
+      }
+    }
+  }
+
+  printRoomDocsDirect(sheetsHtml) {
+    if (!sheetsHtml || !String(sheetsHtml).trim()) {
+      alert("Tidak ada dokumen untuk dicetak.");
+      return;
+    }
+    const printArea = document.getElementById('printableAttendanceArea');
+    if (!printArea) {
+      window.print();
+      return;
+    }
+    printArea.innerHTML = sheetsHtml;
     printArea.classList.remove('hidden');
     document.body.classList.add('printing-attendance');
     setTimeout(() => {

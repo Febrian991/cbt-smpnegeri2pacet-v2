@@ -2606,6 +2606,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAdmin) btnOpenAttMon.classList.remove('hidden');
       else btnOpenAttMon.classList.add('hidden');
     }
+    const btnOpenRoomDocsMon = document.getElementById('btnOpenRoomDocsFromMonitoring');
+    if (btnOpenRoomDocsMon) {
+      if (isAdmin) btnOpenRoomDocsMon.classList.remove('hidden');
+      else btnOpenRoomDocsMon.classList.add('hidden');
+    }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
     if (btnResetQs) {
       if (isAdmin) btnResetQs.classList.remove('hidden');
@@ -10795,6 +10800,465 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!window.cbtAdmin) return;
       const { students, options } = getAttendanceStudentsAndOptions();
       window.cbtAdmin.printAttendanceDirect(students, options);
+    });
+  }
+
+  // ===================== MODAL STUDIO DAFTAR PESERTA PER RUANGAN & DENAH DUDUK (v3.83) =====================
+  const modalRoomDocsStudio = document.getElementById('modalRoomDocsStudio');
+  const btnOpenRoomDocsModal = document.getElementById('btnOpenRoomDocsModal');
+  const btnOpenRoomDocsFromMonitoring = document.getElementById('btnOpenRoomDocsFromMonitoring');
+  const btnCloseRoomDocsModal = document.getElementById('btnCloseRoomDocsModal');
+  const btnCancelRoomDocsModal = document.getElementById('btnCancelRoomDocsModal');
+  const btnRoomDocModeRoster = document.getElementById('btnRoomDocModeRoster');
+  const btnRoomDocModeSeating = document.getElementById('btnRoomDocModeSeating');
+  const roomDocClassFilter = document.getElementById('roomDocClassFilter');
+  const roomDocPaperSize = document.getElementById('roomDocPaperSize');
+  const roomDocKopImageFile = document.getElementById('roomDocKopImageFile');
+  const btnUploadRoomDocKopImage = document.getElementById('btnUploadRoomDocKopImage');
+  const btnRemoveRoomDocKopImage = document.getElementById('btnRemoveRoomDocKopImage');
+  const btnToggleRoomDocFormatEditor = document.getElementById('btnToggleRoomDocFormatEditor');
+  const roomDocFormatEditorPanel = document.getElementById('roomDocFormatEditorPanel');
+  const btnResetRoomDocFormat = document.getElementById('btnResetRoomDocFormat');
+  const btnSaveRoomDocFormat = document.getElementById('btnSaveRoomDocFormat');
+  const btnDownloadRoomDocWord = document.getElementById('btnDownloadRoomDocWord');
+  const btnDownloadRoomDocPdf = document.getElementById('btnDownloadRoomDocPdf');
+  const btnExecuteDirectPrintRoomDocs = document.getElementById('btnExecuteDirectPrintRoomDocs');
+
+  let activeRoomDocMode = 'roster';
+
+  function syncRoomDocsKopUi() {
+    const statusEl = document.getElementById('roomDocKopImageStatus');
+    const cfg = window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : {};
+    const hasKop = Boolean(cfg.kopSuratImage && String(cfg.kopSuratImage).trim() !== '');
+    if (statusEl) {
+      statusEl.innerText = hasKop ? 'Kop Surat Upload Aktif' : 'Kop Otomatis Sekolah';
+      statusEl.className = hasKop
+        ? 'text-[11px] font-bold text-emerald-700 truncate max-w-[140px]'
+        : 'text-[11px] font-semibold text-slate-500 truncate max-w-[140px]';
+    }
+    if (btnRemoveRoomDocKopImage) {
+      if (hasKop) btnRemoveRoomDocKopImage.classList.remove('hidden');
+      else btnRemoveRoomDocKopImage.classList.add('hidden');
+    }
+  }
+
+  function setRoomDocMode(mode) {
+    activeRoomDocMode = mode === 'seating' ? 'seating' : 'roster';
+    const rosterGrp = document.getElementById('rdRosterFormatGroup');
+    const seatingGrp = document.getElementById('rdSeatingFormatGroup');
+    if (btnRoomDocModeRoster) {
+      btnRoomDocModeRoster.className = activeRoomDocMode === 'roster'
+        ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white'
+        : 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
+    }
+    if (btnRoomDocModeSeating) {
+      btnRoomDocModeSeating.className = activeRoomDocMode === 'seating'
+        ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white'
+        : 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
+    }
+    if (rosterGrp) {
+      rosterGrp.style.borderColor = activeRoomDocMode === 'roster' ? '#7c3aed' : '#e2e8f0';
+      rosterGrp.style.boxShadow = activeRoomDocMode === 'roster' ? '0 0 0 2px rgba(124,58,237,0.14)' : 'none';
+    }
+    if (seatingGrp) {
+      seatingGrp.style.borderColor = activeRoomDocMode === 'seating' ? '#7c3aed' : '#e2e8f0';
+      seatingGrp.style.boxShadow = activeRoomDocMode === 'seating' ? '0 0 0 2px rgba(124,58,237,0.14)' : 'none';
+    }
+    refreshRoomDocsPreview();
+  }
+
+  function populateRoomDocsFormatInputs(fmt) {
+    if (!fmt) return;
+    const setVal = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.value = v !== undefined && v !== null ? String(v) : '';
+    };
+    const setChk = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = Boolean(v);
+    };
+    setVal('roomDocPaperSize', fmt.paperSize === 'A4' ? 'A4' : 'F4');
+    setVal('rdProvinceName', fmt.provinceName || '');
+    setVal('rdCityRegency', fmt.cityRegency || '');
+    setVal('rdSchoolName', fmt.schoolName || '');
+    setVal('rdExamSubtitle', fmt.examSubtitle || '');
+    setVal('rdAcademicYear', fmt.academicYear || '');
+    setVal('rdSignCity', fmt.signCity || '');
+    setVal('rdSignDate', fmt.signDate || '');
+    setVal('rdSignerRole', fmt.signerRole || 'Kepala Sekolah,');
+    setVal('rdHeadmasterName', fmt.headmasterName || '');
+    setVal('rdHeadmasterNip', fmt.headmasterNip || '');
+
+    setVal('rdRosterTitle', fmt.rosterTitle || 'DAFTAR NAMA PESERTA UJIAN SEKOLAH');
+    setVal('rdRosterKetMode', fmt.rosterKetMode || 'class');
+    setVal('rdRosterMinRows', fmt.rosterMinRows !== undefined ? fmt.rosterMinRows : 0);
+    setChk('rdRosterShowClassInName', fmt.rosterShowClassInName !== false);
+
+    setVal('rdSeatingTitle', fmt.seatingTitle || 'DENAH POSISI DUDUK PESERTA UJIAN SEKOLAH');
+    setVal('rdSeatingCols', fmt.seatingCols !== undefined ? fmt.seatingCols : 4);
+    setVal('rdSeatingFlow', fmt.seatingFlow || 'zigzag');
+    setVal('rdProctorPos', fmt.proctorPos || 'left');
+    setVal('rdSeatingNumberMode', fmt.seatingNumberMode || 'nisn');
+    setVal('rdSeatingBottomMode', fmt.seatingBottomMode || 'seat_class');
+    setVal('rdSeatingAccentColor', fmt.seatingAccentColor || '#b2a1c7');
+    setChk('rdSeatingShowLegend', fmt.seatingShowLegend !== false);
+  }
+
+  function readRoomDocsFormatInputs() {
+    const cfg = window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : {};
+    const base = window.cbtAdmin && typeof window.cbtAdmin.getDefaultRoomDocsFormat === 'function'
+      ? window.cbtAdmin.getDefaultRoomDocsFormat(cfg)
+      : {};
+    const getVal = (id, fb) => {
+      const el = document.getElementById(id);
+      return el ? el.value : fb;
+    };
+    const getChk = (id, fb) => {
+      const el = document.getElementById(id);
+      return el ? Boolean(el.checked) : fb;
+    };
+    return {
+      ...base,
+      paperSize: getVal('roomDocPaperSize', 'F4') === 'A4' ? 'A4' : 'F4',
+      provinceName: String(getVal('rdProvinceName', base.provinceName) || '').trim(),
+      cityRegency: String(getVal('rdCityRegency', base.cityRegency) || '').trim(),
+      schoolName: String(getVal('rdSchoolName', base.schoolName) || '').trim(),
+      examSubtitle: String(getVal('rdExamSubtitle', base.examSubtitle) || '').trim(),
+      academicYear: String(getVal('rdAcademicYear', base.academicYear) || '').trim(),
+      signCity: String(getVal('rdSignCity', base.signCity) || '').trim(),
+      signDate: String(getVal('rdSignDate', base.signDate) || '').trim(),
+      signerRole: String(getVal('rdSignerRole', base.signerRole) || 'Kepala Sekolah,').trim(),
+      headmasterName: String(getVal('rdHeadmasterName', base.headmasterName) || '').trim(),
+      headmasterNip: String(getVal('rdHeadmasterNip', base.headmasterNip) || '').trim(),
+
+      rosterTitle: String(getVal('rdRosterTitle', base.rosterTitle) || 'DAFTAR NAMA PESERTA UJIAN SEKOLAH').trim(),
+      rosterKetMode: getVal('rdRosterKetMode', 'class'),
+      rosterMinRows: Math.max(0, Math.min(60, parseInt(getVal('rdRosterMinRows', '0'), 10) || 0)),
+      rosterShowClassInName: getChk('rdRosterShowClassInName', true),
+
+      seatingTitle: String(getVal('rdSeatingTitle', base.seatingTitle) || 'DENAH POSISI DUDUK PESERTA UJIAN SEKOLAH').trim(),
+      seatingCols: Math.max(2, Math.min(6, parseInt(getVal('rdSeatingCols', '4'), 10) || 4)),
+      seatingFlow: getVal('rdSeatingFlow', 'zigzag') === 'ltr' ? 'ltr' : 'zigzag',
+      proctorPos: getVal('rdProctorPos', 'left'),
+      seatingNumberMode: getVal('rdSeatingNumberMode', 'nisn'),
+      seatingBottomMode: getVal('rdSeatingBottomMode', 'seat_class'),
+      seatingAccentColor: getVal('rdSeatingAccentColor', '#b2a1c7') || '#b2a1c7',
+      seatingShowLegend: getChk('rdSeatingShowLegend', true)
+    };
+  }
+
+  function getRoomDocsGroupsAndPayload() {
+    const fmt = readRoomDocsFormatInputs();
+    const filterVal = roomDocClassFilter ? roomDocClassFilter.value : 'ALL_ROOMS';
+    const allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
+    const rooms = window.studentManager && typeof window.studentManager.getAllRooms === 'function'
+      ? window.studentManager.getAllRooms()
+      : [];
+
+    let groups = [];
+    let scopeLabel = 'Ruang';
+
+    if (filterVal === 'ALL_ROOMS') {
+      if (rooms.length > 0) {
+        groups = rooms.map(rm => ({
+          roomLabel: rm,
+          students: window.studentManager.getStudentsByRoom(rm)
+        }));
+        scopeLabel = `Semua_${rooms.length}_Ruang`;
+      } else {
+        const classes = window.studentManager ? window.studentManager.getAllClasses() : [];
+        groups = classes.length > 0
+          ? classes.map(c => ({
+              roomLabel: `Ruang ${c}`,
+              students: allStudents
+                .filter(s => String(s.class || '').trim().toUpperCase() === String(c).trim().toUpperCase())
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'))
+            }))
+          : [{ roomLabel: 'RUANG 1', students: allStudents }];
+        scopeLabel = 'Semua_Kelas';
+      }
+    } else if (filterVal && filterVal.startsWith('ROOM:')) {
+      const rmName = filterVal.slice(5);
+      const members = window.studentManager
+        ? window.studentManager.getStudentsByRoom(rmName)
+        : allStudents;
+      groups = [{ roomLabel: rmName, students: members }];
+      scopeLabel = rmName;
+    } else if (filterVal && filterVal.startsWith('CLASS:')) {
+      const clsName = filterVal.slice(6);
+      const members = allStudents
+        .filter(s => window.examEngine && typeof window.examEngine.matchesClassLevel === 'function'
+          ? window.examEngine.matchesClassLevel(s.class, clsName)
+          : String(s.class || '').trim().toUpperCase() === String(clsName).trim().toUpperCase())
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+      groups = [{ roomLabel: `Ruang ${clsName}`, students: members }];
+      scopeLabel = `Kelas_${clsName}`;
+    } else {
+      const sorted = window.studentManager && typeof window.studentManager.sortRoomStudents === 'function'
+        ? window.studentManager.sortRoomStudents(allStudents)
+        : [...allStudents];
+      groups = [{ roomLabel: 'RUANG 1 (SEMUA)', students: sorted }];
+      scopeLabel = 'Semua_Peserta';
+    }
+
+    const sheetsHtml = activeRoomDocMode === 'seating'
+      ? window.cbtAdmin.buildRoomSeatingPlanHtml(groups, fmt)
+      : window.cbtAdmin.buildRoomRosterSheetHtml(groups, fmt);
+
+    const totalStudents = groups.reduce((acc, g) => acc + (Array.isArray(g.students) ? g.students.length : 0), 0);
+    return {
+      fmt,
+      groups,
+      totalStudents,
+      sheetsHtml,
+      exportOptions: {
+        docType: activeRoomDocMode,
+        paperSize: fmt.paperSize,
+        scopeLabel
+      }
+    };
+  }
+
+  function refreshRoomDocsPreview() {
+    if (!window.cbtAdmin) return;
+    const container = document.getElementById('roomDocsPreviewContainer');
+    const countBadge = document.getElementById('roomDocPreviewCountBadge');
+    const paperBadge = document.getElementById('roomDocPaperBadge');
+    const { fmt, groups, totalStudents, sheetsHtml } = getRoomDocsGroupsAndPayload();
+    if (countBadge) {
+      countBadge.innerText = `${groups.length} Ruang • ${totalStudents} Peserta`;
+    }
+    if (paperBadge) {
+      paperBadge.innerText = fmt.paperSize === 'A4' ? 'Kertas A4 (21 × 29,7 cm)' : 'Kertas F4 (21 × 33 cm)';
+    }
+    if (container) {
+      container.innerHTML = sheetsHtml;
+    }
+  }
+
+  function openRoomDocsModal(preferredFilter = null, preferredMode = 'roster') {
+    if (!modalRoomDocsStudio || !window.cbtAdmin || !window.studentManager) return;
+    const allStudents = window.studentManager.getAllStudents();
+    if (!allStudents || allStudents.length === 0) {
+      alert("Belum ada data siswa. Silakan impor data siswa terlebih dahulu.");
+      return;
+    }
+
+    const cfg = window.cbtAdmin.getSchoolConfig();
+    const fmt = cfg.roomDocsFormat || window.cbtAdmin.getDefaultRoomDocsFormat(cfg);
+    populateRoomDocsFormatInputs(fmt);
+
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+    const classes = window.studentManager.getAllClasses();
+    if (roomDocClassFilter) {
+      let optHtml = '';
+      if (rooms.length > 0) {
+        optHtml += `<option value="ALL_ROOMS">🏫 Semua Ruang Ujian (${rooms.length} Ruang • 1 Hal/Ruang)</option>`;
+        optHtml += '<optgroup label="🚪 Pilih Per Ruang Ujian (Urutan Kursi Acak)">';
+        rooms.forEach(rm => {
+          const members = window.studentManager.getStudentsByRoom(rm);
+          const gradeNums = [...new Set(members.map(m => {
+            const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
+            return gm ? gm[1] : String(m.class || '');
+          }).filter(Boolean))].sort().join(',');
+          optHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🚪 ${escapeHtmlSafe(rm)} (${members.length} Siswa${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
+        });
+        optHtml += '</optgroup>';
+      }
+      if (classes.length > 0) {
+        optHtml += '<optgroup label="🎓 Berdasarkan Kelas Asli">';
+        classes.forEach(c => {
+          const count = allStudents.filter(s => String(s.class || '').trim().toUpperCase() === String(c).trim().toUpperCase()).length;
+          optHtml += `<option value="CLASS:${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)} (${count} Siswa)</option>`;
+        });
+        optHtml += '</optgroup>';
+      }
+      if (!optHtml) {
+        optHtml = `<option value="ALL">Semua Peserta (${allStudents.length} Siswa)</option>`;
+      }
+      roomDocClassFilter.innerHTML = optHtml;
+
+      if (preferredFilter && preferredFilter !== 'ALL') {
+        if (String(preferredFilter).startsWith('ROOM:')) {
+          const rmName = String(preferredFilter).slice(5);
+          const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, rmName));
+          roomDocClassFilter.value = matchedRoom ? `ROOM:${matchedRoom}` : (rooms.length > 0 ? `ROOM:${rooms[0]}` : roomDocClassFilter.options[0]?.value);
+        } else if (rooms.some(r => window.studentManager.matchesRoom(r, preferredFilter))) {
+          const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, preferredFilter));
+          roomDocClassFilter.value = `ROOM:${matchedRoom}`;
+        } else if (classes.some(c => String(c).toUpperCase() === String(preferredFilter).toUpperCase())) {
+          const matchedCls = classes.find(c => String(c).toUpperCase() === String(preferredFilter).toUpperCase());
+          roomDocClassFilter.value = `CLASS:${matchedCls}`;
+        } else if (rooms.length > 0) {
+          roomDocClassFilter.value = `ROOM:${rooms[0]}`;
+        }
+      } else if (rooms.length > 0) {
+        roomDocClassFilter.value = `ROOM:${rooms[0]}`;
+      }
+    }
+
+    syncRoomDocsKopUi();
+    setRoomDocMode(preferredMode);
+    modalRoomDocsStudio.classList.remove('hidden');
+  }
+
+  function closeRoomDocsModal() {
+    if (modalRoomDocsStudio) modalRoomDocsStudio.classList.add('hidden');
+  }
+
+  if (btnOpenRoomDocsModal) {
+    btnOpenRoomDocsModal.addEventListener('click', () => openRoomDocsModal(null, 'roster'));
+  }
+  if (btnOpenRoomDocsFromMonitoring) {
+    btnOpenRoomDocsFromMonitoring.addEventListener('click', () => {
+      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
+      openRoomDocsModal(monCls, 'roster');
+    });
+  }
+  if (btnCloseRoomDocsModal) btnCloseRoomDocsModal.addEventListener('click', closeRoomDocsModal);
+  if (btnCancelRoomDocsModal) btnCancelRoomDocsModal.addEventListener('click', closeRoomDocsModal);
+
+  if (btnRoomDocModeRoster) {
+    btnRoomDocModeRoster.addEventListener('click', () => setRoomDocMode('roster'));
+  }
+  if (btnRoomDocModeSeating) {
+    btnRoomDocModeSeating.addEventListener('click', () => setRoomDocMode('seating'));
+  }
+
+  if (btnToggleRoomDocFormatEditor && roomDocFormatEditorPanel) {
+    btnToggleRoomDocFormatEditor.addEventListener('click', () => {
+      const isHidden = roomDocFormatEditorPanel.classList.contains('hidden');
+      if (isHidden) {
+        roomDocFormatEditorPanel.classList.remove('hidden');
+        btnToggleRoomDocFormatEditor.innerHTML = '<span>🔼 Tutup Editor Format</span>';
+      } else {
+        roomDocFormatEditorPanel.classList.add('hidden');
+        btnToggleRoomDocFormatEditor.innerHTML = '<span>✏️ Edit Format Sendiri</span>';
+      }
+    });
+  }
+
+  if (btnUploadRoomDocKopImage && roomDocKopImageFile) {
+    btnUploadRoomDocKopImage.addEventListener('click', () => roomDocKopImageFile.click());
+    roomDocKopImageFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file || !file.type.startsWith('image/')) {
+        if (file) alert("Harap pilih file gambar (PNG, JPG, atau WEBP) untuk Kop Surat.");
+        return;
+      }
+      trimKopSuratWhitespace(file, 1600, (dataUrl) => {
+        if (window.cbtAdmin) {
+          const cfg = window.cbtAdmin.getSchoolConfig();
+          cfg.kopSuratImage = dataUrl;
+          window.cbtAdmin.saveSchoolConfig(cfg);
+        }
+        syncRoomDocsKopUi();
+        syncAttKopUi();
+        refreshRoomDocsPreview();
+      });
+      roomDocKopImageFile.value = '';
+    });
+  }
+
+  if (btnRemoveRoomDocKopImage) {
+    btnRemoveRoomDocKopImage.addEventListener('click', () => {
+      if (window.cbtAdmin) {
+        const cfg = window.cbtAdmin.getSchoolConfig();
+        cfg.kopSuratImage = '';
+        window.cbtAdmin.saveSchoolConfig(cfg);
+      }
+      if (roomDocKopImageFile) roomDocKopImageFile.value = '';
+      syncRoomDocsKopUi();
+      syncAttKopUi();
+      refreshRoomDocsPreview();
+    });
+  }
+
+  if (roomDocClassFilter) {
+    roomDocClassFilter.addEventListener('change', refreshRoomDocsPreview);
+  }
+
+  [
+    'roomDocPaperSize', 'rdProvinceName', 'rdCityRegency', 'rdSchoolName', 'rdExamSubtitle',
+    'rdAcademicYear', 'rdSignCity', 'rdSignDate', 'rdSignerRole', 'rdHeadmasterName',
+    'rdHeadmasterNip', 'rdRosterTitle', 'rdRosterKetMode', 'rdRosterMinRows',
+    'rdRosterShowClassInName', 'rdSeatingTitle', 'rdSeatingCols', 'rdSeatingFlow',
+    'rdProctorPos', 'rdSeatingNumberMode', 'rdSeatingBottomMode',
+    'rdSeatingAccentColor', 'rdSeatingShowLegend'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', refreshRoomDocsPreview);
+      el.addEventListener('change', refreshRoomDocsPreview);
+    }
+  });
+
+  if (btnResetRoomDocFormat) {
+    btnResetRoomDocFormat.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      if (!confirm('Kembalikan pengaturan format Daftar Peserta & Denah Duduk ke bawaan sekolah?')) return;
+      const cfg = window.cbtAdmin.getSchoolConfig();
+      const defFmt = window.cbtAdmin.getDefaultRoomDocsFormat(cfg);
+      populateRoomDocsFormatInputs(defFmt);
+      refreshRoomDocsPreview();
+    });
+  }
+
+  if (btnSaveRoomDocFormat) {
+    btnSaveRoomDocFormat.addEventListener('click', async () => {
+      if (!window.cbtAdmin) return;
+      const fmt = readRoomDocsFormatInputs();
+      const cfg = window.cbtAdmin.getSchoolConfig();
+      const updatedCfg = {
+        ...cfg,
+        headmasterName: fmt.headmasterName || cfg.headmasterName,
+        headmasterNip: fmt.headmasterNip || cfg.headmasterNip,
+        roomDocsFormat: fmt
+      };
+      const prevHtml = btnSaveRoomDocFormat.innerHTML;
+      btnSaveRoomDocFormat.disabled = true;
+      btnSaveRoomDocFormat.innerHTML = '<span>⏳ Menyimpan...</span>';
+      try {
+        window.cbtAdmin.saveSchoolConfig(updatedCfg, true);
+        let cloudNote = '';
+        if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+          const syncRes = await window.supabaseSync.pushStateKey('cbt_school_config', window.cbtAdmin.getSchoolConfig()).catch(() => ({ success: false }));
+          if (!syncRes || !syncRes.success) {
+            cloudNote = '\n\n⚠️ Tersimpan di perangkat ini, namun sinkron ke Cloud tertunda.';
+          }
+        }
+        renderSchoolConfigForm();
+        renderConfigInfoOnLogin();
+        refreshRoomDocsPreview();
+        alert(`Format Daftar Peserta & Denah Duduk berhasil disimpan permanen!${cloudNote}`);
+      } finally {
+        btnSaveRoomDocFormat.disabled = false;
+        btnSaveRoomDocFormat.innerHTML = prevHtml;
+      }
+    });
+  }
+
+  if (btnDownloadRoomDocPdf) {
+    btnDownloadRoomDocPdf.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { sheetsHtml, exportOptions } = getRoomDocsGroupsAndPayload();
+      window.cbtAdmin.downloadRoomDocsPDF(sheetsHtml, exportOptions);
+    });
+  }
+
+  if (btnDownloadRoomDocWord) {
+    btnDownloadRoomDocWord.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { sheetsHtml, exportOptions } = getRoomDocsGroupsAndPayload();
+      window.cbtAdmin.downloadRoomDocsDOC(sheetsHtml, exportOptions);
+    });
+  }
+
+  if (btnExecuteDirectPrintRoomDocs) {
+    btnExecuteDirectPrintRoomDocs.addEventListener('click', () => {
+      if (!window.cbtAdmin) return;
+      const { sheetsHtml } = getRoomDocsGroupsAndPayload();
+      window.cbtAdmin.printRoomDocsDirect(sheetsHtml);
     });
   }
 
