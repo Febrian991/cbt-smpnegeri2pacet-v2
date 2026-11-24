@@ -3029,7 +3029,7 @@
   </div>
 
   <!-- MODAL: ATUR & ACAK RUANG UJIAN LINTAS KELAS (7-8-9) -->
-  <div id="modalAssignExamRooms" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+  <div id="modalAssignExamRooms" class="hidden fixed inset-0 z-[52] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
       <div class="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 mb-3.5">
         <div>
@@ -3934,6 +3934,9 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+          <button id="btnOpenAssignRoomsFromDocs" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+            <span>🏫 Atur Kuota / Acak Ruang</span>
+          </button>
           <button id="btnAddStudentFromRoomDocs" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
             <span>➕ Tambah Peserta</span>
           </button>
@@ -4165,7 +4168,7 @@
   <script src="js/supabase-config.js?v=3.70"></script>
   <script src="js/exam-engine.js?v=3.80"></script>
   <script src="js/admin.js?v=3.84"></script>
-  <script src="js/app.js?v=3.85"></script>
+  <script src="js/app.js?v=3.86"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

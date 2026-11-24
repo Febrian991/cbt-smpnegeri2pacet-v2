@@ -2386,8 +2386,8 @@ document.addEventListener('DOMContentLoaded', () => {
           pickerHtml += '<optgroup label="🏫 Ruang Ujian (Acak Lintas Kelas)">' + stuRooms.map(r => {
             const members = sm.getStudentsByRoom ? sm.getStudentsByRoom(r) : [];
             const gradeSummary = [...new Set(members.map(m => {
-              const matchG = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
-              return matchG ? matchG[1] : String(m.class || '');
+              const matchG = String(m.class || '').match(/^(VIII|VII|IX|\d+)/i);
+              return matchG ? matchG[1].toUpperCase() : String(m.class || '');
             }).filter(Boolean))].sort().join(',');
             const extra = members.length > 0
               ? ` (${members.length} Siswa${gradeSummary ? ` • Kls ${gradeSummary}` : ''})`
@@ -9408,8 +9408,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ? window.studentManager.getStudentsByRoom(rm)
         : [];
       const gradeNums = [...new Set(members.map(m => {
-        const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
-        return gm ? gm[1] : String(m.class || '');
+        const gm = String(m.class || '').match(/^(VIII|VII|IX|\d+)/i);
+        return gm ? gm[1].toUpperCase() : String(m.class || '');
       }).filter(Boolean))].sort().join(',');
       html += `<option value="${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length}${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
     });
@@ -10264,6 +10264,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (roomFilterEl) roomFilterEl.value = 'ALL';
       renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
       setupMonitoringControls();
+      if (modalRoomDocsStudio && !modalRoomDocsStudio.classList.contains('hidden')) {
+        openRoomDocsModal(roomDocClassFilter?.value || null, activeRoomDocMode);
+      }
 
       if (mode === 'clear') {
         alert(`Sukses! Ruang ujian seluruh ${res.assignedCount} siswa telah dikosongkan.`);
@@ -10876,8 +10879,8 @@ document.addEventListener('DOMContentLoaded', () => {
         rooms.forEach(rm => {
           const members = window.studentManager.getStudentsByRoom(rm);
           const gradeNums = [...new Set(members.map(m => {
-            const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
-            return gm ? gm[1] : String(m.class || '');
+            const gm = String(m.class || '').match(/^(VIII|VII|IX|\d+)/i);
+            return gm ? gm[1].toUpperCase() : String(m.class || '');
           }).filter(Boolean))].sort().join(',');
           optHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length} Siswa${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
         });
@@ -11237,6 +11240,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnUploadRoomDocKopImage = document.getElementById('btnUploadRoomDocKopImage');
   const btnRemoveRoomDocKopImage = document.getElementById('btnRemoveRoomDocKopImage');
   const btnToggleRoomDocFormatEditor = document.getElementById('btnToggleRoomDocFormatEditor');
+  const btnOpenAssignRoomsFromDocs = document.getElementById('btnOpenAssignRoomsFromDocs');
   const btnAddStudentFromRoomDocs = document.getElementById('btnAddStudentFromRoomDocs');
   const roomDocFormatEditorPanel = document.getElementById('roomDocFormatEditorPanel');
   const btnResetRoomDocFormat = document.getElementById('btnResetRoomDocFormat');
@@ -11479,8 +11483,8 @@ document.addEventListener('DOMContentLoaded', () => {
         rooms.forEach(rm => {
           const members = window.studentManager.getStudentsByRoom(rm);
           const gradeNums = [...new Set(members.map(m => {
-            const gm = String(m.class || '').match(/^(VII|VIII|IX|\d+)/i);
-            return gm ? gm[1] : String(m.class || '');
+            const gm = String(m.class || '').match(/^(VIII|VII|IX|\d+)/i);
+            return gm ? gm[1].toUpperCase() : String(m.class || '');
           }).filter(Boolean))].sort().join(',');
           optHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🚪 ${escapeHtmlSafe(rm)} (${members.length} Siswa${gradeNums ? ` • Kls ${escapeHtmlSafe(gradeNums)}` : ''})</option>`;
         });
@@ -11534,6 +11538,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenRoomDocsFromMonitoring.addEventListener('click', () => {
       const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
       openRoomDocsModal(monCls, 'roster');
+    });
+  }
+  if (btnOpenAssignRoomsFromDocs) {
+    btnOpenAssignRoomsFromDocs.addEventListener('click', () => {
+      if (btnOpenAssignExamRooms) btnOpenAssignExamRooms.click();
     });
   }
   if (btnAddStudentFromRoomDocs) {
