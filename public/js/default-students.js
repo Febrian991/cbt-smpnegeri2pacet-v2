@@ -510,30 +510,20 @@ class StudentManager {
     return { success: true };
   }
 
-  assignExamRooms(options = {}) {
-    if (!Array.isArray(this.students) || this.students.length === 0) {
-      return { success: false, message: "Belum ada data siswa untuk dibagi ruang ujian." };
-    }
-    const mode = String(options.mode || 'mixed_random').trim();
-    if (mode === 'clear') {
-      const next = this.students.map(s => ({ ...s, examRoom: '' }));
-      this.saveStudents(next);
-      return { success: true, mode: 'clear', assignedCount: next.length, roomCount: 0, roomsSummary: [] };
-    }
+  _getGradeBucket(clsStr) {
+    const m = String(clsStr || '').trim().match(/^(VIII|VII|IX|[0-9]+)/i);
+    if (!m) return 'LAIN';
+    const tok = m[1].toUpperCase();
+    if (tok === 'VII') return '7';
+    if (tok === 'VIII') return '8';
+    if (tok === 'IX') return '9';
+    return tok;
+  }
 
-    const roomCount = Math.max(1, Math.min(50, parseInt(options.roomCount, 10) || 8));
-    const roomPrefix = normalizeExamRoomDisplay(options.roomPrefix || 'Ruang') || 'Ruang';
-    const roomLabels = Array.from({ length: roomCount }, (_, i) => `${roomPrefix} ${i + 1}`);
-
-    const getGradeBucket = (clsStr) => {
-      const m = String(clsStr || '').trim().match(/^(VIII|VII|IX|[0-9]+)/i);
-      if (!m) return 'LAIN';
-      const tok = m[1].toUpperCase();
-      if (tok === 'VII') return '7';
-      if (tok === 'VIII') return '8';
-      if (tok === 'IX') return '9';
-      return tok;
-    };
+  _buildRoomAllocationMap({ mode = 'mixed_random', roomCount = 8, roomPrefix = 'Ruang', randomize = true } = {}) {
+    const safeCount = Math.max(1, Math.min(50, parseInt(roomCount, 10) || 8));
+    const safePrefix = normalizeExamRoomDisplay(roomPrefix || 'Ruang') || 'Ruang';
+    const roomLabels = Array.from({ length: safeCount }, (_, i) => `${safePrefix} ${i + 1}`);
 
     const fisherYatesShuffle = (arr) => {
       const copy = [...arr];
@@ -545,16 +535,20 @@ class StudentManager {
     };
 
     const assignedRoomByNisn = new Map();
+    if (mode === 'clear') {
+      return { roomCount: 0, roomPrefix: safePrefix, roomLabels: [], assignedRoomByNisn };
+    }
+
     if (mode === 'by_class_sequential') {
       const sorted = [...this.students].sort((a, b) => {
         const cmp = this.compareClassNames(a.class, b.class);
         if (cmp !== 0) return cmp;
         return String(a.name || '').localeCompare(String(b.name || ''), 'id');
       });
-      const baseSize = Math.floor(sorted.length / roomCount);
-      const remainder = sorted.length % roomCount;
+      const baseSize = Math.floor(sorted.length / safeCount);
+      const remainder = sorted.length % safeCount;
       let cursor = 0;
-      for (let rIdx = 0; rIdx < roomCount; rIdx++) {
+      for (let rIdx = 0; rIdx < safeCount; rIdx++) {
         const cap = baseSize + (rIdx < remainder ? 1 : 0);
         for (let k = 0; k < cap && cursor < sorted.length; k++) {
           assignedRoomByNisn.set(String(sorted[cursor].nisn).trim(), roomLabels[rIdx]);
@@ -566,20 +560,94 @@ class StudentManager {
       // Setiap jenjang diacak terpisah lalu dibagikan round-robin dengan cursor berlanjut
       const gradeMap = new Map();
       this.students.forEach(s => {
-        const g = getGradeBucket(s.class);
+        const g = this._getGradeBucket(s.class);
         if (!gradeMap.has(g)) gradeMap.set(g, []);
         gradeMap.get(g).push(s);
       });
       const gradeKeys = Array.from(gradeMap.keys()).sort((a, b) => String(a).localeCompare(String(b), 'id', { numeric: true }));
       let roomCursor = 0;
       gradeKeys.forEach(g => {
-        const shuffledGrade = fisherYatesShuffle(gradeMap.get(g));
-        shuffledGrade.forEach(stu => {
-          assignedRoomByNisn.set(String(stu.nisn).trim(), roomLabels[roomCursor % roomCount]);
+        const list = randomize
+          ? fisherYatesShuffle(gradeMap.get(g))
+          : [...gradeMap.get(g)].sort((a, b) => this.compareClassNames(a.class, b.class));
+        list.forEach(stu => {
+          assignedRoomByNisn.set(String(stu.nisn).trim(), roomLabels[roomCursor % safeCount]);
           roomCursor++;
         });
       });
     }
+
+    return { roomCount: safeCount, roomPrefix: safePrefix, roomLabels, assignedRoomByNisn };
+  }
+
+  _summarizeRoomAllocations(studentsList, roomLabels = null) {
+    const labels = Array.isArray(roomLabels) && roomLabels.length > 0
+      ? roomLabels
+      : (() => {
+          const map = new Map();
+          (studentsList || []).forEach(s => {
+            const disp = normalizeExamRoomDisplay(s && (s.examRoom || s.room || s.ruang));
+            const key = normalizeExamRoomKey(disp);
+            if (disp && key && !map.has(key)) map.set(key, disp);
+          });
+          return Array.from(map.values()).sort((a, b) => this.compareRoomNames(a, b));
+        })();
+
+    return labels.map(lbl => {
+      const members = (studentsList || []).filter(s => this.matchesRoom(s.examRoom, lbl));
+      const gradeCounts = {};
+      members.forEach(m => {
+        const g = `Kls ${this._getGradeBucket(m.class)}`;
+        gradeCounts[g] = (gradeCounts[g] || 0) + 1;
+      });
+      return { room: lbl, total: members.length, gradeCounts };
+    });
+  }
+
+  previewExamRoomsAllocation(options = {}) {
+    if (!Array.isArray(this.students) || this.students.length === 0) {
+      return { totalStudents: 0, mode: String(options.mode || 'mixed_random'), roomCount: 0, roomPrefix: 'Ruang', roomsSummary: [] };
+    }
+    const mode = String(options.mode || 'mixed_random').trim();
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn } = this._buildRoomAllocationMap({
+      mode,
+      roomCount: options.roomCount,
+      roomPrefix: options.roomPrefix,
+      randomize: false
+    });
+    if (mode === 'clear') {
+      return { totalStudents: this.students.length, mode, roomCount: 0, roomPrefix, roomsSummary: [] };
+    }
+    const simulated = this.students.map(s => ({
+      ...s,
+      examRoom: assignedRoomByNisn.get(String(s.nisn).trim()) || roomLabels[0]
+    }));
+    return {
+      totalStudents: this.students.length,
+      mode,
+      roomCount,
+      roomPrefix,
+      roomsSummary: this._summarizeRoomAllocations(simulated, roomLabels)
+    };
+  }
+
+  assignExamRooms(options = {}) {
+    if (!Array.isArray(this.students) || this.students.length === 0) {
+      return { success: false, message: "Belum ada data siswa untuk dibagi ruang ujian." };
+    }
+    const mode = String(options.mode || 'mixed_random').trim();
+    if (mode === 'clear') {
+      const next = this.students.map(s => ({ ...s, examRoom: '' }));
+      this.saveStudents(next);
+      return { success: true, mode: 'clear', assignedCount: next.length, roomCount: 0, roomsSummary: [] };
+    }
+
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn } = this._buildRoomAllocationMap({
+      mode,
+      roomCount: options.roomCount,
+      roomPrefix: options.roomPrefix,
+      randomize: true
+    });
 
     const nextStudents = this.students.map(s => ({
       ...s,
@@ -587,23 +655,13 @@ class StudentManager {
     }));
     this.saveStudents(nextStudents);
 
-    const roomsSummary = roomLabels.map(lbl => {
-      const members = nextStudents.filter(s => this.matchesRoom(s.examRoom, lbl));
-      const gradeCounts = {};
-      members.forEach(m => {
-        const g = `Kls ${getGradeBucket(m.class)}`;
-        gradeCounts[g] = (gradeCounts[g] || 0) + 1;
-      });
-      return { room: lbl, total: members.length, gradeCounts };
-    });
-
     return {
       success: true,
       mode,
       roomCount,
       roomPrefix,
       assignedCount: nextStudents.length,
-      roomsSummary
+      roomsSummary: this._summarizeRoomAllocations(nextStudents, roomLabels)
     };
   }
 
@@ -682,6 +740,274 @@ class StudentManager {
     return { success: true, count: generated.length };
   }
 
+  downloadRoomExcelTemplate(options = {}) {
+    if (typeof XLSX === 'undefined') {
+      alert("Pustaka SheetJS belum termuat. Pastikan ada koneksi internet.");
+      return { success: false, message: "Pustaka SheetJS belum termuat." };
+    }
+
+    const preShuffleRandom = Boolean(options.preShuffleRandom);
+    const roomCount = Math.max(1, Math.min(50, parseInt(options.roomCount, 10) || 8));
+    const roomPrefix = normalizeExamRoomDisplay(options.roomPrefix || 'Ruang') || 'Ruang';
+
+    const hasRealStudents = Array.isArray(this.students) && this.students.length > 0;
+    const sourceStudents = hasRealStudents
+      ? [...this.students].sort((a, b) => {
+          const cmp = this.compareClassNames(a.class, b.class);
+          if (cmp !== 0) return cmp;
+          return String(a.name || '').localeCompare(String(b.name || ''), 'id');
+        })
+      : [
+          { nisn: "0081234501", name: "Contoh Siswa Kelas 7A", class: "7A", gender: "Laki-laki", examRoom: "Ruang 1" },
+          { nisn: "0081234502", name: "Contoh Siswa Kelas 7B", class: "7B", gender: "Perempuan", examRoom: "Ruang 2" },
+          { nisn: "0081234503", name: "Contoh Siswa Kelas 8A", class: "8A", gender: "Laki-laki", examRoom: "Ruang 1" },
+          { nisn: "0081234504", name: "Contoh Siswa Kelas 8B", class: "8B", gender: "Perempuan", examRoom: "Ruang 2" },
+          { nisn: "0081234505", name: "Contoh Siswa Kelas 9A", class: "9A", gender: "Laki-laki", examRoom: "Ruang 1" },
+          { nisn: "0081234506", name: "Contoh Siswa Kelas 9B", class: "9B", gender: "Perempuan", examRoom: "Ruang 2" }
+        ];
+
+    let shuffledMap = null;
+    if (preShuffleRandom && hasRealStudents) {
+      shuffledMap = this._buildRoomAllocationMap({
+        mode: 'mixed_random',
+        roomCount,
+        roomPrefix,
+        randomize: true
+      }).assignedRoomByNisn;
+    }
+
+    const rows = [
+      ["TEMPLATE PEMBAGIAN RUANG UJIAN SISWA (CBT) - SMP NEGERI 2 PACET"],
+      ["Petunjuk: Cukup isi atau ubah kolom 'Ruang Ujian' (misal: Ruang 1, Ruang 2, Lab 1). Jangan ubah NISN dan judul kolom di baris ke-3."],
+      ["No", "NISN", "Nama Lengkap Siswa", "Kelas Asli", "Jenis Kelamin", "Ruang Ujian"]
+    ];
+
+    sourceStudents.forEach((s, idx) => {
+      const nisnStr = String(s.nisn || '').trim();
+      const assignedRoom = shuffledMap
+        ? (shuffledMap.get(nisnStr) || `${roomPrefix} 1`)
+        : normalizeExamRoomDisplay(s.examRoom || '');
+      rows.push([
+        idx + 1,
+        nisnStr,
+        String(s.name || '').trim(),
+        String(s.class || '').trim(),
+        String(s.gender || '').trim(),
+        assignedRoom
+      ]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Pastikan kolom NISN bertipe teks agar angka 0 di depan tidak hilang saat dibuka di Excel
+    for (let r = 3; r < rows.length; r++) {
+      const cellRef = XLSX.utils.encode_cell({ r, c: 1 });
+      if (ws[cellRef]) {
+        ws[cellRef].t = 's';
+        ws[cellRef].v = String(ws[cellRef].v || '');
+        ws[cellRef].z = '@';
+      }
+    }
+
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 16 },
+      { wch: 30 },
+      { wch: 13 },
+      { wch: 15 },
+      { wch: 22 }
+    ];
+
+    const guideRows = [
+      ["PANDUAN SINGKAT PENGISIAN RUANG UJIAN"],
+      [""],
+      ["1. Jangan mengubah kolom NISN dan baris judul kolom (baris ke-3 pada sheet 'Atur Ruang Ujian')."],
+      ["2. Kolom 'Kelas Asli' (misal 7A, 8B, 9C) dibiarkan apa adanya agar siswa tetap mendapat soal sesuai tingkat kelasnya."],
+      ["3. Isi atau edit hanya kolom 'Ruang Ujian', contoh: Ruang 1, Ruang 2, Ruang 3, atau Lab IPA."],
+      ["4. Anda bebas mencampur siswa kelas 7, 8, dan 9 ke dalam ruang yang sama (misal Ruang 1 berisi kelas 7A, 8B, 9C)."],
+      ["5. Jika kolom 'Ruang Ujian' dikosongkan pada siswa tertentu, siswa tersebut tidak dimasukkan ke ruang mana pun."],
+      ["6. Setelah selesai disimpan (.xlsx), buka menu Data Siswa -> Atur / Acak Ruang -> tab Template & Import Excel -> Upload file ini."]
+    ];
+    const wsGuide = XLSX.utils.aoa_to_sheet(guideRows);
+    wsGuide['!cols'] = [{ wch: 96 }];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Atur Ruang Ujian");
+    XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan Singkat");
+
+    const fileName = preShuffleRandom && hasRealStudents
+      ? `Template_Ruang_Ujian_Teracak_${roomCount}Ruang.xlsx`
+      : "Template_Atur_Ruang_Ujian_Siswa.xlsx";
+    XLSX.writeFile(wb, fileName);
+
+    return { success: true, count: sourceStudents.length, preShuffleRandom, fileName };
+  }
+
+  importRoomAssignmentsFromExcel(arrayBuffer) {
+    if (typeof XLSX === 'undefined') {
+      return { success: false, message: "Pustaka SheetJS tidak tersedia." };
+    }
+    if (!Array.isArray(this.students) || this.students.length === 0) {
+      return {
+        success: false,
+        message: "Belum ada data siswa di aplikasi. Silakan impor data siswa lengkap terlebih dahulu."
+      };
+    }
+
+    try {
+      const data = new Uint8Array(arrayBuffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
+
+      if (!rows || rows.length < 2) {
+        return { success: false, message: "File Excel kosong atau tidak memiliki baris data." };
+      }
+
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(12, rows.length); i++) {
+        const rowCells = (rows[i] || []).map(c => String(c || '').toLowerCase().trim());
+        const hasNisnCol = rowCells.some(c => c.includes('nisn'));
+        const hasNameAndRoom = rowCells.some(c => c.includes('nama')) && rowCells.some(c => c.includes('ruang') || c.includes('room'));
+        if (hasNisnCol || hasNameAndRoom) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        return {
+          success: false,
+          message: "Baris judul kolom tidak ditemukan. Pastikan menggunakan Template Excel Ruang Ujian (memiliki kolom NISN dan Ruang Ujian)."
+        };
+      }
+
+      const headerRow = (rows[headerRowIndex] || []).map(c => String(c || '').toLowerCase().trim());
+      const nisnIdx = headerRow.findIndex(h => h.includes('nisn'));
+      const nameIdx = headerRow.findIndex(h => h.includes('nama'));
+      const classIdx = headerRow.findIndex(h => h.includes('kelas'));
+      const roomIdx = headerRow.findIndex(h => h.includes('ruang') || h.includes('room'));
+
+      if (roomIdx === -1) {
+        return {
+          success: false,
+          message: "Kolom 'Ruang Ujian' tidak ditemukan di file Excel. Gunakan Template Ruang Ujian agar kolomnya sesuai."
+        };
+      }
+      if (nisnIdx === -1 && nameIdx === -1) {
+        return {
+          success: false,
+          message: "Kolom 'NISN' atau 'Nama' tidak ditemukan untuk mencocokkan siswa."
+        };
+      }
+
+      const normalizeName = (val) => String(val || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const normalizeClass = (val) => String(val || '').replace(/[\s_-]+/g, '').trim().toUpperCase();
+      const stripZero = (val) => String(val || '').trim().replace(/^0+/, '');
+
+      const exactNisnMap = new Map();
+      const noZeroNisnMap = new Map();
+      const noZeroDupes = new Set();
+      const nameClassMap = new Map();
+      const nameOnlyMap = new Map();
+      const nameDupes = new Set();
+
+      this.students.forEach((s, idx) => {
+        const nisn = String(s.nisn || '').trim();
+        if (nisn) {
+          exactNisnMap.set(nisn, idx);
+          const nz = stripZero(nisn);
+          if (nz) {
+            if (noZeroNisnMap.has(nz)) noZeroDupes.add(nz);
+            else noZeroNisnMap.set(nz, idx);
+          }
+        }
+        const nKey = normalizeName(s.name);
+        const cKey = normalizeClass(s.class);
+        if (nKey) {
+          if (cKey) nameClassMap.set(`${nKey}__${cKey}`, idx);
+          if (nameOnlyMap.has(nKey)) nameDupes.add(nKey);
+          else nameOnlyMap.set(nKey, idx);
+        }
+      });
+      noZeroDupes.forEach(k => noZeroNisnMap.delete(k));
+      nameDupes.forEach(k => nameOnlyMap.delete(k));
+
+      const nextStudents = this.students.map(s => ({ ...s }));
+      const matchedIndices = new Set();
+      let matchedCount = 0;
+      let assignedRoomCount = 0;
+      let clearedCount = 0;
+      let unmatchedCount = 0;
+      const unmatchedSamples = [];
+
+      const dataRows = rows.slice(headerRowIndex + 1);
+      dataRows.forEach(row => {
+        if (!row || row.length === 0) return;
+        const rawNisn = nisnIdx >= 0 ? String(row[nisnIdx] == null ? '' : row[nisnIdx]).trim() : '';
+        const rawName = nameIdx >= 0 ? String(row[nameIdx] == null ? '' : row[nameIdx]).trim() : '';
+        const rawClass = classIdx >= 0 ? String(row[classIdx] == null ? '' : row[classIdx]).trim() : '';
+        const rawRoom = row[roomIdx];
+
+        if (!rawNisn && !rawName) return;
+
+        let targetIdx = -1;
+        if (rawNisn && exactNisnMap.has(rawNisn)) {
+          targetIdx = exactNisnMap.get(rawNisn);
+        } else if (rawNisn && noZeroNisnMap.has(stripZero(rawNisn))) {
+          targetIdx = noZeroNisnMap.get(stripZero(rawNisn));
+        } else if (rawName) {
+          const nKey = normalizeName(rawName);
+          const cKey = normalizeClass(rawClass);
+          if (cKey && nameClassMap.has(`${nKey}__${cKey}`)) {
+            targetIdx = nameClassMap.get(`${nKey}__${cKey}`);
+          } else if (nameOnlyMap.has(nKey)) {
+            targetIdx = nameOnlyMap.get(nKey);
+          }
+        }
+
+        if (targetIdx === -1) {
+          unmatchedCount++;
+          if (unmatchedSamples.length < 5) {
+            unmatchedSamples.push(rawName || rawNisn);
+          }
+          return;
+        }
+
+        const normalizedRoom = normalizeExamRoomDisplay(rawRoom);
+        nextStudents[targetIdx].examRoom = normalizedRoom;
+        matchedIndices.add(targetIdx);
+        matchedCount++;
+        if (normalizedRoom) assignedRoomCount++;
+        else clearedCount++;
+      });
+
+      if (matchedIndices.size === 0) {
+        return {
+          success: false,
+          message: "Tidak ada baris siswa di Excel yang cocok dengan NISN atau Nama siswa yang terdaftar."
+        };
+      }
+
+      this.saveStudents(nextStudents);
+
+      return {
+        success: true,
+        matchedCount: matchedIndices.size,
+        updatedCount: matchedIndices.size,
+        assignedRoomCount,
+        clearedCount,
+        unmatchedCount,
+        unmatchedSamples,
+        roomsSummary: this._summarizeRoomAllocations(nextStudents)
+      };
+    } catch (err) {
+      console.error("Gagal impor ruang ujian Excel:", err);
+      return { success: false, message: "Format file Excel tidak dapat dibaca: " + err.message };
+    }
+  }
+
   downloadExcelTemplate() {
     if (typeof XLSX === 'undefined') {
       alert("Pustaka SheetJS belum termuat. Pastikan ada koneksi internet.");
@@ -711,6 +1037,15 @@ class StudentManager {
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(headers);
+
+    for (let r = 3; r < headers.length; r++) {
+      const cellRef = XLSX.utils.encode_cell({ r, c: 0 });
+      if (ws[cellRef]) {
+        ws[cellRef].t = 's';
+        ws[cellRef].v = String(ws[cellRef].v || '');
+        ws[cellRef].z = '@';
+      }
+    }
 
     ws['!cols'] = [
       { wch: 18 },

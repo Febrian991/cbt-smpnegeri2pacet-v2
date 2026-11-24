@@ -9567,11 +9567,50 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnOpenAssignExamRooms = document.getElementById('btnOpenAssignExamRooms');
   const btnCloseAssignExamRooms = document.getElementById('btnCloseAssignExamRooms');
   const btnCancelAssignExamRooms = document.getElementById('btnCancelAssignExamRooms');
+  const btnCloseAssignRoomExcelFooter = document.getElementById('btnCloseAssignRoomExcelFooter');
+  const tabBtnAssignRoomAuto = document.getElementById('tabBtnAssignRoomAuto');
+  const tabBtnAssignRoomExcel = document.getElementById('tabBtnAssignRoomExcel');
+  const panelAssignRoomAuto = document.getElementById('panelAssignRoomAuto');
+  const panelAssignRoomExcel = document.getElementById('panelAssignRoomExcel');
   const assignRoomMode = document.getElementById('assignRoomMode');
   const assignRoomOptionsWrap = document.getElementById('assignRoomOptionsWrap');
   const assignRoomCount = document.getElementById('assignRoomCount');
   const assignRoomPrefix = document.getElementById('assignRoomPrefix');
+  const assignExcelRoomCount = document.getElementById('assignExcelRoomCount');
+  const assignExcelRoomPrefix = document.getElementById('assignExcelRoomPrefix');
   const assignExamRoomsPreview = document.getElementById('assignExamRoomsPreview');
+  const btnSubmitAssignExamRooms = document.getElementById('btnSubmitAssignExamRooms');
+  const btnDownloadRoomTemplate = document.getElementById('btnDownloadRoomTemplate');
+  const btnDownloadShuffledRoomTemplate = document.getElementById('btnDownloadShuffledRoomTemplate');
+  const btnTriggerImportRoomExcel = document.getElementById('btnTriggerImportRoomExcel');
+  const fileImportRoomExcel = document.getElementById('fileImportRoomExcel');
+  const assignRoomExcelFeedback = document.getElementById('assignRoomExcelFeedback');
+
+  function switchAssignRoomTab(activeTab = 'auto') {
+    const isExcel = activeTab === 'excel';
+    if (panelAssignRoomAuto) panelAssignRoomAuto.classList.toggle('hidden', isExcel);
+    if (panelAssignRoomExcel) panelAssignRoomExcel.classList.toggle('hidden', !isExcel);
+
+    if (tabBtnAssignRoomAuto) {
+      tabBtnAssignRoomAuto.className = isExcel
+        ? 'py-2 px-3 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition'
+        : 'py-2 px-3 rounded-xl text-xs font-bold bg-white text-indigo-700 shadow-xs border border-indigo-200 cursor-pointer transition';
+    }
+    if (tabBtnAssignRoomExcel) {
+      tabBtnAssignRoomExcel.className = isExcel
+        ? 'py-2 px-3 rounded-xl text-xs font-bold bg-white text-indigo-700 shadow-xs border border-indigo-200 cursor-pointer transition'
+        : 'py-2 px-3 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition';
+    }
+  }
+
+  function showAssignRoomExcelFeedback(html, isSuccess = true) {
+    if (!assignRoomExcelFeedback) return;
+    assignRoomExcelFeedback.className = isSuccess
+      ? 'p-3 rounded-xl text-[11px] leading-relaxed bg-emerald-100/80 border border-emerald-300 text-emerald-950'
+      : 'p-3 rounded-xl text-[11px] leading-relaxed bg-rose-50 border border-rose-300 text-rose-900';
+    assignRoomExcelFeedback.innerHTML = html;
+    assignRoomExcelFeedback.classList.remove('hidden');
+  }
 
   function updateAssignExamRoomsPreview() {
     if (!assignExamRoomsPreview || !window.studentManager) return;
@@ -9581,76 +9620,195 @@ document.addEventListener('DOMContentLoaded', () => {
       if (mode === 'clear') assignRoomOptionsWrap.classList.add('hidden');
       else assignRoomOptionsWrap.classList.remove('hidden');
     }
+    if (btnSubmitAssignExamRooms) {
+      btnSubmitAssignExamRooms.disabled = allStudents.length === 0;
+      btnSubmitAssignExamRooms.classList.toggle('opacity-50', allStudents.length === 0);
+      btnSubmitAssignExamRooms.textContent = mode === 'clear' ? '🧹 Kosongkan Ruang Ujian' : '✅ Acak & Simpan Ruang';
+    }
+
     if (allStudents.length === 0) {
-      assignExamRoomsPreview.innerHTML = 'Belum ada data siswa di pangkalan data.';
+      assignExamRoomsPreview.innerHTML = '<span class="text-amber-800 font-semibold">Belum ada data siswa.</span> Silakan impor data siswa lengkap terlebih dahulu, atau buka tab <strong>2. Pakai Template Excel</strong> untuk mengunduh contoh template.';
       return;
     }
     if (mode === 'clear') {
-      assignExamRoomsPreview.innerHTML = `<strong>🧹 Kosongkan Ruang Ujian:</strong> Kolom Ruang Ujian pada seluruh <strong>${allStudents.length} siswa</strong> akan dihapus agar kembali dikelompokkan berdasarkan kelas asli (7A, 8B, dst).`;
+      assignExamRoomsPreview.innerHTML = `<strong>🧹 Kosongkan Ruang Ujian:</strong> Ruang ujian seluruh <strong>${allStudents.length} siswa</strong> akan dikosongkan agar kembali tampil per kelas asli (7A, 8B, dst).`;
       return;
     }
 
     const rCount = Math.max(1, Math.min(50, parseInt(assignRoomCount ? assignRoomCount.value : '8', 10) || 8));
     const rPrefix = (assignRoomPrefix ? assignRoomPrefix.value.trim() : '') || 'Ruang';
+
+    const preview = typeof window.studentManager.previewExamRoomsAllocation === 'function'
+      ? window.studentManager.previewExamRoomsAllocation({ mode, roomCount: rCount, roomPrefix: rPrefix })
+      : null;
+
+    const roomsSummary = preview && Array.isArray(preview.roomsSummary) ? preview.roomsSummary : [];
     const basePerRoom = Math.floor(allStudents.length / rCount);
     const extra = allStudents.length % rCount;
     const sizeRange = extra > 0 ? `${basePerRoom}–${basePerRoom + 1}` : `${basePerRoom}`;
 
-    const gradeTotals = {};
-    allStudents.forEach(s => {
-      const m = String(s.class || '').trim().match(/^(VII|VIII|IX|\d+)/i);
-      const g = m ? m[1].toUpperCase() : 'Lain';
-      const lbl = `Kls ${g}`;
-      gradeTotals[lbl] = (gradeTotals[lbl] || 0) + 1;
-    });
-    const gradeBreakdown = Object.entries(gradeTotals)
-      .sort((a, b) => a[0].localeCompare(b[0], 'id', { numeric: true }))
-      .map(([k, v]) => `${escapeHtmlSafe(k)}: <strong>${v}</strong> (~${Math.round(v / rCount)}/ruang)`)
-      .join(' • ');
+    const headerLine = mode === 'mixed_random'
+      ? `<div><strong>📊 Hasil Perkiraan:</strong> <strong>${allStudents.length} siswa</strong> dibagi ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>`
+      : `<div><strong>📋 Hasil Perkiraan:</strong> <strong>${allStudents.length} siswa</strong> diurutkan per kelas lalu dibagi ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>`;
 
-    if (mode === 'mixed_random') {
-      assignExamRoomsPreview.innerHTML = `
-        <div><strong>📊 Simulasi Acak Lintas Kelas:</strong> <strong>${allStudents.length} siswa</strong> akan diacak merata ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>
-        <div class="mt-1 text-slate-600">Komposisi jenjang: ${gradeBreakdown}</div>
-      `;
-    } else {
-      assignExamRoomsPreview.innerHTML = `
-        <div><strong>📋 Simulasi Urut Kelas:</strong> <strong>${allStudents.length} siswa</strong> akan diurutkan per kelas lalu dibagi ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>
-      `;
-    }
+    const visibleRooms = roomsSummary.slice(0, 10);
+    const roomChipsHtml = visibleRooms.length > 0
+      ? `<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-0.5">${visibleRooms.map(item => {
+          const grades = Object.entries(item.gradeCounts || {}).map(([g, n]) => `${escapeHtmlSafe(g)}: <strong>${n}</strong>`).join(', ');
+          return `<div class="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2 text-[10.5px]">
+            <span class="font-bold text-indigo-800 whitespace-nowrap">${escapeHtmlSafe(item.room)} (${item.total})</span>
+            <span class="text-slate-600 truncate">${grades}</span>
+          </div>`;
+        }).join('')}</div>${roomsSummary.length > 10 ? `<div class="mt-1 text-[10px] text-slate-500">...dan ${roomsSummary.length - 10} ruang lainnya.</div>` : ''}`
+      : '';
+
+    assignExamRoomsPreview.innerHTML = `${headerLine}${roomChipsHtml}`;
   }
 
   function closeAssignExamRoomsModal() {
     if (modalAssignExamRooms) modalAssignExamRooms.classList.add('hidden');
   }
 
+  if (tabBtnAssignRoomAuto) {
+    tabBtnAssignRoomAuto.addEventListener('click', () => switchAssignRoomTab('auto'));
+  }
+  if (tabBtnAssignRoomExcel) {
+    tabBtnAssignRoomExcel.addEventListener('click', () => switchAssignRoomTab('excel'));
+  }
+
   if (btnOpenAssignExamRooms && modalAssignExamRooms) {
     btnOpenAssignExamRooms.addEventListener('click', () => {
-      if (!window.studentManager || window.studentManager.getStudentCount() === 0) {
-        alert("Belum ada data siswa. Silakan impor data siswa atau isi siswa demo terlebih dahulu.");
-        return;
-      }
+      if (!window.studentManager) return;
+      const totalStu = window.studentManager.getStudentCount();
       const existingRooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
-      if (assignRoomCount && existingRooms.length > 0) {
-        assignRoomCount.value = String(existingRooms.length);
-      } else if (assignRoomCount) {
-        const totalStu = window.studentManager.getStudentCount();
-        assignRoomCount.value = String(Math.max(1, Math.min(20, Math.ceil(totalStu / 32))));
+      const suggestedCount = existingRooms.length > 0
+        ? String(existingRooms.length)
+        : String(Math.max(1, Math.min(20, Math.ceil((totalStu || 32) / 32))));
+      if (assignRoomCount) assignRoomCount.value = suggestedCount;
+      if (assignExcelRoomCount) assignExcelRoomCount.value = suggestedCount;
+      if (assignRoomPrefix && assignExcelRoomPrefix) assignExcelRoomPrefix.value = assignRoomPrefix.value || 'Ruang';
+      if (assignRoomExcelFeedback) {
+        assignRoomExcelFeedback.classList.add('hidden');
+        assignRoomExcelFeedback.innerHTML = '';
       }
+      switchAssignRoomTab('auto');
       updateAssignExamRoomsPreview();
       modalAssignExamRooms.classList.remove('hidden');
     });
   }
   if (btnCloseAssignExamRooms) btnCloseAssignExamRooms.addEventListener('click', closeAssignExamRoomsModal);
   if (btnCancelAssignExamRooms) btnCancelAssignExamRooms.addEventListener('click', closeAssignExamRoomsModal);
+  if (btnCloseAssignRoomExcelFooter) btnCloseAssignRoomExcelFooter.addEventListener('click', closeAssignExamRoomsModal);
   if (assignRoomMode) assignRoomMode.addEventListener('change', updateAssignExamRoomsPreview);
-  if (assignRoomCount) assignRoomCount.addEventListener('input', updateAssignExamRoomsPreview);
-  if (assignRoomPrefix) assignRoomPrefix.addEventListener('input', updateAssignExamRoomsPreview);
+  if (assignRoomCount) {
+    assignRoomCount.addEventListener('input', () => {
+      if (assignExcelRoomCount) assignExcelRoomCount.value = assignRoomCount.value;
+      updateAssignExamRoomsPreview();
+    });
+  }
+  if (assignExcelRoomCount) {
+    assignExcelRoomCount.addEventListener('input', () => {
+      if (assignRoomCount) assignRoomCount.value = assignExcelRoomCount.value;
+      updateAssignExamRoomsPreview();
+    });
+  }
+  if (assignRoomPrefix) {
+    assignRoomPrefix.addEventListener('input', () => {
+      if (assignExcelRoomPrefix) assignExcelRoomPrefix.value = assignRoomPrefix.value;
+      updateAssignExamRoomsPreview();
+    });
+  }
+  if (assignExcelRoomPrefix) {
+    assignExcelRoomPrefix.addEventListener('input', () => {
+      if (assignRoomPrefix) assignRoomPrefix.value = assignExcelRoomPrefix.value;
+      updateAssignExamRoomsPreview();
+    });
+  }
+
+  if (btnDownloadRoomTemplate) {
+    btnDownloadRoomTemplate.addEventListener('click', () => {
+      if (!window.studentManager || typeof window.studentManager.downloadRoomExcelTemplate !== 'function') return;
+      const res = window.studentManager.downloadRoomExcelTemplate({ preShuffleRandom: false });
+      if (res && res.success) {
+        showAssignRoomExcelFeedback(
+          `✅ File <strong>${escapeHtmlSafe(res.fileName)}</strong> berhasil diunduh (${res.count} baris). Silakan isi/ubah kolom <strong>Ruang Ujian</strong> di Excel lalu upload di Langkah 3.`,
+          true
+        );
+      }
+    });
+  }
+
+  if (btnDownloadShuffledRoomTemplate) {
+    btnDownloadShuffledRoomTemplate.addEventListener('click', () => {
+      if (!window.studentManager || typeof window.studentManager.downloadRoomExcelTemplate !== 'function') return;
+      const roomCount = assignExcelRoomCount
+        ? parseInt(assignExcelRoomCount.value, 10)
+        : (assignRoomCount ? parseInt(assignRoomCount.value, 10) : 8);
+      const roomPrefix = (assignExcelRoomPrefix ? assignExcelRoomPrefix.value.trim() : '')
+        || (assignRoomPrefix ? assignRoomPrefix.value.trim() : '')
+        || 'Ruang';
+      const res = window.studentManager.downloadRoomExcelTemplate({
+        preShuffleRandom: true,
+        roomCount,
+        roomPrefix
+      });
+      if (res && res.success) {
+        showAssignRoomExcelFeedback(
+          `🎲 File <strong>${escapeHtmlSafe(res.fileName)}</strong> sudah teracak otomatis lintas kelas ke <strong>${roomCount} ruang</strong>. Cek/edit di Excel jika perlu, lalu upload di Langkah 3 untuk menerapkannya.`,
+          true
+        );
+      }
+    });
+  }
+
+  if (btnTriggerImportRoomExcel && fileImportRoomExcel) {
+    btnTriggerImportRoomExcel.addEventListener('click', () => fileImportRoomExcel.click());
+    fileImportRoomExcel.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file || !window.studentManager || typeof window.studentManager.importRoomAssignmentsFromExcel !== 'function') return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const res = window.studentManager.importRoomAssignmentsFromExcel(evt.target.result);
+        if (!res || !res.success) {
+          showAssignRoomExcelFeedback(`❌ <strong>Gagal Impor Ruang:</strong> ${escapeHtmlSafe((res && res.message) || 'Format Excel tidak sesuai.')}`, false);
+          return;
+        }
+        const roomFilterEl = document.getElementById('filterStudentsRoom');
+        if (roomFilterEl) roomFilterEl.value = 'ALL';
+        renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
+        setupMonitoringControls();
+        updateAssignExamRoomsPreview();
+
+        const roomListHtml = (res.roomsSummary || []).slice(0, 8).map(item => {
+          const grades = Object.entries(item.gradeCounts || {}).map(([g, n]) => `${escapeHtmlSafe(g)}: ${n}`).join(', ');
+          return `<li>• <strong>${escapeHtmlSafe(item.room)}</strong>: ${item.total} siswa (${grades})</li>`;
+        }).join('');
+        const extraRooms = (res.roomsSummary || []).length > 8
+          ? `<div class="mt-0.5 text-[10px] text-emerald-800">...dan ${res.roomsSummary.length - 8} ruang lainnya.</div>`
+          : '';
+        const unmatchedNote = res.unmatchedCount > 0
+          ? `<div class="mt-1 text-amber-800">⚠️ ${res.unmatchedCount} baris di Excel tidak cocok dengan NISN/Nama siswa terdaftar${res.unmatchedSamples && res.unmatchedSamples.length ? ` (${escapeHtmlSafe(res.unmatchedSamples.join(', '))})` : ''}.</div>`
+          : '';
+
+        showAssignRoomExcelFeedback(
+          `<div>✅ <strong>Berhasil memperbarui ruang ujian untuk ${res.updatedCount} siswa!</strong></div>
+          <ul class="mt-1 space-y-0.5">${roomListHtml}</ul>${extraRooms}${unmatchedNote}`,
+          true
+        );
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = '';
+    });
+  }
 
   if (formAssignExamRooms) {
     formAssignExamRooms.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!window.studentManager) return;
+      if (window.studentManager.getStudentCount() === 0) {
+        alert("Belum ada data siswa. Silakan impor data siswa terlebih dahulu.");
+        return;
+      }
       const mode = assignRoomMode ? assignRoomMode.value : 'mixed_random';
       const roomCount = assignRoomCount ? parseInt(assignRoomCount.value, 10) : 8;
       const roomPrefix = assignRoomPrefix ? assignRoomPrefix.value.trim() : 'Ruang';
@@ -9679,7 +9837,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return `• ${item.room}: ${item.total} siswa (${gradesTxt})`;
         }).join('\n');
         const extraLine = (res.roomsSummary || []).length > 6 ? `\n...dan ${res.roomsSummary.length - 6} ruang lainnya.` : '';
-        alert(`Sukses! ${res.assignedCount} siswa berhasil dibagi ke ${res.roomCount} ruang ujian.\n\n${previewLines}${extraLine}\n\nKelas asli siswa (7A, 8B, 9C) tetap terjaga untuk pencocokan jadwal & soal.`);
+        alert(`Sukses! ${res.assignedCount} siswa berhasil dibagi ke ${res.roomCount} ruang ujian.\n\n${previewLines}${extraLine}\n\nKelas asli siswa (7A, 8B, 9C) tetap aman untuk jadwal & soal.`);
       }
     });
   }
