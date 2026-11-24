@@ -9960,14 +9960,24 @@ document.addEventListener('DOMContentLoaded', () => {
           ${firstRoomSamples.map(item => `<span class="inline-block ml-1 px-1.5 py-0.5 rounded bg-white border border-indigo-200 font-semibold">${item.seatOrder}. ${escapeHtmlSafe(item.class)}</span>`).join('')}
         </div>`
       : '';
+    const requestedSum = Array.isArray(activeCaps) ? activeCaps.reduce((a, b) => a + (parseInt(b, 10) || 0), 0) : allStudents.length;
+    const quotaDiffNote = Array.isArray(activeCaps) && requestedSum !== allStudents.length
+      ? (allStudents.length < requestedSum
+          ? `<div class="mt-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[10.5px] text-amber-900">📌 <strong>Kekurangan ${requestedSum - allStudents.length} siswa</strong> dari target kuota ${requestedSum} kursi dibiarkan sebagai slot kosong di ruang akhir — nanti saat siswa baru diinput manual, tinggal masukkan ke ruang tersebut.</div>`
+          : `<div class="mt-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[10.5px] text-amber-900">📌 Terdapat <strong>${allStudents.length - requestedSum} siswa tambahan</strong> di atas total kuota ${requestedSum} kursi (otomatis dimasukkan ke ruang akhir, atau sesuaikan angka kuota tiap ruang).</div>`)
+      : '';
     const roomChipsHtml = visibleRooms.length > 0
-      ? `<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">${visibleRooms.map(item => {
+      ? `<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">${visibleRooms.map((item, rIdx) => {
           const grades = Object.entries(item.gradeCounts || {}).map(([g, n]) => `${escapeHtmlSafe(g)}: <strong>${n}</strong>`).join(', ');
+          const targetCap = Array.isArray(activeCaps) && activeCaps[rIdx] !== undefined ? activeCaps[rIdx] : item.total;
+          const capLabel = Array.isArray(activeCaps) && targetCap !== item.total
+            ? `${item.total} / kuota ${targetCap}`
+            : `${item.total}`;
           return `<div class="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2 text-[10.5px]">
-            <span class="font-bold text-indigo-800 whitespace-nowrap">${escapeHtmlSafe(item.room)} (${item.total})</span>
+            <span class="font-bold text-indigo-800 whitespace-nowrap">${escapeHtmlSafe(item.room)} (${capLabel})</span>
             <span class="text-slate-600 truncate">${grades}</span>
           </div>`;
-        }).join('')}</div>${roomsSummary.length > 14 ? `<div class="mt-1 text-[10px] text-slate-500">...dan ${roomsSummary.length - 14} ruang lainnya.</div>` : ''}${sampleSeatHtml}`
+        }).join('')}</div>${roomsSummary.length > 14 ? `<div class="mt-1 text-[10px] text-slate-500">...dan ${roomsSummary.length - 14} ruang lainnya.</div>` : ''}${quotaDiffNote}${sampleSeatHtml}`
       : '';
 
     assignExamRoomsPreview.innerHTML = `${headerLine}${roomChipsHtml}`;
@@ -10081,25 +10091,19 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenAssignExamRooms.addEventListener('click', () => {
       if (!window.studentManager) return;
       const totalStu = window.studentManager.getStudentCount();
-      const existingRooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
       const savedCfg = loadCustomCapacitiesConfig();
-      const suggestedCount = savedCfg && savedCfg.enabled && savedCfg.capacities.length > 0
-        ? String(savedCfg.capacities.length)
-        : (existingRooms.length > 0
-            ? String(existingRooms.length)
-            : String(Math.max(1, Math.min(20, Math.ceil((totalStu || 32) / 36)))));
+      const useCfg = savedCfg && Array.isArray(savedCfg.capacities) && savedCfg.capacities.length > 0
+        ? savedCfg
+        : { enabled: true, capacities: [...SCHOOL_PRESET_7_CAPACITIES] };
+      const suggestedCount = String(useCfg.capacities.length || 7);
       if (assignRoomCount) assignRoomCount.value = suggestedCount;
       if (assignExcelRoomCount) assignExcelRoomCount.value = suggestedCount;
       if (assignRoomPrefix && assignExcelRoomPrefix) assignExcelRoomPrefix.value = assignRoomPrefix.value || 'Ruang';
 
-      if (savedCfg) {
-        customRoomCapacitiesState = [...savedCfg.capacities];
-        if (assignUseCustomCapacities) assignUseCustomCapacities.checked = savedCfg.enabled;
-      } else {
-        customRoomCapacitiesState = [];
-        if (assignUseCustomCapacities) assignUseCustomCapacities.checked = false;
-      }
-      syncCustomCapacitiesArray(parseInt(suggestedCount, 10) || 7, totalStu, customRoomCapacitiesState.length === 0);
+      customRoomCapacitiesState = [...useCfg.capacities];
+      if (assignUseCustomCapacities) assignUseCustomCapacities.checked = Boolean(useCfg.enabled);
+      saveCustomCapacitiesConfig(Boolean(useCfg.enabled), customRoomCapacitiesState);
+      syncCustomCapacitiesArray(parseInt(suggestedCount, 10) || 7, totalStu, false);
 
       if (assignRoomExcelFeedback) {
         assignRoomExcelFeedback.classList.add('hidden');

@@ -657,7 +657,7 @@ class StudentManager {
       const n = parseInt(roomCapacities[idx], 10);
       return Number.isFinite(n) && n >= 0 ? n : 0;
     });
-    let sum = raw.reduce((a, b) => a + b, 0);
+    const sum = raw.reduce((a, b) => a + b, 0);
     if (sum === total) return raw;
 
     const caps = [...raw];
@@ -668,25 +668,22 @@ class StudentManager {
     }
 
     if (sum < total) {
+      // Kelebihan siswa dibanding total kuota: tambahkan dari ruang akhir ke depan agar kuota ruang awal (misal 32, 32, 40) tetap terjaga
       let diff = total - sum;
-      let cursor = 0;
+      let step = 0;
       while (diff > 0) {
-        caps[cursor % count] += 1;
+        const idx = count - 1 - (step % count);
+        caps[idx] += 1;
         diff--;
-        cursor++;
+        step++;
       }
     } else {
+      // Kekurangan siswa dibanding total kuota: isi penuh mulai Ruang 1..dst sesuai kuota, sisa kursi kosong ditaruh di ruang paling akhir agar mudah diisi siswa baru manual
       let diff = sum - total;
-      let guard = 0;
-      while (diff > 0 && guard < total + count * 100) {
-        let maxIdx = 0;
-        for (let i = 1; i < count; i++) {
-          if (caps[i] > caps[maxIdx]) maxIdx = i;
-        }
-        if (caps[maxIdx] <= 0) break;
-        caps[maxIdx] -= 1;
-        diff--;
-        guard++;
+      for (let idx = count - 1; idx >= 0 && diff > 0; idx--) {
+        const take = Math.min(caps[idx], diff);
+        caps[idx] -= take;
+        diff -= take;
       }
     }
     return caps;
