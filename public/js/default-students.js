@@ -126,12 +126,16 @@ class StudentManager {
     const birthDate = s.birthDate ? String(s.birthDate).trim() : split.birthDate;
     const birthPlaceDate = buildBirthPlaceDate(birthPlace, birthDate, s.birthPlaceDate);
     const examRoom = normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang));
+    const rawSeat = s.seatOrder !== undefined ? s.seatOrder : (s.seatNo !== undefined ? s.seatNo : s.noKursi);
+    const seatNum = parseInt(rawSeat, 10);
+    const seatOrder = Number.isFinite(seatNum) && seatNum > 0 ? seatNum : 0;
 
     return {
       nisn: String(s.nisn || '').trim(),
       name: String(s.name || '').trim(),
       class: String(s.class || '9A').trim(),
       examRoom,
+      seatOrder,
       birthPlace,
       birthDate,
       birthPlaceDate,
@@ -169,12 +173,17 @@ class StudentManager {
         if (cachedRoster) {
           const parsed = JSON.parse(cachedRoster);
           if (Array.isArray(parsed)) {
-            return parsed.map(s => ({
-              nisn: String(s.nisn || '').trim(),
-              name: String(s.name || '').trim(),
-              class: String(s.class || 'Umum').trim(),
-              examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang))
-            }));
+            return parsed.map(s => {
+              const rawSeat = s.seatOrder !== undefined ? s.seatOrder : (s.seatNo !== undefined ? s.seatNo : s.noKursi);
+              const seatNum = parseInt(rawSeat, 10);
+              return {
+                nisn: String(s.nisn || '').trim(),
+                name: String(s.name || '').trim(),
+                class: String(s.class || 'Umum').trim(),
+                examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang)),
+                seatOrder: Number.isFinite(seatNum) && seatNum > 0 ? seatNum : 0
+              };
+            });
           }
         }
       } catch (e) {}
@@ -201,12 +210,17 @@ class StudentManager {
 
     try { localStorage.removeItem('cbt_students_list'); } catch (e) {}
     if (this._hasStaffSession()) {
-      this.students = list.map(s => ({
-        nisn: String(s.nisn || '').trim(),
-        name: String(s.name || '').trim(),
-        class: String(s.class || 'Umum').trim(),
-        examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang))
-      }));
+      this.students = list.map(s => {
+        const rawSeat = s.seatOrder !== undefined ? s.seatOrder : (s.seatNo !== undefined ? s.seatNo : s.noKursi);
+        const seatNum = parseInt(rawSeat, 10);
+        return {
+          nisn: String(s.nisn || '').trim(),
+          name: String(s.name || '').trim(),
+          class: String(s.class || 'Umum').trim(),
+          examRoom: normalizeExamRoomDisplay(s.examRoom !== undefined ? s.examRoom : (s.room !== undefined ? s.room : s.ruang)),
+          seatOrder: Number.isFinite(seatNum) && seatNum > 0 ? seatNum : 0
+        };
+      });
       try {
         sessionStorage.setItem('cbt_guru_roster_cache', JSON.stringify(this.students));
       } catch (e) {}
@@ -300,10 +314,26 @@ class StudentManager {
     return this.getAllRooms().some(r => normalizeExamRoomKey(r) === k);
   }
 
+  sortRoomStudents(list = []) {
+    const items = Array.isArray(list) ? [...list] : [];
+    if (items.length <= 1) return items;
+    const hasSeatOrder = items.some(s => Number(s && s.seatOrder) > 0);
+    if (hasSeatOrder) {
+      return items.sort((a, b) => {
+        const sa = Number(a && a.seatOrder) > 0 ? Number(a.seatOrder) : 999999;
+        const sb = Number(b && b.seatOrder) > 0 ? Number(b.seatOrder) : 999999;
+        if (sa !== sb) return sa - sb;
+        return String((a && a.name) || '').localeCompare(String((b && b.name) || ''), 'id');
+      });
+    }
+    return this._interleaveRoomMembers(items, { randomize: false });
+  }
+
   getStudentsByRoom(roomName) {
     const key = normalizeExamRoomKey(roomName);
     if (!key) return [];
-    return this.students.filter(s => normalizeExamRoomKey(s.examRoom) === key);
+    const members = this.students.filter(s => normalizeExamRoomKey(s.examRoom) === key);
+    return this.sortRoomStudents(members);
   }
 
   getClassesInRoom(roomName) {
@@ -520,6 +550,82 @@ class StudentManager {
     return tok;
   }
 
+  _interleaveRoomMembers(members = [], { randomize = true } = {}) {
+    const list = Array.isArray(members) ? [...members] : [];
+    if (list.length <= 1) return list;
+
+    const fisherYates = (arr) => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
+
+    const classBucketMap = new Map();
+    list.forEach(stu => {
+      const clsKey = String((stu && stu.class) || 'Umum').trim().toUpperCase();
+      if (!classBucketMap.has(clsKey)) {
+        classBucketMap.set(clsKey, {
+          clsKey,
+          grade: this._getGradeBucket(stu && stu.class),
+          items: []
+        });
+      }
+      classBucketMap.get(clsKey).items.push(stu);
+    });
+
+    const buckets = Array.from(classBucketMap.values()).map(b => {
+      const ordered = randomize
+        ? fisherYates(b.items)
+        : [...b.items].sort((a, c) => String((a && a.name) || '').localeCompare(String((c && c.name) || ''), 'id'));
+      return {
+        clsKey: b.clsKey,
+        grade: b.grade,
+        items: ordered,
+        initialLen: ordered.length
+      };
+    });
+
+    const result = [];
+    let prevCls = '';
+    let prevGrade = '';
+
+    for (let step = 0; step < list.length; step++) {
+      let bestBucket = null;
+      let bestScore = -Infinity;
+
+      buckets.forEach((b, idx) => {
+        if (b.items.length === 0) return;
+        let score = b.items.length / b.initialLen;
+        if (b.clsKey === prevCls) {
+          score -= 10;
+        } else if (b.grade === prevGrade) {
+          score -= 0.35;
+        }
+        if (randomize) {
+          score += Math.random() * 0.08;
+        } else {
+          // Tie-breaker deterministik yang tetap menyelingi kelas
+          score += ((idx + step) % buckets.length) * 0.001;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestBucket = b;
+        }
+      });
+
+      if (!bestBucket) break;
+      const picked = bestBucket.items.shift();
+      result.push(picked);
+      prevCls = bestBucket.clsKey;
+      prevGrade = bestBucket.grade;
+    }
+
+    return result;
+  }
+
   _buildRoomAllocationMap({ mode = 'mixed_random', roomCount = 8, roomPrefix = 'Ruang', randomize = true } = {}) {
     const safeCount = Math.max(1, Math.min(50, parseInt(roomCount, 10) || 8));
     const safePrefix = normalizeExamRoomDisplay(roomPrefix || 'Ruang') || 'Ruang';
@@ -535,8 +641,9 @@ class StudentManager {
     };
 
     const assignedRoomByNisn = new Map();
+    const assignedSeatByNisn = new Map();
     if (mode === 'clear') {
-      return { roomCount: 0, roomPrefix: safePrefix, roomLabels: [], assignedRoomByNisn };
+      return { roomCount: 0, roomPrefix: safePrefix, roomLabels: [], assignedRoomByNisn, assignedSeatByNisn };
     }
 
     if (mode === 'by_class_sequential') {
@@ -551,13 +658,14 @@ class StudentManager {
       for (let rIdx = 0; rIdx < safeCount; rIdx++) {
         const cap = baseSize + (rIdx < remainder ? 1 : 0);
         for (let k = 0; k < cap && cursor < sorted.length; k++) {
-          assignedRoomByNisn.set(String(sorted[cursor].nisn).trim(), roomLabels[rIdx]);
+          const nisnKey = String(sorted[cursor].nisn).trim();
+          assignedRoomByNisn.set(nisnKey, roomLabels[rIdx]);
+          assignedSeatByNisn.set(nisnKey, k + 1);
           cursor++;
         }
       }
     } else {
-      // Acak Campur Lintas Kelas (7-8-9) merata ke semua ruang:
-      // Setiap jenjang diacak terpisah lalu dibagikan round-robin dengan cursor berlanjut
+      // Acak Campur Lintas Kelas (7-8-9) merata ke semua ruang + acak urutan tempat duduk antar kelas di tiap ruang
       const gradeMap = new Map();
       this.students.forEach(s => {
         const g = this._getGradeBucket(s.class);
@@ -565,19 +673,30 @@ class StudentManager {
         gradeMap.get(g).push(s);
       });
       const gradeKeys = Array.from(gradeMap.keys()).sort((a, b) => String(a).localeCompare(String(b), 'id', { numeric: true }));
+      const roomMembersMap = new Map(roomLabels.map(lbl => [lbl, []]));
       let roomCursor = 0;
       gradeKeys.forEach(g => {
         const list = randomize
           ? fisherYatesShuffle(gradeMap.get(g))
           : [...gradeMap.get(g)].sort((a, b) => this.compareClassNames(a.class, b.class));
         list.forEach(stu => {
-          assignedRoomByNisn.set(String(stu.nisn).trim(), roomLabels[roomCursor % safeCount]);
+          const targetRoom = roomLabels[roomCursor % safeCount];
+          assignedRoomByNisn.set(String(stu.nisn).trim(), targetRoom);
+          roomMembersMap.get(targetRoom).push(stu);
           roomCursor++;
+        });
+      });
+
+      // Susun urutan tempat duduk (seatOrder 1..M) di tiap ruang agar kelas 7-8-9 terseling acak & 7A tidak berurutan
+      roomLabels.forEach(lbl => {
+        const orderedMembers = this._interleaveRoomMembers(roomMembersMap.get(lbl) || [], { randomize });
+        orderedMembers.forEach((stu, idx) => {
+          assignedSeatByNisn.set(String(stu.nisn).trim(), idx + 1);
         });
       });
     }
 
-    return { roomCount: safeCount, roomPrefix: safePrefix, roomLabels, assignedRoomByNisn };
+    return { roomCount: safeCount, roomPrefix: safePrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn };
   }
 
   _summarizeRoomAllocations(studentsList, roomLabels = null) {
@@ -594,13 +713,18 @@ class StudentManager {
         })();
 
     return labels.map(lbl => {
-      const members = (studentsList || []).filter(s => this.matchesRoom(s.examRoom, lbl));
+      const members = this.sortRoomStudents((studentsList || []).filter(s => this.matchesRoom(s.examRoom, lbl)));
       const gradeCounts = {};
       members.forEach(m => {
         const g = `Kls ${this._getGradeBucket(m.class)}`;
         gradeCounts[g] = (gradeCounts[g] || 0) + 1;
       });
-      return { room: lbl, total: members.length, gradeCounts };
+      const sampleSeats = members.slice(0, 6).map((m, idx) => ({
+        seatOrder: Number(m.seatOrder) > 0 ? Number(m.seatOrder) : (idx + 1),
+        class: String(m.class || '').trim(),
+        name: String(m.name || '').trim()
+      }));
+      return { room: lbl, total: members.length, gradeCounts, sampleSeats };
     });
   }
 
@@ -609,7 +733,7 @@ class StudentManager {
       return { totalStudents: 0, mode: String(options.mode || 'mixed_random'), roomCount: 0, roomPrefix: 'Ruang', roomsSummary: [] };
     }
     const mode = String(options.mode || 'mixed_random').trim();
-    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn } = this._buildRoomAllocationMap({
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn } = this._buildRoomAllocationMap({
       mode,
       roomCount: options.roomCount,
       roomPrefix: options.roomPrefix,
@@ -618,10 +742,14 @@ class StudentManager {
     if (mode === 'clear') {
       return { totalStudents: this.students.length, mode, roomCount: 0, roomPrefix, roomsSummary: [] };
     }
-    const simulated = this.students.map(s => ({
-      ...s,
-      examRoom: assignedRoomByNisn.get(String(s.nisn).trim()) || roomLabels[0]
-    }));
+    const simulated = this.students.map(s => {
+      const k = String(s.nisn).trim();
+      return {
+        ...s,
+        examRoom: assignedRoomByNisn.get(k) || roomLabels[0],
+        seatOrder: assignedSeatByNisn.get(k) || 0
+      };
+    });
     return {
       totalStudents: this.students.length,
       mode,
@@ -637,22 +765,26 @@ class StudentManager {
     }
     const mode = String(options.mode || 'mixed_random').trim();
     if (mode === 'clear') {
-      const next = this.students.map(s => ({ ...s, examRoom: '' }));
+      const next = this.students.map(s => ({ ...s, examRoom: '', seatOrder: 0 }));
       this.saveStudents(next);
       return { success: true, mode: 'clear', assignedCount: next.length, roomCount: 0, roomsSummary: [] };
     }
 
-    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn } = this._buildRoomAllocationMap({
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn } = this._buildRoomAllocationMap({
       mode,
       roomCount: options.roomCount,
       roomPrefix: options.roomPrefix,
       randomize: true
     });
 
-    const nextStudents = this.students.map(s => ({
-      ...s,
-      examRoom: assignedRoomByNisn.get(String(s.nisn).trim()) || roomLabels[0]
-    }));
+    const nextStudents = this.students.map(s => {
+      const k = String(s.nisn).trim();
+      return {
+        ...s,
+        examRoom: assignedRoomByNisn.get(k) || roomLabels[0],
+        seatOrder: assignedSeatByNisn.get(k) || 0
+      };
+    });
     this.saveStudents(nextStudents);
 
     return {
@@ -751,49 +883,81 @@ class StudentManager {
     const roomPrefix = normalizeExamRoomDisplay(options.roomPrefix || 'Ruang') || 'Ruang';
 
     const hasRealStudents = Array.isArray(this.students) && this.students.length > 0;
-    const sourceStudents = hasRealStudents
-      ? [...this.students].sort((a, b) => {
-          const cmp = this.compareClassNames(a.class, b.class);
-          if (cmp !== 0) return cmp;
-          return String(a.name || '').localeCompare(String(b.name || ''), 'id');
-        })
+    let sourceStudents = hasRealStudents
+      ? [...this.students]
       : [
-          { nisn: "0081234501", name: "Contoh Siswa Kelas 7A", class: "7A", gender: "Laki-laki", examRoom: "Ruang 1" },
-          { nisn: "0081234502", name: "Contoh Siswa Kelas 7B", class: "7B", gender: "Perempuan", examRoom: "Ruang 2" },
-          { nisn: "0081234503", name: "Contoh Siswa Kelas 8A", class: "8A", gender: "Laki-laki", examRoom: "Ruang 1" },
-          { nisn: "0081234504", name: "Contoh Siswa Kelas 8B", class: "8B", gender: "Perempuan", examRoom: "Ruang 2" },
-          { nisn: "0081234505", name: "Contoh Siswa Kelas 9A", class: "9A", gender: "Laki-laki", examRoom: "Ruang 1" },
-          { nisn: "0081234506", name: "Contoh Siswa Kelas 9B", class: "9B", gender: "Perempuan", examRoom: "Ruang 2" }
+          { nisn: "0081234501", name: "Contoh Siswa Kelas 7A", class: "7A", gender: "Laki-laki", examRoom: "Ruang 1", seatOrder: 1 },
+          { nisn: "0081234503", name: "Contoh Siswa Kelas 8A", class: "8A", gender: "Laki-laki", examRoom: "Ruang 1", seatOrder: 2 },
+          { nisn: "0081234505", name: "Contoh Siswa Kelas 9A", class: "9A", gender: "Laki-laki", examRoom: "Ruang 1", seatOrder: 3 },
+          { nisn: "0081234502", name: "Contoh Siswa Kelas 7B", class: "7B", gender: "Perempuan", examRoom: "Ruang 2", seatOrder: 1 },
+          { nisn: "0081234504", name: "Contoh Siswa Kelas 8B", class: "8B", gender: "Perempuan", examRoom: "Ruang 2", seatOrder: 2 },
+          { nisn: "0081234506", name: "Contoh Siswa Kelas 9B", class: "9B", gender: "Perempuan", examRoom: "Ruang 2", seatOrder: 3 }
         ];
 
-    let shuffledMap = null;
+    let shuffledAlloc = null;
     if (preShuffleRandom && hasRealStudents) {
-      shuffledMap = this._buildRoomAllocationMap({
+      shuffledAlloc = this._buildRoomAllocationMap({
         mode: 'mixed_random',
         roomCount,
         roomPrefix,
         randomize: true
-      }).assignedRoomByNisn;
+      });
+      sourceStudents = sourceStudents.map(s => {
+        const k = String(s.nisn || '').trim();
+        return {
+          ...s,
+          _exportRoom: shuffledAlloc.assignedRoomByNisn.get(k) || `${roomPrefix} 1`,
+          _exportSeat: shuffledAlloc.assignedSeatByNisn.get(k) || 0
+        };
+      });
+      // Urutkan berdasarkan Ruang -> No. Urut Duduk agar urutan di Excel sudah terseling acak 7-8-9
+      sourceStudents.sort((a, b) => {
+        const rCmp = this.compareRoomNames(a._exportRoom, b._exportRoom);
+        if (rCmp !== 0) return rCmp;
+        return (a._exportSeat || 999999) - (b._exportSeat || 999999);
+      });
+    } else if (hasRealStudents) {
+      sourceStudents = sourceStudents.map(s => ({
+        ...s,
+        _exportRoom: normalizeExamRoomDisplay(s.examRoom || ''),
+        _exportSeat: Number(s.seatOrder) > 0 ? Number(s.seatOrder) : ''
+      }));
+      sourceStudents.sort((a, b) => {
+        if (a._exportRoom && b._exportRoom) {
+          const rCmp = this.compareRoomNames(a._exportRoom, b._exportRoom);
+          if (rCmp !== 0) return rCmp;
+          if (a._exportSeat && b._exportSeat) return a._exportSeat - b._exportSeat;
+        } else if (a._exportRoom !== b._exportRoom) {
+          return a._exportRoom ? -1 : 1;
+        }
+        const cmp = this.compareClassNames(a.class, b.class);
+        if (cmp !== 0) return cmp;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'id');
+      });
+    } else {
+      sourceStudents = sourceStudents.map(s => ({
+        ...s,
+        _exportRoom: s.examRoom || '',
+        _exportSeat: s.seatOrder || ''
+      }));
     }
 
     const rows = [
       ["TEMPLATE PEMBAGIAN RUANG UJIAN SISWA (CBT) - SMP NEGERI 2 PACET"],
-      ["Petunjuk: Cukup isi atau ubah kolom 'Ruang Ujian' (misal: Ruang 1, Ruang 2, Lab 1). Jangan ubah NISN dan judul kolom di baris ke-3."],
-      ["No", "NISN", "Nama Lengkap Siswa", "Kelas Asli", "Jenis Kelamin", "Ruang Ujian"]
+      ["Petunjuk: Isi/ubah kolom 'Ruang Ujian' (misal: Ruang 1). Kolom 'No. Urut Duduk' mengatur urutan di Daftar Hadir & Kartu Ujian (jika dikosongkan, sistem menyeling acak kelas 7-8-9 otomatis)."],
+      ["No", "NISN", "Nama Lengkap Siswa", "Kelas Asli", "Jenis Kelamin", "Ruang Ujian", "No. Urut Duduk"]
     ];
 
     sourceStudents.forEach((s, idx) => {
       const nisnStr = String(s.nisn || '').trim();
-      const assignedRoom = shuffledMap
-        ? (shuffledMap.get(nisnStr) || `${roomPrefix} 1`)
-        : normalizeExamRoomDisplay(s.examRoom || '');
       rows.push([
         idx + 1,
         nisnStr,
         String(s.name || '').trim(),
         String(s.class || '').trim(),
         String(s.gender || '').trim(),
-        assignedRoom
+        s._exportRoom || '',
+        s._exportSeat || ''
       ]);
     });
 
@@ -816,21 +980,22 @@ class StudentManager {
       { wch: 30 },
       { wch: 13 },
       { wch: 15 },
-      { wch: 22 }
+      { wch: 20 },
+      { wch: 16 }
     ];
 
     const guideRows = [
-      ["PANDUAN SINGKAT PENGISIAN RUANG UJIAN"],
+      ["PANDUAN SINGKAT PENGISIAN RUANG UJIAN & URUTAN DUDUK"],
       [""],
       ["1. Jangan mengubah kolom NISN dan baris judul kolom (baris ke-3 pada sheet 'Atur Ruang Ujian')."],
       ["2. Kolom 'Kelas Asli' (misal 7A, 8B, 9C) dibiarkan apa adanya agar siswa tetap mendapat soal sesuai tingkat kelasnya."],
-      ["3. Isi atau edit hanya kolom 'Ruang Ujian', contoh: Ruang 1, Ruang 2, Ruang 3, atau Lab IPA."],
-      ["4. Anda bebas mencampur siswa kelas 7, 8, dan 9 ke dalam ruang yang sama (misal Ruang 1 berisi kelas 7A, 8B, 9C)."],
-      ["5. Jika kolom 'Ruang Ujian' dikosongkan pada siswa tertentu, siswa tersebut tidak dimasukkan ke ruang mana pun."],
+      ["3. Isi atau edit kolom 'Ruang Ujian', contoh: Ruang 1, Ruang 2, Ruang 3, atau Lab IPA."],
+      ["4. Kolom 'No. Urut Duduk' (opsional) menentukan urutan peserta di Daftar Hadir & Kartu Ujian. Jika Anda memakai 'Unduh Sudah Diacak di Excel', urutannya sudah terseling acak (7-8-9 tidak berurutan per kelas)."],
+      ["5. Jika kolom 'No. Urut Duduk' dikosongkan, Daftar Hadir otomatis menyeling kelas 7, 8, dan 9 agar 7A tidak berurutan."],
       ["6. Setelah selesai disimpan (.xlsx), buka menu Data Siswa -> Atur / Acak Ruang -> tab Template & Import Excel -> Upload file ini."]
     ];
     const wsGuide = XLSX.utils.aoa_to_sheet(guideRows);
-    wsGuide['!cols'] = [{ wch: 96 }];
+    wsGuide['!cols'] = [{ wch: 105 }];
 
     XLSX.utils.book_append_sheet(wb, ws, "Atur Ruang Ujian");
     XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan Singkat");
@@ -888,6 +1053,11 @@ class StudentManager {
       const nameIdx = headerRow.findIndex(h => h.includes('nama'));
       const classIdx = headerRow.findIndex(h => h.includes('kelas'));
       const roomIdx = headerRow.findIndex(h => h.includes('ruang') || h.includes('room'));
+      const seatIdx = (() => {
+        const direct = headerRow.findIndex(h => h.includes('kursi') || h.includes('duduk') || h.includes('seat'));
+        if (direct >= 0) return direct;
+        return headerRow.findIndex((h, idx) => idx > 0 && h.includes('urut') && h !== 'no' && h !== 'no.');
+      })();
 
       if (roomIdx === -1) {
         return {
@@ -949,6 +1119,7 @@ class StudentManager {
         const rawName = nameIdx >= 0 ? String(row[nameIdx] == null ? '' : row[nameIdx]).trim() : '';
         const rawClass = classIdx >= 0 ? String(row[classIdx] == null ? '' : row[classIdx]).trim() : '';
         const rawRoom = row[roomIdx];
+        const rawSeat = seatIdx >= 0 ? parseInt(row[seatIdx], 10) : NaN;
 
         if (!rawNisn && !rawName) return;
 
@@ -977,6 +1148,7 @@ class StudentManager {
 
         const normalizedRoom = normalizeExamRoomDisplay(rawRoom);
         nextStudents[targetIdx].examRoom = normalizedRoom;
+        nextStudents[targetIdx].seatOrder = (normalizedRoom && Number.isFinite(rawSeat) && rawSeat > 0) ? rawSeat : 0;
         matchedIndices.add(targetIdx);
         matchedCount++;
         if (normalizedRoom) assignedRoomCount++;
@@ -1358,7 +1530,7 @@ class StudentManager {
       const sortedRoomKeys = Array.from(grouped.keys()).sort((a, b) => this.compareRoomNames(a, b));
       sections = sortedRoomKeys.map(rm => ({
         sectionPrefix: `${this.escapeHtml(rm)} &bull; `,
-        students: grouped.get(rm)
+        students: this.sortRoomStudents(grouped.get(rm))
       }));
     } else if (shouldGroupByClass) {
       const grouped = new Map();

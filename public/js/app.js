@@ -9440,6 +9440,9 @@ document.addEventListener('DOMContentLoaded', () => {
           ? window.studentManager.matchesRoom(s.examRoom, roomFilterVal)
           : String(s.examRoom || '').trim() === roomFilterVal
       );
+      if (!searchQuery && typeof window.studentManager.sortRoomStudents === 'function') {
+        students = window.studentManager.sortRoomStudents(students);
+      }
     }
 
     if (badge) badge.innerText = `${window.studentManager.getStudentCount()} Siswa`;
@@ -9453,8 +9456,9 @@ document.addEventListener('DOMContentLoaded', () => {
     students.forEach((s, idx) => {
       const tr = document.createElement('tr');
       tr.className = "border-b border-slate-100 hover:bg-slate-50 transition";
+      const seatTag = Number(s.seatOrder) > 0 ? ` <span class="text-indigo-500 font-semibold">&bull; #${s.seatOrder}</span>` : '';
       const roomCellHtml = s.examRoom
-        ? `<span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">🏫 ${escapeHtmlSafe(s.examRoom)}</span>`
+        ? `<span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">🏫 ${escapeHtmlSafe(s.examRoom)}${seatTag}</span>`
         : `<span class="text-slate-400 text-[11px]">—</span>`;
       tr.innerHTML = `
         <td class="p-3 text-center text-slate-400 font-bold">${idx + 1}</td>
@@ -9652,6 +9656,13 @@ document.addEventListener('DOMContentLoaded', () => {
       : `<div><strong>📋 Hasil Perkiraan:</strong> <strong>${allStudents.length} siswa</strong> diurutkan per kelas lalu dibagi ke <strong>${escapeHtmlSafe(rPrefix)} 1</strong> s.d. <strong>${escapeHtmlSafe(rPrefix)} ${rCount}</strong> (±<strong>${sizeRange} siswa/ruang</strong>).</div>`;
 
     const visibleRooms = roomsSummary.slice(0, 10);
+    const firstRoomSamples = visibleRooms[0] && Array.isArray(visibleRooms[0].sampleSeats) ? visibleRooms[0].sampleSeats : [];
+    const sampleSeatHtml = mode === 'mixed_random' && firstRoomSamples.length > 0
+      ? `<div class="mt-2 px-2.5 py-1.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-[10.5px] text-indigo-950">
+          <span class="font-bold">🪑 Contoh Urutan Duduk ${escapeHtmlSafe(visibleRooms[0].room)} (Daftar Hadir):</span>
+          ${firstRoomSamples.map(item => `<span class="inline-block ml-1 px-1.5 py-0.5 rounded bg-white border border-indigo-200 font-semibold">${item.seatOrder}. ${escapeHtmlSafe(item.class)}</span>`).join('')}
+        </div>`
+      : '';
     const roomChipsHtml = visibleRooms.length > 0
       ? `<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-0.5">${visibleRooms.map(item => {
           const grades = Object.entries(item.gradeCounts || {}).map(([g, n]) => `${escapeHtmlSafe(g)}: <strong>${n}</strong>`).join(', ');
@@ -9659,7 +9670,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-bold text-indigo-800 whitespace-nowrap">${escapeHtmlSafe(item.room)} (${item.total})</span>
             <span class="text-slate-600 truncate">${grades}</span>
           </div>`;
-        }).join('')}</div>${roomsSummary.length > 10 ? `<div class="mt-1 text-[10px] text-slate-500">...dan ${roomsSummary.length - 10} ruang lainnya.</div>` : ''}`
+        }).join('')}</div>${roomsSummary.length > 10 ? `<div class="mt-1 text-[10px] text-slate-500">...dan ${roomsSummary.length - 10} ruang lainnya.</div>` : ''}${sampleSeatHtml}`
       : '';
 
     assignExamRoomsPreview.innerHTML = `${headerLine}${roomChipsHtml}`;
@@ -10345,13 +10356,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(s.class || '').trim().toUpperCase() === String(selectedFilter).trim().toUpperCase();
       });
     }
-    students = [...students].sort((a, b) => {
-      if (isRoomMode && window.studentManager && typeof window.studentManager.compareClassNames === 'function') {
-        const clsCmp = window.studentManager.compareClassNames(a.class, b.class);
-        if (clsCmp !== 0) return clsCmp;
-      }
-      return String(a.name || '').localeCompare(String(b.name || ''), 'id');
-    });
+    if (isRoomMode && window.studentManager && typeof window.studentManager.sortRoomStudents === 'function') {
+      students = window.studentManager.sortRoomStudents(students);
+    } else {
+      students = [...students].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+    }
 
     const uniqueClassesInSelection = new Set(students.map(s => String(s.class || '').trim()).filter(Boolean));
     const isMixedRoom = Boolean(isRoomMode || uniqueClassesInSelection.size > 1);
