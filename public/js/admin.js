@@ -5846,46 +5846,28 @@ class CBTAdmin {
           <tr>
             <td style="width:20%; padding:1.5px 4px 1.5px 0; font-weight:600; vertical-align:bottom;">KOTA/KABUPATEN</td>
             <td style="width:2%; padding:1.5px 3px; vertical-align:bottom;">:</td>
-            <td style="width:41%; padding:1.5px 8px 1.5px 0; vertical-align:bottom;">
+            <td colspan="5" style="width:78%; padding:1.5px 0; vertical-align:bottom;">
               <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(cityRegency)}</div>
-            </td>
-            <td style="width:4%;"></td>
-            <td style="width:11%; padding:1.5px 4px 1.5px 0; font-weight:600; vertical-align:bottom;">KODE</td>
-            <td style="width:2%; padding:1.5px 3px; vertical-align:bottom;">:</td>
-            <td style="width:20%; padding:1.5px 0; vertical-align:bottom;">
-              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(cityCode) || '&nbsp;'}</div>
             </td>
           </tr>
           <tr>
             <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">SEKOLAH/MADRASAH</td>
             <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+            <td colspan="5" style="padding:2px 0; vertical-align:bottom;">
               <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(schoolName)}</div>
-            </td>
-            <td></td>
-            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">KODE</td>
-            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 0; vertical-align:bottom;">
-              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(schoolCode) || '&nbsp;'}</div>
             </td>
           </tr>
           <tr>
             <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">ID SERVER / RUANG</td>
             <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+            <td colspan="5" style="padding:2px 0; vertical-align:bottom;">
               <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(serverRoom)}</div>
-            </td>
-            <td></td>
-            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">SESI</td>
-            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 0; vertical-align:bottom;">
-              <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(session) || '&nbsp;'}</div>
             </td>
           </tr>
           <tr>
-            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">HARI</td>
-            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 8px 2px 0; vertical-align:bottom;">
+            <td style="width:20%; padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">HARI</td>
+            <td style="width:2%; padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="width:41%; padding:2px 8px 2px 0; vertical-align:bottom;">
               <table style="width:100%; border-collapse:collapse;">
                 <tbody>
                   <tr>
@@ -5896,10 +5878,10 @@ class CBTAdmin {
                 </tbody>
               </table>
             </td>
-            <td></td>
-            <td style="padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">PUKUL</td>
-            <td style="padding:2px 3px; vertical-align:bottom;">:</td>
-            <td style="padding:2px 0; vertical-align:bottom;">
+            <td style="width:4%;"></td>
+            <td style="width:11%; padding:2px 4px 2px 0; font-weight:600; vertical-align:bottom;">PUKUL</td>
+            <td style="width:2%; padding:2px 3px; vertical-align:bottom;">:</td>
+            <td style="width:20%; padding:2px 0; vertical-align:bottom;">
               <div style="border-bottom:1px solid #000000; padding-bottom:1px; font-weight:600;">${this.escapePrintHtml(timeRange)}</div>
             </td>
           </tr>
