@@ -2544,7 +2544,7 @@
         <!-- PANEL KHUSUS MODE WACANA / TEKS BACAAN (TANPA NOMOR, PILIHAN, & BOBOT) -->
         <div id="sectionPassageOnly" class="hidden bg-indigo-50/75 dark:bg-indigo-950/30 p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800 space-y-3 text-xs sm:text-sm">
           <div class="p-2.5 rounded-xl bg-white/90 border border-indigo-200 text-[11px] text-indigo-950 leading-relaxed">
-            📖 <strong>Mode Wacana (Tanpa Nomor &amp; Pilihan):</strong> Teks bacaan ini <strong>tidak diberi nomor soal</strong>, <strong>tidak memiliki pilihan A–D</strong>, dan <strong>tidak dihitung bobot nilai</strong>. Saat dicetak atau dikerjakan siswa, wacana otomatis muncul sebagai bacaan untuk soal-soal berikutnya.
+            📖 <strong>Bagian Wacana (Tanpa Nomor &amp; Pilihan):</strong> Teks bacaan di atas <strong>tidak diberi nomor soal</strong> dan <strong>tidak memiliki pilihan a–d</strong>. Soal-soal <strong>Pilihan Ganda (bernomor &amp; ada pilihan A–D)</strong> diisi langsung pada bagian di bawahnya.
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div class="sm:col-span-2">
@@ -2552,12 +2552,13 @@
               <input type="text" id="qPassageOnlyTitle" placeholder="Contoh: Pangeran Diponegoro" class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
             <div>
-              <label class="block font-bold text-slate-700 mb-1" for="qPassageOnlySpan">Berlaku Untuk Soal</label>
+              <label class="block font-bold text-slate-700 mb-1" for="qPassageOnlySpan">Jumlah Soal di Bawahnya</label>
               <select id="qPassageOnlySpan" class="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white font-bold text-indigo-800 outline-none">
-                <option value="2">2 Soal Berikutnya</option>
-                <option value="3">3 Soal Berikutnya</option>
-                <option value="4">4 Soal Berikutnya</option>
-                <option value="5" selected>5 Soal Berikutnya</option>
+                <option value="1">1 Soal PG</option>
+                <option value="2">2 Soal PG</option>
+                <option value="3">3 Soal PG</option>
+                <option value="4">4 Soal PG</option>
+                <option value="5" selected>5 Soal PG (1 s.d. 5)</option>
                 <option value="6">6 Soal Berikutnya</option>
                 <option value="7">7 Soal Berikutnya</option>
                 <option value="8">8 Soal Berikutnya</option>
@@ -2656,6 +2657,31 @@
 
           <div id="imagePreviewContainer" class="hidden mt-2.5 p-2 border border-slate-200 rounded-xl bg-white max-w-xs mx-auto">
             <img id="imagePreviewImg" src="" alt="Pratinjau Gambar" class="rounded-lg max-h-36 object-contain mx-auto">
+          </div>
+        </div>
+
+        <!-- PANEL SOAL PILIHAN GANDA DI BAWAH WACANA (LANGSUNG MUNCUL DI MODE WACANA) -->
+        <div id="sectionPassageChildQuestions" class="hidden space-y-3 bg-slate-50/90 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700">
+            <div>
+              <h4 class="font-extrabold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">📝 Soal Pilihan Ganda untuk Wacana Ini (Bernomor &amp; Pilihan A–D)</h4>
+              <p id="qPassageChildSubtitle" class="text-[11px] text-slate-500">Wacana di atas tidak bernomor &amp; tanpa pilihan; soal bernomor beserta pilihan a–d diisi langsung di bawah ini.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1 text-[11px]">
+              <span class="font-bold text-slate-700">Bobot Semua:</span>
+              <input type="number" id="qPassageChildDefaultWeight" min="1" max="100" value="25" class="w-12 px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
+              <button type="button" data-pw="10" class="btn-passage-child-weight px-1.5 py-1 rounded bg-white border border-slate-300 hover:bg-blue-100 font-bold cursor-pointer">10</button>
+              <button type="button" data-pw="20" class="btn-passage-child-weight px-1.5 py-1 rounded bg-white border border-slate-300 hover:bg-blue-100 font-bold cursor-pointer">20</button>
+              <button type="button" data-pw="25" class="btn-passage-child-weight px-1.5 py-1 rounded bg-amber-100 border border-amber-300 hover:bg-amber-200 text-amber-900 font-extrabold cursor-pointer">25</button>
+              <button type="button" data-pw="30" class="btn-passage-child-weight px-1.5 py-1 rounded bg-emerald-100 border border-emerald-300 hover:bg-emerald-200 text-emerald-900 font-extrabold cursor-pointer">30</button>
+            </div>
+          </div>
+          <div id="qPassageChildRowsList" class="space-y-3"></div>
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button type="button" id="btnAddPassageChildRow" class="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer transition">
+              + Tambah 1 Nomor Soal PG
+            </button>
+            <span id="qPassageChildCountInfo" class="text-[11px] font-bold text-slate-600">5 Soal PG (Total Bobot: 125 Poin)</span>
           </div>
         </div>
 
@@ -3659,9 +3685,9 @@
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.78"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
-  <script src="js/exam-engine.js?v=3.79"></script>
-  <script src="js/admin.js?v=3.79"></script>
-  <script src="js/app.js?v=3.79"></script>
+  <script src="js/exam-engine.js?v=3.80"></script>
+  <script src="js/admin.js?v=3.80"></script>
+  <script src="js/app.js?v=3.80"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

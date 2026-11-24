@@ -5828,6 +5828,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isPassageQ) {
         const pSpan = Math.max(1, parseInt(q.passageSpan || q.passageGroupSize, 10) || 5);
         const pGid = q.passageGroupId ? String(q.passageGroupId).trim() : '';
+        if (pGid) seenCardPassages.add(pGid);
         let coveredNums = [];
         if (pGid) {
           questions.forEach(cand => {
@@ -6159,10 +6160,218 @@ document.addEventListener('DOMContentLoaded', () => {
   const boxKeyMultiple = document.getElementById('boxKeyMultiple');
   const sectionTrueFalse = document.getElementById('sectionTrueFalse');
   const sectionPassageOnly = document.getElementById('sectionPassageOnly');
+  const sectionPassageChildQuestions = document.getElementById('sectionPassageChildQuestions');
+  const qPassageChildRowsList = document.getElementById('qPassageChildRowsList');
   const qPassageDetailsWrap = document.getElementById('qPassageDetails');
   const qQuestionTextSection = document.getElementById('qQuestionTextSection');
   const qTableDetailsWrap = document.getElementById('qTableDetails');
   const qWeightSection = document.getElementById('qWeightSection');
+
+  let passageChildRowsState = [];
+  let deletedPassageChildIds = [];
+
+  function createEmptyPassageChildRow(defaultWeight = 25) {
+    return {
+      id: null,
+      type: 'single',
+      question: '',
+      optA: '',
+      optB: '',
+      optC: '',
+      optD: '',
+      correctSingle: 'A',
+      correctMulti: ['A'],
+      weight: Math.max(1, parseInt(defaultWeight, 10) || 25)
+    };
+  }
+
+  function mapQuestionToPassageChildRow(q) {
+    const optsMap = {};
+    (q.options || []).forEach(o => {
+      if (o && o.key) optsMap[String(o.key).toUpperCase()] = o.text || '';
+    });
+    const qType = q.type === 'multiple' ? 'multiple' : 'single';
+    return {
+      id: q.id,
+      type: qType,
+      question: q.question || '',
+      optA: optsMap['A'] || '',
+      optB: optsMap['B'] || '',
+      optC: optsMap['C'] || '',
+      optD: optsMap['D'] || '',
+      correctSingle: Array.isArray(q.correctAnswer)
+        ? (q.correctAnswer[0] || 'A')
+        : (['A', 'B', 'C', 'D'].includes(String(q.correctAnswer || '').toUpperCase()) ? String(q.correctAnswer).toUpperCase() : 'A'),
+      correctMulti: Array.isArray(q.correctAnswer)
+        ? q.correctAnswer.map(k => String(k).toUpperCase()).filter(k => ['A', 'B', 'C', 'D'].includes(k))
+        : [(['A', 'B', 'C', 'D'].includes(String(q.correctAnswer || '').toUpperCase()) ? String(q.correctAnswer).toUpperCase() : 'A')],
+      weight: Math.max(1, parseInt(q.weight, 10) || 25),
+      existingRaw: q
+    };
+  }
+
+  function isPassageChildRowTouched(r) {
+    if (!r) return false;
+    if (r.id) return true;
+    return [r.question, r.optA, r.optB, r.optC, r.optD].some(v => String(v || '').trim() !== '');
+  }
+
+  function updatePassageChildCountInfo() {
+    const infoEl = document.getElementById('qPassageChildCountInfo');
+    if (!infoEl) return;
+    const totalW = passageChildRowsState.reduce((acc, r) => acc + (parseInt(r.weight, 10) || 25), 0);
+    infoEl.innerText = `${passageChildRowsState.length} Soal PG (Total Bobot: ${totalW.toLocaleString('id-ID')} Poin)`;
+  }
+
+  function resizePassageChildRows(targetCount) {
+    const target = Math.max(1, Math.min(20, parseInt(targetCount, 10) || 5));
+    const defW = Math.max(1, parseInt(document.getElementById('qPassageChildDefaultWeight')?.value, 10) || 25);
+    while (passageChildRowsState.length < target) {
+      passageChildRowsState.push(createEmptyPassageChildRow(defW));
+    }
+    while (passageChildRowsState.length > target) {
+      const last = passageChildRowsState[passageChildRowsState.length - 1];
+      if (!isPassageChildRowTouched(last)) {
+        passageChildRowsState.pop();
+      } else {
+        break;
+      }
+    }
+    renderPassageChildRows();
+  }
+
+  function renderPassageChildRows() {
+    if (!qPassageChildRowsList) return;
+    qPassageChildRowsList.innerHTML = passageChildRowsState.map((row, idx) => {
+      const num = idx + 1;
+      const isMultiple = row.type === 'multiple';
+      return `
+        <div class="p-3 rounded-2xl border border-slate-200 bg-white space-y-2.5 shadow-2xs">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-100">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white font-black text-xs">Soal No. ${num}</span>
+              <select data-pc-idx="${idx}" data-pc-field="type" class="px-2 py-1 rounded-lg border border-slate-300 bg-slate-50 font-bold text-[11px] text-blue-700 outline-none">
+                <option value="single" ${!isMultiple ? 'selected' : ''}>Pilihan Ganda Tunggal</option>
+                <option value="multiple" ${isMultiple ? 'selected' : ''}>PG Kompleks (&gt;1 Benar)</option>
+              </select>
+              <label class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700">
+                <span>Bobot:</span>
+                <input type="number" data-pc-idx="${idx}" data-pc-field="weight" min="1" max="100" value="${row.weight}" class="w-12 px-1.5 py-1 rounded-lg border border-slate-300 bg-white text-center font-bold text-blue-700 outline-none">
+              </label>
+            </div>
+            ${passageChildRowsState.length > 1 ? `<button type="button" data-pc-remove="${idx}" class="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] cursor-pointer">🗑️ Hapus</button>` : ''}
+          </div>
+          <textarea rows="2" data-pc-idx="${idx}" data-pc-field="question" placeholder="Tuliskan pertanyaan nomor ${num} berdasarkan wacana di atas..." class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-500">${escapeHtmlSafe(row.question)}</textarea>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5 text-xs">A</span><input type="text" data-pc-idx="${idx}" data-pc-field="optA" value="${escapeHtmlSafe(row.optA)}" placeholder="Pilihan A" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500"></div>
+            <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5 text-xs">B</span><input type="text" data-pc-idx="${idx}" data-pc-field="optB" value="${escapeHtmlSafe(row.optB)}" placeholder="Pilihan B" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500"></div>
+            <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5 text-xs">C</span><input type="text" data-pc-idx="${idx}" data-pc-field="optC" value="${escapeHtmlSafe(row.optC)}" placeholder="Pilihan C" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500"></div>
+            <div class="flex items-center gap-1.5"><span class="font-bold text-slate-500 w-5 text-xs">D</span><input type="text" data-pc-idx="${idx}" data-pc-field="optD" value="${escapeHtmlSafe(row.optD)}" placeholder="Pilihan D" class="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500"></div>
+          </div>
+          ${!isMultiple ? `
+            <div class="flex items-center gap-2 text-xs">
+              <span class="font-bold text-slate-700">Kunci Jawaban:</span>
+              <select data-pc-idx="${idx}" data-pc-field="correctSingle" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-blue-700 outline-none">
+                ${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${row.correctSingle === k ? 'selected' : ''}>${k}</option>`).join('')}
+              </select>
+            </div>
+          ` : `
+            <div class="flex flex-wrap items-center gap-3 text-xs">
+              <span class="font-bold text-slate-700">Kunci PG Kompleks:</span>
+              ${['A', 'B', 'C', 'D'].map(k => `
+                <label class="inline-flex items-center gap-1 font-bold cursor-pointer">
+                  <input type="checkbox" data-pc-idx="${idx}" data-pc-multi="${k}" ${(row.correctMulti || []).includes(k) ? 'checked' : ''}> ${k}
+                </label>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    }).join('');
+
+    updatePassageChildCountInfo();
+
+    qPassageChildRowsList.querySelectorAll('[data-pc-field]').forEach(el => {
+      const idx = parseInt(el.getAttribute('data-pc-idx'), 10);
+      const field = el.getAttribute('data-pc-field');
+      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(evt, () => {
+        if (!passageChildRowsState[idx]) return;
+        if (field === 'weight') {
+          passageChildRowsState[idx].weight = Math.max(1, parseInt(el.value, 10) || 25);
+          updatePassageChildCountInfo();
+        } else {
+          passageChildRowsState[idx][field] = el.value;
+          if (field === 'type') renderPassageChildRows();
+        }
+      });
+    });
+
+    qPassageChildRowsList.querySelectorAll('[data-pc-multi]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const idx = parseInt(cb.getAttribute('data-pc-idx'), 10);
+        const key = cb.getAttribute('data-pc-multi');
+        const set = new Set(passageChildRowsState[idx]?.correctMulti || []);
+        if (cb.checked) set.add(key);
+        else set.delete(key);
+        if (passageChildRowsState[idx]) passageChildRowsState[idx].correctMulti = Array.from(set);
+      });
+    });
+
+    qPassageChildRowsList.querySelectorAll('[data-pc-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-pc-remove'), 10);
+        const target = passageChildRowsState[idx];
+        if (!target || passageChildRowsState.length <= 1) return;
+        if (target.id) {
+          if (!confirm(`Hapus Soal No. ${idx + 1} dari wacana ini?`)) return;
+          deletedPassageChildIds.push(target.id);
+        }
+        passageChildRowsState.splice(idx, 1);
+        const spanEl = document.getElementById('qPassageOnlySpan');
+        if (spanEl && Array.from(spanEl.options).some(o => o.value === String(passageChildRowsState.length))) {
+          spanEl.value = String(passageChildRowsState.length);
+        }
+        renderPassageChildRows();
+      });
+    });
+  }
+
+  document.getElementById('qPassageOnlySpan')?.addEventListener('change', (e) => {
+    if (qInputType && qInputType.value === 'passage') {
+      resizePassageChildRows(parseInt(e.target.value, 10) || 5);
+    }
+  });
+
+  document.getElementById('btnAddPassageChildRow')?.addEventListener('click', () => {
+    const defW = Math.max(1, parseInt(document.getElementById('qPassageChildDefaultWeight')?.value, 10) || 25);
+    passageChildRowsState.push(createEmptyPassageChildRow(defW));
+    const spanEl = document.getElementById('qPassageOnlySpan');
+    if (spanEl && Array.from(spanEl.options).some(o => o.value === String(passageChildRowsState.length))) {
+      spanEl.value = String(passageChildRowsState.length);
+    }
+    renderPassageChildRows();
+  });
+
+  const applyPassageChildrenWeight = (wVal) => {
+    const w = Math.max(1, Math.min(100, parseInt(wVal, 10) || 25));
+    const wEl = document.getElementById('qPassageChildDefaultWeight');
+    if (wEl) wEl.value = String(w);
+    passageChildRowsState.forEach(r => { r.weight = w; });
+    renderPassageChildRows();
+  };
+
+  document.querySelectorAll('.btn-passage-child-weight').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applyPassageChildrenWeight(btn.getAttribute('data-pw'));
+    });
+  });
+
+  document.getElementById('qPassageChildDefaultWeight')?.addEventListener('input', (e) => {
+    const w = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 25));
+    passageChildRowsState.forEach(r => { r.weight = w; });
+    renderPassageChildRows();
+  });
 
   if (qInputType) {
     qInputType.addEventListener('change', () => {
@@ -6172,6 +6381,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (valAlertEl) valAlertEl.classList.add('hidden');
 
       if (sectionPassageOnly) sectionPassageOnly.classList.toggle('hidden', !isPassageMode);
+      if (sectionPassageChildQuestions) sectionPassageChildQuestions.classList.toggle('hidden', !isPassageMode);
       if (qPassageDetailsWrap) qPassageDetailsWrap.classList.toggle('hidden', isPassageMode);
       if (qQuestionTextSection) qQuestionTextSection.classList.toggle('hidden', isPassageMode);
       if (qTableDetailsWrap) qTableDetailsWrap.classList.toggle('hidden', isPassageMode);
@@ -6188,13 +6398,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const submitBtnEl = document.getElementById('btnSubmitQuestionForm');
       const contBtnEl = document.getElementById('btnSubmitAndContinueQuestion');
       if (isPassageMode) {
-        if (submitBtnEl) submitBtnEl.innerText = isEditing ? 'Simpan Perubahan Wacana' : 'Simpan Wacana (Tanpa Nomor)';
-        if (contBtnEl) contBtnEl.innerText = '➕ Simpan Wacana & Isi Soal No. 1';
+        if (submitBtnEl) submitBtnEl.innerText = isEditing ? '💾 Simpan Perubahan Wacana & Soal' : '💾 Simpan Wacana & Soal Pilihan Ganda';
+        if (contBtnEl) contBtnEl.classList.add('hidden');
         sectionOptionsAE?.classList.add('hidden');
         sectionTrueFalse?.classList.add('hidden');
+        if (passageChildRowsState.length === 0) {
+          const activeSubjVal = document.getElementById('qInputSubject')?.value || '';
+          const activeClsVal = document.getElementById('qInputClassLevel')?.value || 'ALL';
+          const recW = getRecommendedWeightForScope(activeSubjVal, activeClsVal, 25);
+          const defWInp = document.getElementById('qPassageChildDefaultWeight');
+          if (defWInp) defWInp.value = String(recW);
+          const spanCount = parseInt(document.getElementById('qPassageOnlySpan')?.value, 10) || 5;
+          passageChildRowsState = Array.from({ length: spanCount }, () => createEmptyPassageChildRow(recW));
+          renderPassageChildRows();
+        }
       } else {
         if (submitBtnEl) submitBtnEl.innerText = isEditing ? 'Simpan Perubahan Soal' : 'Simpan Soal Ujian';
-        if (contBtnEl) contBtnEl.innerText = '➕ Simpan & Tambah Soal Berikutnya';
+        if (contBtnEl) {
+          contBtnEl.classList.remove('hidden');
+          contBtnEl.innerText = '➕ Simpan & Tambah Soal Berikutnya';
+        }
         if (selectedType === 'single') {
           sectionOptionsAE?.classList.remove('hidden');
           boxKeySingle?.classList.remove('hidden');
@@ -6955,6 +7178,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('qPassageOnlyTitle')) document.getElementById('qPassageOnlyTitle').value = '';
     if (document.getElementById('qPassageOnlyText')) document.getElementById('qPassageOnlyText').value = '';
     if (document.getElementById('qPassageOnlySpan')) document.getElementById('qPassageOnlySpan').value = '5';
+    passageChildRowsState = [];
+    deletedPassageChildIds = [];
+    const childSubEl = document.getElementById('qPassageChildSubtitle');
+    if (childSubEl) childSubEl.innerText = 'Wacana di atas tidak bernomor & tanpa pilihan; soal bernomor beserta pilihan a–d diisi langsung di bawah ini.';
 
     if (question) {
       const isEditingPassage = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(question));
@@ -6963,7 +7190,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? "Edit Wacana / Teks Bacaan (Tanpa Nomor)"
           : (displayNumber ? `Edit Soal No. ${displayNumber}` : "Edit Butir Soal Ujian");
       }
-      if (submitBtnEl) submitBtnEl.innerText = isEditingPassage ? "Simpan Perubahan Wacana" : "Simpan Perubahan Soal";
+      if (submitBtnEl) submitBtnEl.innerText = isEditingPassage ? "💾 Simpan Perubahan Wacana & Soal" : "Simpan Perubahan Soal";
       if (editIdEl) editIdEl.value = question.id;
 
       if (qInputCategory) {
@@ -7013,9 +7240,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('qPassageOnlyTitle')) document.getElementById('qPassageOnlyTitle').value = question.passageTitle || '';
         if (document.getElementById('qPassageOnlyText')) document.getElementById('qPassageOnlyText').value = question.passageText || question.question || '';
         const spanEl = document.getElementById('qPassageOnlySpan');
-        if (spanEl) {
+        const gid = String(question.passageGroupId || '').trim();
+        const isPassageFnLocal = (item) => Boolean(window.cbtAdmin && typeof window.cbtAdmin.isPassageItem === 'function' && window.cbtAdmin.isPassageItem(item));
+        const linkedChildren = (gid && window.cbtAdmin)
+          ? window.cbtAdmin.getAllQuestions()
+            .filter(item => item && !isPassageFnLocal(item) && String(item.passageGroupId || '').trim() === gid)
+            .sort((a, b) => (parseInt(a.passageOrder, 10) || 999) - (parseInt(b.passageOrder, 10) || 999))
+          : [];
+        if (linkedChildren.length > 0) {
+          passageChildRowsState = linkedChildren.map(ch => mapQuestionToPassageChildRow(ch));
+          const defWInp = document.getElementById('qPassageChildDefaultWeight');
+          if (defWInp) defWInp.value = String(passageChildRowsState[0].weight || 25);
+          if (spanEl && Array.from(spanEl.options).some(o => o.value === String(linkedChildren.length))) {
+            spanEl.value = String(linkedChildren.length);
+          }
+          renderPassageChildRows();
+        } else {
           const spanVal = String(question.passageSpan || question.passageGroupSize || 5);
-          if (Array.from(spanEl.options).some(o => o.value === spanVal)) spanEl.value = spanVal;
+          if (spanEl && Array.from(spanEl.options).some(o => o.value === spanVal)) spanEl.value = spanVal;
+          const recW = getRecommendedWeightForScope(question.subject || '', question.classLevel || 'ALL', 25);
+          const defWInp = document.getElementById('qPassageChildDefaultWeight');
+          if (defWInp) defWInp.value = String(recW);
+          passageChildRowsState = Array.from({ length: parseInt(spanVal, 10) || 5 }, () => createEmptyPassageChildRow(recW));
+          if (childSubEl) {
+            childSubEl.innerText = 'Belum ada soal PG terhubung langsung — isi di bawah untuk langsung menambahkan Soal PG, atau biarkan kosong jika soal PG sudah dibuat terpisah.';
+          }
+          renderPassageChildRows();
         }
       } else if (question.passageGroupId || question.passageText || question.passageTitle) {
         if (pDetails) pDetails.open = true;
@@ -7169,7 +7419,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const pOnlyTitle = document.getElementById('qPassageOnlyTitle')?.value.trim() || '';
       const pOnlyTextEl = document.getElementById('qPassageOnlyText');
       const pOnlyText = pOnlyTextEl ? pOnlyTextEl.value.trim() : '';
-      const pSpan = Math.max(1, parseInt(document.getElementById('qPassageOnlySpan')?.value, 10) || 5);
+      const rawSpan = Math.max(1, parseInt(document.getElementById('qPassageOnlySpan')?.value, 10) || 5);
 
       if (!pOnlyText && !pOnlyTitle && !image) {
         if (valMsgEl && valAlertEl) {
@@ -7180,8 +7430,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
       }
 
+      const activeChildRows = passageChildRowsState.filter(r => isPassageChildRowTouched(r));
+      for (let idx = 0; idx < activeChildRows.length; idx++) {
+        const r = activeChildRows[idx];
+        const rowNum = passageChildRowsState.indexOf(r) + 1;
+        const qTxt = String(r.question || '').trim();
+        if (!qTxt) {
+          alert(`Teks pertanyaan pada Soal No. ${rowNum} belum diisi! (Kosongkan opsi jika soal ini tidak dipakai, atau lengkapi pertanyaannya.)`);
+          return false;
+        }
+        const opts = [
+          { key: 'A', text: String(r.optA || '').trim() },
+          { key: 'B', text: String(r.optB || '').trim() },
+          { key: 'C', text: String(r.optC || '').trim() },
+          { key: 'D', text: String(r.optD || '').trim() }
+        ];
+        if (!opts.some(o => o.text !== '')) {
+          alert(`Pilihan jawaban A–D pada Soal No. ${rowNum} masih kosong semua! Lengkapi minimal pilihan A–D pada soal tersebut.`);
+          return false;
+        }
+        if (r.type === 'multiple' && (!Array.isArray(r.correctMulti) || r.correctMulti.length === 0)) {
+          alert(`Pilih minimal 1 kunci jawaban PG Kompleks pada Soal No. ${rowNum}!`);
+          return false;
+        }
+      }
+
       const existingPassage = editId ? window.cbtAdmin.getAllQuestions().find(item => String(item.id) === String(editId)) : null;
       const pGroupId = (existingPassage && existingPassage.passageGroupId) || `WACANA-${Date.now()}`;
+      const effectiveSpan = activeChildRows.length > 0 ? activeChildRows.length : rawSpan;
       const passagePayload = {
         subject,
         classLevel,
@@ -7190,10 +7466,39 @@ document.addEventListener('DOMContentLoaded', () => {
         question: pOnlyText || pOnlyTitle,
         passageTitle: pOnlyTitle,
         passageText: pOnlyText,
-        passageSpan: pSpan,
+        passageSpan: effectiveSpan,
         passageGroupId: pGroupId,
         image,
         weight: 0
+      };
+
+      const buildChildPayload = (r, orderNum, totalChildren) => {
+        const opts = [
+          { key: 'A', text: String(r.optA || '').trim() },
+          { key: 'B', text: String(r.optB || '').trim() },
+          { key: 'C', text: String(r.optC || '').trim() },
+          { key: 'D', text: String(r.optD || '').trim() }
+        ];
+        const isMult = r.type === 'multiple';
+        const payload = {
+          subject,
+          classLevel,
+          isTrial,
+          type: isMult ? 'multiple' : 'single',
+          question: String(r.question || '').trim(),
+          options: opts,
+          correctAnswer: isMult
+            ? (Array.isArray(r.correctMulti) && r.correctMulti.length > 0 ? r.correctMulti : ['A'])
+            : (['A', 'B', 'C', 'D'].includes(r.correctSingle) ? r.correctSingle : 'A'),
+          weight: Math.max(1, parseInt(r.weight, 10) || 25),
+          passageGroupId: pGroupId,
+          passageTitle: pOnlyTitle,
+          passageText: pOnlyText,
+          passageOrder: orderNum,
+          passageGroupSize: totalChildren
+        };
+        if (r.id) payload.id = r.id;
+        return payload;
       };
 
       if (editId) {
@@ -7202,8 +7507,33 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(res.message || "Gagal memperbarui wacana.");
           return false;
         }
+        if (deletedPassageChildIds.length > 0) {
+          deletedPassageChildIds.forEach(delId => window.cbtAdmin.deleteQuestion(delId));
+        }
+        const totalChildren = activeChildRows.length;
+        const updatesList = [];
+        const newChildrenList = [];
+        activeChildRows.forEach((r, idx) => {
+          const cp = buildChildPayload(r, idx + 1, totalChildren);
+          if (r.id) updatesList.push(cp);
+          else newChildrenList.push(cp);
+        });
+        if (updatesList.length > 0) {
+          window.cbtAdmin.updateQuestionsBatch(updatesList);
+        }
+        if (newChildrenList.length > 0) {
+          window.cbtAdmin.addQuestionsBatch(newChildrenList);
+        }
       } else {
-        window.cbtAdmin.addQuestion(passagePayload);
+        if (activeChildRows.length > 0) {
+          const batchPayloads = [
+            passagePayload,
+            ...activeChildRows.map((r, idx) => buildChildPayload(r, idx + 1, activeChildRows.length))
+          ];
+          window.cbtAdmin.addQuestionsBatch(batchPayloads);
+        } else {
+          window.cbtAdmin.addQuestion(passagePayload);
+        }
       }
 
       setupQuestionBankFilters();
@@ -7213,31 +7543,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       renderAdminQuestionList();
       renderAdminSchedulesList();
-
-      if (keepOpenForNext && !editId) {
-        qInputType.value = 'single';
-        qInputType.dispatchEvent(new Event('change'));
-        resetImageUploader();
-        const pDet = document.getElementById('qPassageDetails');
-        if (pDet) pDet.open = true;
-        if (document.getElementById('qInputPassageGroupId')) document.getElementById('qInputPassageGroupId').value = pGroupId;
-        if (document.getElementById('qInputPassageOrder')) document.getElementById('qInputPassageOrder').value = '1';
-        if (document.getElementById('qInputPassageGroupSize')) {
-          const gSel = document.getElementById('qInputPassageGroupSize');
-          const sVal = String(Math.min(5, Math.max(3, pSpan)));
-          if (Array.from(gSel.options).some(o => o.value === sVal)) gSel.value = sVal;
-        }
-        if (document.getElementById('qInputPassageTitle')) document.getElementById('qInputPassageTitle').value = pOnlyTitle;
-        if (document.getElementById('qInputPassageText')) document.getElementById('qInputPassageText').value = pOnlyText;
-        const noticeEl = document.getElementById('qSaveContinueNotice');
-        if (noticeEl) {
-          noticeEl.innerText = `✅ Wacana tersimpan tanpa nomor! Sekarang isi Soal No. 1 yang mengacu pada wacana tersebut.`;
-          noticeEl.classList.remove('hidden');
-        }
-        document.getElementById('qInputText')?.focus();
-        return true;
-      }
-
       closeQuestionModal();
       return true;
     }
@@ -8104,7 +8409,25 @@ document.addEventListener('DOMContentLoaded', () => {
         payloadList.push(item);
       }
 
-      const res = window.cbtAdmin.addQuestionsBatch(payloadList);
+      const finalPayloadList = (mode === 'passage' && (passageText || passageTitle))
+        ? [
+            {
+              subject,
+              classLevel,
+              isTrial,
+              type: 'passage',
+              question: passageText || passageTitle,
+              passageTitle,
+              passageText,
+              passageSpan: payloadList.length || bulkRowsState.length || 5,
+              passageGroupId,
+              weight: 0
+            },
+            ...payloadList
+          ]
+        : payloadList;
+
+      const res = window.cbtAdmin.addQuestionsBatch(finalPayloadList);
       if (res && res.success) {
         closeBulkQuestionModal();
         setupQuestionBankFilters();
