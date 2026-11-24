@@ -481,17 +481,25 @@ class StudentManager {
     const birthPlace = studentData.birthPlace ? String(studentData.birthPlace).trim() : splitBirthPlaceDate(studentData.birthPlaceDate).birthPlace;
     const birthDate = studentData.birthDate ? String(studentData.birthDate).trim() : splitBirthPlaceDate(studentData.birthPlaceDate).birthDate;
     const examRoom = normalizeExamRoomDisplay(studentData.examRoom !== undefined ? studentData.examRoom : (studentData.room || ''));
+    const rawSeat = parseInt(studentData.seatOrder, 10);
+    let seatOrder = Number.isFinite(rawSeat) && rawSeat > 0 ? rawSeat : 0;
+    if (examRoom && seatOrder === 0) {
+      const existingInRoom = this.getStudentsByRoom(examRoom);
+      const maxSeat = existingInRoom.reduce((m, s) => Math.max(m, Number(s.seatOrder) || 0), 0);
+      seatOrder = Math.max(existingInRoom.length, maxSeat) + 1;
+    }
 
     this.students.push({
       nisn: cleanNisn,
       name: String(studentData.name || "").trim(),
-      class: studentData.class ? String(studentData.class).trim() : "9A",
+      class: studentData.class ? String(studentData.class).trim() : "7A",
       examRoom,
-      birthPlace,
-      birthDate,
-      birthPlaceDate: buildBirthPlaceDate(birthPlace, birthDate),
+      seatOrder,
+      birthPlace: birthPlace || '-',
+      birthDate: birthDate || '-',
+      birthPlaceDate: (birthPlace || birthDate) ? buildBirthPlaceDate(birthPlace, birthDate) : '-',
       gender: studentData.gender ? String(studentData.gender).trim() : "Laki-laki",
-      address: studentData.address ? String(studentData.address).trim() : "Ds. Pacet, Kec. Pacet",
+      address: studentData.address ? String(studentData.address).trim() : "-",
       password: studentData.password ? String(studentData.password).trim() : "123"
     });
     this.saveStudents(this.students);
@@ -521,16 +529,26 @@ class StudentManager {
         const nextRoom = updatedData.examRoom !== undefined
           ? normalizeExamRoomDisplay(updatedData.examRoom)
           : (s.examRoom || '');
+        const rawSeat = updatedData.seatOrder !== undefined ? parseInt(updatedData.seatOrder, 10) : Number(s.seatOrder || 0);
+        let nextSeat = Number.isFinite(rawSeat) && rawSeat > 0 ? rawSeat : 0;
+        if (!nextRoom) {
+          nextSeat = 0;
+        } else if (updatedData.examRoom !== undefined && normalizeExamRoomKey(nextRoom) !== normalizeExamRoomKey(s.examRoom) && nextSeat === 0) {
+          const existingInRoom = this.getStudentsByRoom(nextRoom);
+          const maxSeat = existingInRoom.reduce((m, item) => Math.max(m, Number(item.seatOrder) || 0), 0);
+          nextSeat = Math.max(existingInRoom.length, maxSeat) + 1;
+        }
         return {
           ...s,
           name: updatedData.name ? String(updatedData.name).trim() : s.name,
           class: updatedData.class ? String(updatedData.class).trim() : s.class,
           examRoom: nextRoom,
-          birthPlace: nextPlace,
-          birthDate: nextDate,
+          seatOrder: nextSeat,
+          birthPlace: nextPlace || '-',
+          birthDate: nextDate || '-',
           birthPlaceDate: buildBirthPlaceDate(nextPlace, nextDate, updatedData.birthPlaceDate || s.birthPlaceDate),
           gender: updatedData.gender ? String(updatedData.gender).trim() : s.gender,
-          address: updatedData.address ? String(updatedData.address).trim() : s.address,
+          address: updatedData.address !== undefined ? (String(updatedData.address).trim() || '-') : s.address,
           password: updatedData.password ? String(updatedData.password).trim() : s.password
         };
       }
@@ -626,8 +644,59 @@ class StudentManager {
     return result;
   }
 
-  _buildRoomAllocationMap({ mode = 'mixed_random', roomCount = 8, roomPrefix = 'Ruang', randomize = true } = {}) {
-    const safeCount = Math.max(1, Math.min(50, parseInt(roomCount, 10) || 8));
+  _resolveEffectiveCapacities(totalStudents, safeCount, roomCapacities = null) {
+    const count = Math.max(1, safeCount);
+    const total = Math.max(0, totalStudents);
+    if (!Array.isArray(roomCapacities) || roomCapacities.length === 0) {
+      const base = Math.floor(total / count);
+      const rem = total % count;
+      return Array.from({ length: count }, (_, idx) => base + (idx < rem ? 1 : 0));
+    }
+
+    const raw = Array.from({ length: count }, (_, idx) => {
+      const n = parseInt(roomCapacities[idx], 10);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    });
+    let sum = raw.reduce((a, b) => a + b, 0);
+    if (sum === total) return raw;
+
+    const caps = [...raw];
+    if (sum === 0) {
+      const base = Math.floor(total / count);
+      const rem = total % count;
+      return Array.from({ length: count }, (_, idx) => base + (idx < rem ? 1 : 0));
+    }
+
+    if (sum < total) {
+      let diff = total - sum;
+      let cursor = 0;
+      while (diff > 0) {
+        caps[cursor % count] += 1;
+        diff--;
+        cursor++;
+      }
+    } else {
+      let diff = sum - total;
+      let guard = 0;
+      while (diff > 0 && guard < total + count * 100) {
+        let maxIdx = 0;
+        for (let i = 1; i < count; i++) {
+          if (caps[i] > caps[maxIdx]) maxIdx = i;
+        }
+        if (caps[maxIdx] <= 0) break;
+        caps[maxIdx] -= 1;
+        diff--;
+        guard++;
+      }
+    }
+    return caps;
+  }
+
+  _buildRoomAllocationMap({ mode = 'mixed_random', roomCount = 8, roomPrefix = 'Ruang', roomCapacities = null, randomize = true } = {}) {
+    const hasCustomCaps = Array.isArray(roomCapacities) && roomCapacities.length > 0;
+    const safeCount = hasCustomCaps
+      ? Math.max(1, Math.min(50, roomCapacities.length))
+      : Math.max(1, Math.min(50, parseInt(roomCount, 10) || 8));
     const safePrefix = normalizeExamRoomDisplay(roomPrefix || 'Ruang') || 'Ruang';
     const roomLabels = Array.from({ length: safeCount }, (_, i) => `${safePrefix} ${i + 1}`);
 
@@ -643,8 +712,10 @@ class StudentManager {
     const assignedRoomByNisn = new Map();
     const assignedSeatByNisn = new Map();
     if (mode === 'clear') {
-      return { roomCount: 0, roomPrefix: safePrefix, roomLabels: [], assignedRoomByNisn, assignedSeatByNisn };
+      return { roomCount: 0, roomPrefix: safePrefix, roomLabels: [], assignedRoomByNisn, assignedSeatByNisn, effectiveCapacities: [] };
     }
+
+    const effectiveCapacities = this._resolveEffectiveCapacities(this.students.length, safeCount, roomCapacities);
 
     if (mode === 'by_class_sequential') {
       const sorted = [...this.students].sort((a, b) => {
@@ -652,11 +723,9 @@ class StudentManager {
         if (cmp !== 0) return cmp;
         return String(a.name || '').localeCompare(String(b.name || ''), 'id');
       });
-      const baseSize = Math.floor(sorted.length / safeCount);
-      const remainder = sorted.length % safeCount;
       let cursor = 0;
       for (let rIdx = 0; rIdx < safeCount; rIdx++) {
-        const cap = baseSize + (rIdx < remainder ? 1 : 0);
+        const cap = effectiveCapacities[rIdx] || 0;
         for (let k = 0; k < cap && cursor < sorted.length; k++) {
           const nisnKey = String(sorted[cursor].nisn).trim();
           assignedRoomByNisn.set(nisnKey, roomLabels[rIdx]);
@@ -665,7 +734,7 @@ class StudentManager {
         }
       }
     } else {
-      // Acak Campur Lintas Kelas (7-8-9) merata ke semua ruang + acak urutan tempat duduk antar kelas di tiap ruang
+      // Acak Campur Lintas Kelas (7-8-9) proporsional sesuai kuota tiap ruang + acak urutan tempat duduk
       const gradeMap = new Map();
       this.students.forEach(s => {
         const g = this._getGradeBucket(s.class);
@@ -673,21 +742,62 @@ class StudentManager {
         gradeMap.get(g).push(s);
       });
       const gradeKeys = Array.from(gradeMap.keys()).sort((a, b) => String(a).localeCompare(String(b), 'id', { numeric: true }));
+      const totalAll = Math.max(1, this.students.length);
+
+      // Hitung matriks kuota [gradeIdx][roomIdx] agar jumlah per ruang TEPAT sesuai effectiveCapacities & tiap jenjang proporsional
+      const matrix = gradeKeys.map(g => {
+        const gLen = gradeMap.get(g).length;
+        const raw = effectiveCapacities.map((cap, rIdx) => {
+          const exact = (gLen * cap) / totalAll;
+          return { rIdx, floorVal: Math.floor(exact), frac: exact - Math.floor(exact) };
+        });
+        const row = raw.map(item => item.floorVal);
+        let rem = gLen - row.reduce((a, b) => a + b, 0);
+        const byFrac = [...raw].sort((a, b) => (b.frac - a.frac) || (a.rIdx - b.rIdx));
+        for (let k = 0; k < rem; k++) {
+          row[byFrac[k % safeCount].rIdx] += 1;
+        }
+        return row;
+      });
+
+      const colSum = (rIdx) => matrix.reduce((sum, row) => sum + (row[rIdx] || 0), 0);
+      let guard = 0;
+      while (guard < totalAll * 4 + 100) {
+        const overIdx = effectiveCapacities.findIndex((cap, rIdx) => colSum(rIdx) > cap);
+        const underIdx = effectiveCapacities.findIndex((cap, rIdx) => colSum(rIdx) < cap);
+        if (overIdx === -1 || underIdx === -1) break;
+        let bestG = -1;
+        let bestVal = 0;
+        for (let gIdx = 0; gIdx < matrix.length; gIdx++) {
+          if (matrix[gIdx][overIdx] > bestVal) {
+            bestVal = matrix[gIdx][overIdx];
+            bestG = gIdx;
+          }
+        }
+        if (bestG === -1) break;
+        matrix[bestG][overIdx] -= 1;
+        matrix[bestG][underIdx] += 1;
+        guard++;
+      }
+
       const roomMembersMap = new Map(roomLabels.map(lbl => [lbl, []]));
-      let roomCursor = 0;
-      gradeKeys.forEach(g => {
+      gradeKeys.forEach((g, gIdx) => {
         const list = randomize
           ? fisherYatesShuffle(gradeMap.get(g))
           : [...gradeMap.get(g)].sort((a, b) => this.compareClassNames(a.class, b.class));
-        list.forEach(stu => {
-          const targetRoom = roomLabels[roomCursor % safeCount];
-          assignedRoomByNisn.set(String(stu.nisn).trim(), targetRoom);
-          roomMembersMap.get(targetRoom).push(stu);
-          roomCursor++;
-        });
+        let cursor = 0;
+        for (let rIdx = 0; rIdx < safeCount; rIdx++) {
+          const take = matrix[gIdx][rIdx] || 0;
+          const targetRoom = roomLabels[rIdx];
+          for (let t = 0; t < take && cursor < list.length; t++) {
+            const stu = list[cursor++];
+            assignedRoomByNisn.set(String(stu.nisn).trim(), targetRoom);
+            roomMembersMap.get(targetRoom).push(stu);
+          }
+        }
       });
 
-      // Susun urutan tempat duduk (seatOrder 1..M) di tiap ruang agar kelas 7-8-9 terseling acak & 7A tidak berurutan
+      // Susun urutan tempat duduk (seatOrder 1..M) di tiap ruang agar kelas 7-8-9 terseling acak & tidak mengelompok
       roomLabels.forEach(lbl => {
         const orderedMembers = this._interleaveRoomMembers(roomMembersMap.get(lbl) || [], { randomize });
         orderedMembers.forEach((stu, idx) => {
@@ -696,7 +806,7 @@ class StudentManager {
       });
     }
 
-    return { roomCount: safeCount, roomPrefix: safePrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn };
+    return { roomCount: safeCount, roomPrefix: safePrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn, effectiveCapacities };
   }
 
   _summarizeRoomAllocations(studentsList, roomLabels = null) {
@@ -730,17 +840,18 @@ class StudentManager {
 
   previewExamRoomsAllocation(options = {}) {
     if (!Array.isArray(this.students) || this.students.length === 0) {
-      return { totalStudents: 0, mode: String(options.mode || 'mixed_random'), roomCount: 0, roomPrefix: 'Ruang', roomsSummary: [] };
+      return { totalStudents: 0, mode: String(options.mode || 'mixed_random'), roomCount: 0, roomPrefix: 'Ruang', roomsSummary: [], effectiveCapacities: [] };
     }
     const mode = String(options.mode || 'mixed_random').trim();
-    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn } = this._buildRoomAllocationMap({
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn, effectiveCapacities } = this._buildRoomAllocationMap({
       mode,
       roomCount: options.roomCount,
       roomPrefix: options.roomPrefix,
+      roomCapacities: options.roomCapacities,
       randomize: false
     });
     if (mode === 'clear') {
-      return { totalStudents: this.students.length, mode, roomCount: 0, roomPrefix, roomsSummary: [] };
+      return { totalStudents: this.students.length, mode, roomCount: 0, roomPrefix, roomsSummary: [], effectiveCapacities: [] };
     }
     const simulated = this.students.map(s => {
       const k = String(s.nisn).trim();
@@ -755,6 +866,7 @@ class StudentManager {
       mode,
       roomCount,
       roomPrefix,
+      effectiveCapacities,
       roomsSummary: this._summarizeRoomAllocations(simulated, roomLabels)
     };
   }
@@ -770,10 +882,11 @@ class StudentManager {
       return { success: true, mode: 'clear', assignedCount: next.length, roomCount: 0, roomsSummary: [] };
     }
 
-    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn } = this._buildRoomAllocationMap({
+    const { roomCount, roomPrefix, roomLabels, assignedRoomByNisn, assignedSeatByNisn, effectiveCapacities } = this._buildRoomAllocationMap({
       mode,
       roomCount: options.roomCount,
       roomPrefix: options.roomPrefix,
+      roomCapacities: options.roomCapacities,
       randomize: true
     });
 
@@ -792,9 +905,86 @@ class StudentManager {
       mode,
       roomCount,
       roomPrefix,
+      effectiveCapacities,
       assignedCount: nextStudents.length,
       roomsSummary: this._summarizeRoomAllocations(nextStudents, roomLabels)
     };
+  }
+
+  assignStudentsManualToRoom({ roomName, nisns = [], interleave = true } = {}) {
+    const targetRoom = normalizeExamRoomDisplay(roomName);
+    if (!targetRoom) {
+      return { success: false, message: "Nama Ruang Ujian tujuan wajib diisi." };
+    }
+    const targetKey = normalizeExamRoomKey(targetRoom);
+    const nisnSet = new Set((Array.isArray(nisns) ? nisns : []).map(n => String(n || '').trim()).filter(Boolean));
+    if (nisnSet.size === 0) {
+      return { success: false, message: "Pilih minimal 1 peserta untuk dimasukkan ke ruang." };
+    }
+
+    const touchedRoomKeys = new Set([targetKey]);
+    let movedCount = 0;
+
+    let nextStudents = this.students.map(s => {
+      const k = String(s.nisn || '').trim();
+      if (nisnSet.has(k)) {
+        const prevKey = normalizeExamRoomKey(s.examRoom);
+        if (prevKey) touchedRoomKeys.add(prevKey);
+        movedCount++;
+        return { ...s, examRoom: targetRoom, seatOrder: 0 };
+      }
+      return { ...s };
+    });
+
+    touchedRoomKeys.forEach(rKey => {
+      const members = nextStudents.filter(s => normalizeExamRoomKey(s.examRoom) === rKey);
+      const ordered = interleave
+        ? this._interleaveRoomMembers(members, { randomize: false })
+        : this.sortRoomStudents(members);
+      const seatMap = new Map(ordered.map((m, idx) => [String(m.nisn).trim(), idx + 1]));
+      nextStudents = nextStudents.map(s => {
+        const sk = String(s.nisn || '').trim();
+        return seatMap.has(sk) ? { ...s, seatOrder: seatMap.get(sk) } : s;
+      });
+    });
+
+    this.saveStudents(nextStudents);
+    return {
+      success: true,
+      roomName: targetRoom,
+      movedCount,
+      roomTotal: nextStudents.filter(s => normalizeExamRoomKey(s.examRoom) === targetKey).length
+    };
+  }
+
+  removeStudentsFromRoom(nisns = []) {
+    const nisnSet = new Set((Array.isArray(nisns) ? nisns : []).map(n => String(n || '').trim()).filter(Boolean));
+    if (nisnSet.size === 0) return { success: false, removedCount: 0 };
+
+    const touchedRoomKeys = new Set();
+    let removedCount = 0;
+    let nextStudents = this.students.map(s => {
+      const k = String(s.nisn || '').trim();
+      if (nisnSet.has(k) && s.examRoom) {
+        const prevKey = normalizeExamRoomKey(s.examRoom);
+        if (prevKey) touchedRoomKeys.add(prevKey);
+        removedCount++;
+        return { ...s, examRoom: '', seatOrder: 0 };
+      }
+      return { ...s };
+    });
+
+    touchedRoomKeys.forEach(rKey => {
+      const members = this.sortRoomStudents(nextStudents.filter(s => normalizeExamRoomKey(s.examRoom) === rKey));
+      const seatMap = new Map(members.map((m, idx) => [String(m.nisn).trim(), idx + 1]));
+      nextStudents = nextStudents.map(s => {
+        const sk = String(s.nisn || '').trim();
+        return seatMap.has(sk) ? { ...s, seatOrder: seatMap.get(sk) } : s;
+      });
+    });
+
+    this.saveStudents(nextStudents);
+    return { success: true, removedCount };
   }
 
   clearAllStudents() {
@@ -900,6 +1090,7 @@ class StudentManager {
         mode: 'mixed_random',
         roomCount,
         roomPrefix,
+        roomCapacities: options.roomCapacities,
         randomize: true
       });
       sourceStudents = sourceStudents.map(s => {

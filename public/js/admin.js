@@ -3900,7 +3900,24 @@ class CBTAdmin {
     return `<div class="cbt-bagan-wrap">${svgMarkup}</div>`;
   }
 
-  renderPassageStimulusHtml(q, rangeLabel = '', isPrint = false) {
+  _cleanPrintText(raw, keepParagraphGaps = false) {
+    let text = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    text = text.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n');
+    if (keepParagraphGaps) {
+      text = text.replace(/\n{2,}/g, '\n');
+    } else {
+      text = text.replace(/\n{2,}/g, '\n');
+    }
+    return text.trim();
+  }
+
+  _buildPassageParagraphList(rawText) {
+    const cleaned = this._cleanPrintText(rawText, true);
+    if (!cleaned) return [];
+    return cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+  }
+
+  renderPassageStimulusHtml(q, rangeLabel = '', isPrint = false, opts = {}) {
     if (!q || (!q.passageText && !q.passageTable && !q.passageChart && !q.passageTitle && !q.passageImage)) return '';
     const titleStr = String(q.passageTitle || '').trim();
     const rawRange = String(rangeLabel || '').trim();
@@ -3911,30 +3928,34 @@ class CBTAdmin {
       ? `Wacana untuk soal ${rawRange}`
       : 'Wacana / Stimulus Kelompok Soal';
 
-    const formatPrintParagraphs = (raw) => {
-      const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (lines.length === 0) return '';
+    const skipHeader = Boolean(opts && opts.skipHeader);
+    const customParagraphs = Array.isArray(opts && opts.customParagraphs) ? opts.customParagraphs : null;
+    const includeExtras = !opts || opts.includeExtras !== false;
+
+    const formatPrintParagraphs = (lines) => {
+      if (!lines || lines.length === 0) return '';
       return lines.map(line => (
-        `<p style="margin:0 0 4px 0; text-indent:14px; text-align:justify; line-height:1.45; font-size:10.5px;">${this.escapePrintHtml(line)}</p>`
+        `<p align="justify" class="naskah-justify" style="margin:0 0 3px 0; text-indent:14px; text-align:justify; text-justify:inter-word; line-height:1.4; font-size:10.5px;">${this.escapePrintHtml(line)}</p>`
       )).join('');
     };
 
+    const printLines = customParagraphs !== null ? customParagraphs : this._buildPassageParagraphList(q.passageText || '');
     const textHtml = isPrint
-      ? (q.passageText ? formatPrintParagraphs(q.passageText) : '')
+      ? (printLines.length > 0 ? formatPrintParagraphs(printLines) : '')
       : (q.passageText ? `<div style="white-space:pre-line; line-height:1.48; font-size:13px;">${this.escapePrintHtml(q.passageText)}</div>` : '');
-    const imgHtml = q.passageImage
+    const imgHtml = (includeExtras && q.passageImage)
       ? (isPrint
-        ? `<div style="margin:4px 0 6px 0; text-align:center;"><img src="${q.passageImage}" alt="Gambar Wacana" style="max-width:100%; max-height:170px; width:auto; height:auto; object-fit:contain; display:inline-block;"></div>`
+        ? `<div style="margin:3px 0 4px 0; text-align:center;"><img src="${q.passageImage}" alt="Gambar Wacana" style="max-width:100%; max-height:165px; width:auto; height:auto; object-fit:contain; display:inline-block;"></div>`
         : `<div class="mt-2"><img src="${q.passageImage}" alt="Gambar Wacana" class="rounded-xl max-h-48 object-contain border border-slate-200 bg-white p-1"></div>`)
       : '';
-    const tblHtml = q.passageTable ? this.renderQuestionTableHtml(q.passageTable, isPrint) : '';
-    const chartHtml = q.passageChart ? this.renderChartSvgHtml(q.passageChart, { isPrint, compact: isPrint }) : '';
+    const tblHtml = (includeExtras && q.passageTable) ? this.renderQuestionTableHtml(q.passageTable, isPrint) : '';
+    const chartHtml = (includeExtras && q.passageChart) ? this.renderChartSvgHtml(q.passageChart, { isPrint, compact: isPrint }) : '';
 
     if (isPrint) {
       return `
-        <div class="naskah-stimulus-box" style="margin:4px 0 9px 0; padding:2px 0; background:#ffffff;">
-          <div style="font-size:10.5px; font-weight:normal; margin-bottom:5px;">${this.escapePrintHtml(printHeaderNote)}</div>
-          ${titleStr ? `<div style="font-weight:bold; font-size:11.5px; text-align:center; margin:2px 0 6px 0;">${this.escapePrintHtml(titleStr)}</div>` : ''}
+        <div class="naskah-stimulus-box" style="margin:${skipHeader ? '0 0 4px 0' : '2px 0 6px 0'}; padding:1px 0; background:#ffffff;">
+          ${!skipHeader ? `<div class="naskah-justify" style="font-size:10.5px; font-weight:normal; margin-bottom:4px; text-align:justify; text-justify:inter-word;">${this.escapePrintHtml(printHeaderNote)}</div>` : ''}
+          ${(!skipHeader && titleStr) ? `<div style="font-weight:bold; font-size:11.5px; text-align:center; margin:1px 0 5px 0;">${this.escapePrintHtml(titleStr)}</div>` : ''}
           ${textHtml}
           ${imgHtml}
           ${tblHtml}
@@ -4002,10 +4023,11 @@ class CBTAdmin {
 
   renderSingleQuestionPrintHtml(q, displayNumber, layoutCols = 2) {
     const type = q.type || 'single';
-    const qText = this.escapePrintHtml(q.question || '').replace(/\r?\n/g, '<br>');
-    const imgMaxH = layoutCols === 2 ? '132px' : '210px';
+    const cleanedQuestion = this._cleanPrintText(q.question || '', false);
+    const qText = this.escapePrintHtml(cleanedQuestion).replace(/\r?\n/g, '<br>');
+    const imgMaxH = layoutCols === 2 ? '128px' : '200px';
     const imgHtml = (q.image && String(q.image).trim() !== '')
-      ? `<div style="margin:5px 0 6px 0; text-align:left;"><img src="${q.image}" alt="Gambar Soal ${displayNumber}" style="max-width:100%; max-height:${imgMaxH}; width:auto; height:auto; object-fit:contain; display:block; border:1px solid #cbd5e1; border-radius:4px; padding:2px; background:#ffffff;"></div>`
+      ? `<div style="margin:3px 0 4px 0; text-align:left;"><img src="${q.image}" alt="Gambar Soal ${displayNumber}" style="max-width:100%; max-height:${imgMaxH}; width:auto; height:auto; object-fit:contain; display:block; border:1px solid #cbd5e1; border-radius:4px; padding:2px; background:#ffffff;"></div>`
       : '';
     const stemTableHtml = q.tableData ? this.renderQuestionTableHtml(q.tableData, true) : '';
     const stemChartHtml = q.chartData ? this.renderChartSvgHtml(q.chartData, { isPrint: true, compact: layoutCols === 2 }) : '';
@@ -4015,19 +4037,19 @@ class CBTAdmin {
       const stmts = Array.isArray(q.statements) ? q.statements : [];
       const rows = stmts.map((st, idx) => `
         <tr>
-          <td style="border:1px solid #000000; padding:3px 5px; font-size:10px; line-height:1.35; background:#ffffff;">${idx + 1}. ${this.escapePrintHtml(st.text || '')}</td>
-          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
-          <td style="border:1px solid #000000; padding:3px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
+          <td align="justify" class="naskah-justify" style="border:1px solid #000000; padding:2.5px 5px; font-size:10px; line-height:1.32; text-align:justify; text-justify:inter-word; background:#ffffff;">${idx + 1}. ${this.escapePrintHtml(this._cleanPrintText(st.text || '', false))}</td>
+          <td style="border:1px solid #000000; padding:2.5px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
+          <td style="border:1px solid #000000; padding:2.5px 4px; width:24px; text-align:center; font-size:10px; background:#ffffff;"></td>
         </tr>
       `).join('');
       bodyHtml = `
-        <div style="padding:3px 1px 5px 1px;">
+        <div style="padding:2px 1px 3px 1px;">
           <table class="cbt-question-table" style="width:100%; border-collapse:collapse; border:1px solid #000000; background:#ffffff; background-color:#ffffff;">
             <thead class="cbt-tf-print-thead">
               <tr style="background:#ffffff; background-color:#ffffff;">
-                <th style="border:1px solid #000000; padding:3px 5px; font-size:9.5px; text-align:left; background:#ffffff; background-color:#ffffff; color:#000000;">Pernyataan</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">B</th>
-                <th style="border:1px solid #000000; padding:3px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">S</th>
+                <th style="border:1px solid #000000; padding:2.5px 5px; font-size:9.5px; text-align:left; background:#ffffff; background-color:#ffffff; color:#000000;">Pernyataan</th>
+                <th style="border:1px solid #000000; padding:2.5px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">B</th>
+                <th style="border:1px solid #000000; padding:2.5px 4px; width:24px; font-size:9.5px; text-align:center; background:#ffffff; background-color:#ffffff; color:#000000;">S</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -4043,31 +4065,36 @@ class CBTAdmin {
         const lowerKey = upKey.toLowerCase();
         const bullet = type === 'multiple' ? `☐ ${lowerKey}.` : `${lowerKey}.`;
         const optTbl = q.optionTables && q.optionTables[upKey] ? this.renderQuestionTableHtml(q.optionTables[upKey], true) : '';
+        const cleanOptText = this._cleanPrintText(opt.text || '', false);
+        const optHtml = cleanOptText
+          ? `<div align="justify" class="naskah-justify" style="text-align:justify; text-justify:inter-word;">${this.escapePrintHtml(cleanOptText).replace(/\r?\n/g, '<br>')}</div>`
+          : '';
         return `
           <tr style="background:transparent;">
-            <td style="width:${type === 'multiple' ? '26px' : '16px'}; vertical-align:top; font-size:10.5px; line-height:1.38; padding:1.5px 0; background:transparent;">${bullet}</td>
-            <td style="vertical-align:top; font-size:10.5px; line-height:1.38; padding:1.5px 0; background:transparent;">
-              ${opt.text ? `<div>${this.escapePrintHtml(opt.text || '')}</div>` : ''}
-              ${optTbl}
+            <td style="width:${type === 'multiple' ? '26px' : '16px'}; vertical-align:top; font-size:10.5px; line-height:1.35; padding:1px 0; background:transparent;">${bullet}</td>
+            <td align="justify" class="naskah-justify" style="vertical-align:top; font-size:10.5px; line-height:1.35; padding:1px 0; text-align:justify; text-justify:inter-word; background:transparent;">
+              ${optHtml}${optTbl}
             </td>
           </tr>
         `;
       }).join('');
-      bodyHtml = `<table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; margin-top:2px; background:transparent;"><tbody>${optRows}</tbody></table>`;
+      bodyHtml = `<table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2px; background:transparent;"><tbody>${optRows}</tbody></table>`;
     }
 
+    const hasHeavyMedia = Boolean((q.image && String(q.image).trim() !== '') || q.tableData || q.chartData);
+    const keepClass = hasHeavyMedia ? 'naskah-soal-item-media' : 'naskah-soal-item';
+    const keepStyle = hasHeavyMedia ? '' : 'break-inside:avoid; page-break-inside:avoid;';
+
     return `
-      <div class="naskah-soal-item" style="margin-bottom:7px; padding-bottom:3px; break-inside:avoid; page-break-inside:avoid; background:transparent;">
-        <table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; background:transparent;">
+      <div class="${keepClass}" style="margin-bottom:5px; padding-bottom:2px; ${keepStyle} background:transparent;">
+        <table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; table-layout:fixed; background:transparent;">
           <tbody>
             <tr style="background:transparent;">
-              <td style="width:20px; vertical-align:top; font-size:10.5px; line-height:1.38; font-weight:normal; background:transparent;">${displayNumber}.</td>
-              <td style="vertical-align:top; font-size:10.5px; line-height:1.38; background:transparent;">
-                <div>${qText}</div>
-                ${imgHtml}
-                ${stemTableHtml}
-                ${stemChartHtml}
-                <div style="margin-top:2px;">${bodyHtml}</div>
+              <td style="width:20px; vertical-align:top; font-size:10.5px; line-height:1.35; font-weight:normal; background:transparent;">${displayNumber}.</td>
+              <td align="justify" class="naskah-justify" style="vertical-align:top; font-size:10.5px; line-height:1.35; text-align:justify; text-justify:inter-word; background:transparent;">
+                <div align="justify" class="naskah-justify" style="text-align:justify; text-justify:inter-word;">${qText}</div>
+                ${imgHtml}${stemTableHtml}${stemChartHtml}
+                <div style="margin-top:1px;">${bodyHtml}</div>
               </td>
             </tr>
           </tbody>
@@ -4159,12 +4186,12 @@ class CBTAdmin {
       </div>
 
       <!-- PETUNJUK UMUM -->
-      <div style="font-size:10.5px; line-height:1.4; padding-bottom:6px; border-bottom:1.5px solid #000000; margin-bottom:10px;">
-        <div style="font-weight:bold; margin-bottom:2px;">Petunjuk Umum</div>
-        <div>1. Berdoalah sebelum mengerjakan</div>
-        <div>2. Bacalah soal dengan baik dan teliti</div>
-        <div>3. Kerjakan dengan jujur, dan dilarang bekerjasama karena Allah Maha Mengetahui</div>
-        <div>4. Periksa kembali jawaban sebelum diserahkan kepada pengawas</div>
+      <div class="naskah-justify" style="font-size:10.5px; line-height:1.36; padding-bottom:5px; border-bottom:1.5px solid #000000; margin-bottom:8px; text-align:justify; text-justify:inter-word;">
+        <div style="font-weight:bold; margin-bottom:2px; text-align:left;">Petunjuk Umum</div>
+        <div align="justify" style="text-align:justify; text-justify:inter-word;">1. Berdoalah sebelum mengerjakan</div>
+        <div align="justify" style="text-align:justify; text-justify:inter-word;">2. Bacalah soal dengan baik dan teliti</div>
+        <div align="justify" style="text-align:justify; text-justify:inter-word;">3. Kerjakan dengan jujur, dan dilarang bekerjasama karena Allah Maha Mengetahui</div>
+        <div align="justify" style="text-align:justify; text-justify:inter-word;">4. Periksa kembali jawaban sebelum diserahkan kepada pengawas</div>
       </div>
     `;
 
@@ -4183,30 +4210,63 @@ class CBTAdmin {
     let numCounter = 1;
     const emittedPassages = new Set();
 
-    const buildStimulusBlockForQuestion = (q) => {
+    const buildStimulusBlocksForQuestion = (q) => {
       const gid = q && q.passageGroupId ? String(q.passageGroupId).trim() : '';
       if (!gid || emittedPassages.has(gid) || !(q.passageText || q.passageTable || q.passageChart || q.passageTitle || q.passageImage)) {
-        return null;
+        return [];
       }
       emittedPassages.add(gid);
       const groupMembers = allScorableInOrder.filter(item => String(item.passageGroupId || '').trim() === gid);
       const spanLen = Math.max(1, groupMembers.length);
       const endNum = numCounter + spanLen - 1;
       const rangeLabel = spanLen > 1 ? `nomor ${numCounter} sampai dengan nomor ${endNum}` : `nomor ${numCounter}`;
+
+      const paragraphs = this._buildPassageParagraphList(q.passageText || '');
+      const hasExtras = Boolean(q.passageImage || q.passageTable || q.passageChart);
+      const charsPerLine = layoutCols === 2 ? 48 : 96;
+
+      // Jika wacana memiliki lebih dari 1 paragraf, pecah per paragraf agar mengalir rapi di kolom tanpa meninggalkan space kosong besar
+      if (paragraphs.length > 1) {
+        const result = [];
+        const firstP = paragraphs[0];
+        result.push({
+          isHeading: true,
+          height: 36 + Math.ceil(firstP.length / charsPerLine) * 13,
+          html: this.renderPassageStimulusHtml(q, rangeLabel, true, {
+            skipHeader: false,
+            customParagraphs: [firstP],
+            includeExtras: false
+          })
+        });
+        for (let pi = 1; pi < paragraphs.length; pi++) {
+          const isLastP = pi === paragraphs.length - 1;
+          result.push({
+            isHeading: false,
+            height: 8 + Math.ceil(paragraphs[pi].length / charsPerLine) * 13 + (isLastP && hasExtras ? ((q.passageTable ? 85 : 0) + (q.passageChart ? 125 : 0) + (q.passageImage ? 145 : 0)) : 0),
+            html: this.renderPassageStimulusHtml(q, rangeLabel, true, {
+              skipHeader: true,
+              customParagraphs: [paragraphs[pi]],
+              includeExtras: isLastP
+            })
+          });
+        }
+        return result;
+      }
+
       const stimHtml = this.renderPassageStimulusHtml(q, rangeLabel, true);
-      const estH = 44 + Math.ceil(String(q.passageText || '').length / (layoutCols === 2 ? 48 : 96)) * 13 + (q.passageTable ? 90 : 0) + (q.passageChart ? 130 : 0) + (q.passageImage ? 150 : 0);
-      return {
-        isHeading: true,
+      const estH = 38 + Math.ceil(String(q.passageText || '').length / charsPerLine) * 13 + (q.passageTable ? 85 : 0) + (q.passageChart ? 125 : 0) + (q.passageImage ? 145 : 0);
+      return [{
+        isHeading: estH <= 180,
         height: estH,
         html: stimHtml
-      };
+      }];
     };
 
     const pushSectionQuestions = (sectionQs, getKeyText, skipFirstStimulus = false) => {
       sectionQs.forEach((q, localIdx) => {
         if (!(skipFirstStimulus && localIdx === 0)) {
-          const stimBlock = buildStimulusBlockForQuestion(q);
-          if (stimBlock) blocks.push(stimBlock);
+          const stimBlocks = buildStimulusBlocksForQuestion(q);
+          stimBlocks.forEach(sb => blocks.push(sb));
         }
         blocks.push({
           isHeading: false,
@@ -4220,38 +4280,36 @@ class CBTAdmin {
     };
 
     if (singleQs.length > 0) {
-      const firstStimBlock = buildStimulusBlockForQuestion(singleQs[0]);
-      if (firstStimBlock) {
-        blocks.push(firstStimBlock);
-      }
+      const firstStimBlocks = buildStimulusBlocksForQuestion(singleQs[0]);
+      firstStimBlocks.forEach(sb => blocks.push(sb));
       blocks.push({
         isHeading: true,
-        height: 36,
+        height: 34,
         html: `
-          <div style="margin:2px 0 6px 0;">
+          <div style="margin:2px 0 5px 0;">
             <div style="font-weight:bold; font-size:11px;">I. PILIHAN GANDA</div>
-            <div style="font-size:10.5px; margin-top:2px;">Pilihlah salah satu jawaban yang tepat dari huruf a, b, c, dan d!</div>
+            <div align="justify" class="naskah-justify" style="font-size:10.5px; margin-top:2px; text-align:justify; text-justify:inter-word;">Pilihlah salah satu jawaban yang tepat dari huruf a, b, c, dan d!</div>
           </div>
         `
       });
-      pushSectionQuestions(singleQs, (q) => q.correctAnswer || '-', Boolean(firstStimBlock));
+      pushSectionQuestions(singleQs, (q) => q.correctAnswer || '-', firstStimBlocks.length > 0);
     }
 
     if (multiQs.length > 0) {
       const roman = singleQs.length > 0 ? 'II' : 'I';
-      const firstMultiStim = singleQs.length === 0 ? buildStimulusBlockForQuestion(multiQs[0]) : null;
-      if (firstMultiStim) blocks.push(firstMultiStim);
+      const firstMultiStims = singleQs.length === 0 ? buildStimulusBlocksForQuestion(multiQs[0]) : [];
+      firstMultiStims.forEach(sb => blocks.push(sb));
       blocks.push({
         isHeading: true,
-        height: 28,
-        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. PILIHAN GANDA KOMPLEKS (Pilihlah lebih dari satu jawaban yang benar!)</div>`
+        height: 26,
+        html: `<div align="justify" class="naskah-justify" style="font-weight:bold; font-size:11px; margin:5px 0 4px 0; text-align:justify; text-justify:inter-word;">${roman}. PILIHAN GANDA KOMPLEKS (Pilihlah lebih dari satu jawaban yang benar!)</div>`
       });
       pushSectionQuestions(multiQs, (q) => {
         const rawAns = Array.isArray(q.correctAnswer)
           ? q.correctAnswer
           : (Array.isArray(q.correctAnswers) ? q.correctAnswers : (q.correctAnswer ? [q.correctAnswer] : []));
         return rawAns.length > 0 ? rawAns.join(', ') : '-';
-      }, Boolean(firstMultiStim));
+      }, firstMultiStims.length > 0);
     }
 
     if (tfQs.length > 0) {
@@ -4284,14 +4342,14 @@ class CBTAdmin {
       });
     }
 
-    // Ukur tinggi aktual kop & setiap blok soal di lebar kertas F4 (210mm) agar halaman terisi penuh & rapi
+    // Ukur tinggi aktual kop & setiap blok soal di lebar kertas F4 (210mm) agar halaman terisi penuh & rapi tanpa space kosong besar
     const measured = this.measureExamPaperLayout(kopAndMetaHtml, blocks, layoutCols);
     const blockHeights = measured.blockHeights;
-    const pageBudgetPx = 1110; // 330mm (~1247px) - padding 16mm (60px) - footer (28px) - margin aman (49px)
-    const firstPageColLimit = Math.max(460, pageBudgetPx - measured.kopHeight);
+    const pageBudgetPx = 1142; // 330mm (~1247px) - padding 15mm (57px) - footer (26px) - margin aman (22px)
+    const firstPageColLimit = Math.max(480, pageBudgetPx - measured.kopHeight);
     const nextPageColLimit = pageBudgetPx;
 
-    // Bagi blok ke halaman F4 (21cm x 33cm) agar rapi, tidak memotong soal bergambar di tengah kolom/halaman
+    // Bagi blok ke halaman F4 (21cm x 33cm) agar padat & rapi, tanpa meninggalkan space kosong besar
     const pages = [];
     let idx = 0;
     let pageNum = 0;
@@ -4305,9 +4363,9 @@ class CBTAdmin {
           const b = blocks[idx];
           const bh = blockHeights[idx] || b.height;
           if (colItems.length > 0 && used + bh > colLimit) break;
-          // Jangan tinggalkan heading sendirian di bawah halaman
+          // Jangan tinggalkan heading pendek sendirian di bawah halaman
           const nextBh = idx + 1 < blocks.length ? (blockHeights[idx + 1] || blocks[idx + 1].height) : 0;
-          if (b.isHeading && idx + 1 < blocks.length && colItems.length > 0 && used + bh + nextBh > colLimit) break;
+          if (b.isHeading && bh < 140 && idx + 1 < blocks.length && colItems.length > 0 && used + bh + nextBh > colLimit) break;
           colItems.push(b.html);
           used += bh;
           idx += 1;
@@ -4322,7 +4380,7 @@ class CBTAdmin {
             const bh = blockHeights[idx] || b.height;
             if (items.length > 0 && used + bh > colLimit) break;
             const nextBh = idx + 1 < blocks.length ? (blockHeights[idx + 1] || blocks[idx + 1].height) : 0;
-            if (b.isHeading && idx + 1 < blocks.length && items.length > 0 && used + bh + nextBh > colLimit) break;
+            if (b.isHeading && bh < 140 && idx + 1 < blocks.length && items.length > 0 && used + bh + nextBh > colLimit) break;
             items.push(b.html);
             used += bh;
             idx += 1;
@@ -4342,21 +4400,21 @@ class CBTAdmin {
       const breakStyle = pIndex > 0 ? 'page-break-before:always; break-before:page;' : '';
       const breakClass = pIndex > 0 ? 'naskah-page-break' : '';
       const bodyLayout = layoutCols === 1
-        ? `<div style="padding-bottom:4px;">${pg.leftHtml}</div>`
+        ? `<div style="padding-bottom:2px;">${pg.leftHtml}</div>`
         : `
           <table class="naskah-clean-table" style="width:100%; border-collapse:collapse; table-layout:fixed; background:transparent;">
             <tbody>
               <tr style="background:transparent;">
-                <td style="width:48.5%; vertical-align:top; padding-right:10px; padding-bottom:4px; background:transparent;">${pg.leftHtml}</td>
+                <td style="width:48.5%; vertical-align:top; padding-right:8px; padding-bottom:2px; background:transparent;">${pg.leftHtml}</td>
                 <td style="width:3%; background:transparent;"></td>
-                <td style="width:48.5%; vertical-align:top; padding-left:10px; padding-bottom:4px; background:transparent;">${pg.rightHtml}</td>
+                <td style="width:48.5%; vertical-align:top; padding-left:8px; padding-bottom:2px; background:transparent;">${pg.rightHtml}</td>
               </tr>
             </tbody>
           </table>
         `;
 
       return `
-        <div class="naskah-paper-sheet ${breakClass}" style="${breakStyle} width:210mm; max-width:100%; margin:0 auto 14px auto; padding:8mm 12mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
+        <div class="naskah-paper-sheet ${breakClass}" style="${breakStyle} width:210mm; max-width:100%; margin:0 auto 14px auto; padding:7.5mm 11mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
           ${pIndex === 0 ? kopAndMetaHtml : ''}
           ${bodyLayout}
           ${footerNoteHtml}
@@ -4366,7 +4424,7 @@ class CBTAdmin {
 
     let keyHtml = '';
     if (includeAnswerKey) {
-      const keyItems = blocks.filter(b => !b.isHeading);
+      const keyItems = blocks.filter(b => !b.isHeading && b.answerKeyNum !== undefined);
       const keyRows = keyItems.map(item => `
         <div style="border:1px solid #cbd5e1; padding:4px 8px; font-size:10.5px; display:flex; justify-content:space-between; gap:8px;">
           <span style="font-weight:bold;">No. ${item.answerKeyNum}</span>
@@ -4377,7 +4435,7 @@ class CBTAdmin {
         ? ` • ${options.classLevel}`
         : '';
       keyHtml = `
-        <div class="naskah-paper-sheet naskah-page-break" style="page-break-before:always; break-before:page; width:210mm; max-width:100%; margin:0 auto 14px auto; padding:8mm 12mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
+        <div class="naskah-paper-sheet naskah-page-break" style="page-break-before:always; break-before:page; width:210mm; max-width:100%; margin:0 auto 14px auto; padding:7.5mm 11mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
           <div style="text-align:center; border-bottom:2px solid #000000; padding-bottom:6px; margin-bottom:12px;">
             <div style="font-size:13px; font-weight:bold; text-transform:uppercase;">KUNCI JAWABAN • ${this.escapePrintHtml(subjectName)}${this.escapePrintHtml(keyClassSuffix)}</div>
             <div style="font-size:11px;">${this.escapePrintHtml(examTitle)} (${this.escapePrintHtml(semester)} ${this.escapePrintHtml(academicYear)})</div>
@@ -4396,17 +4454,17 @@ class CBTAdmin {
   measureExamPaperLayout(kopAndMetaHtml, blocks, layoutCols = 2) {
     if (typeof document === 'undefined' || !document.body) {
       return {
-        kopHeight: 335,
+        kopHeight: 325,
         blockHeights: blocks.map(b => b.height)
       };
     }
 
     const measurer = document.createElement('div');
-    measurer.style.cssText = 'position:fixed; left:-99999px; top:0; width:210mm; padding:8mm 12mm; box-sizing:border-box; visibility:hidden; pointer-events:none; font-family:"Times New Roman", Times, Georgia, serif; background:#ffffff; z-index:-1;';
+    measurer.style.cssText = 'position:fixed; left:-99999px; top:0; width:210mm; padding:7.5mm 11mm; box-sizing:border-box; visibility:hidden; pointer-events:none; font-family:"Times New Roman", Times, Georgia, serif; background:#ffffff; z-index:-1;';
 
     const colInnerHtml = layoutCols === 1
       ? `<div class="_m_col" style="width:100%;"></div>`
-      : `<table style="width:100%; border-collapse:collapse; table-layout:fixed;"><tbody><tr><td class="_m_col" style="width:48.5%; vertical-align:top; padding-right:10px;"></td><td style="width:3%;"></td><td style="width:48.5%; vertical-align:top; padding-left:10px;"></td></tr></tbody></table>`;
+      : `<table style="width:100%; border-collapse:collapse; table-layout:fixed;"><tbody><tr><td class="_m_col" style="width:48.5%; vertical-align:top; padding-right:8px;"></td><td style="width:3%;"></td><td style="width:48.5%; vertical-align:top; padding-left:8px;"></td></tr></tbody></table>`;
 
     const blocksMarkup = blocks.map((b, i) => `<div class="_m_blk" data-bidx="${i}" style="display:flow-root;">${b.html}</div>`).join('');
 
@@ -4414,7 +4472,7 @@ class CBTAdmin {
     const colEl = measurer.querySelector('._m_col');
     if (colEl) colEl.innerHTML = blocksMarkup;
 
-    let kopHeight = 335;
+    let kopHeight = 325;
     let blockHeights = blocks.map(b => b.height);
 
     try {
@@ -4586,7 +4644,7 @@ class CBTAdmin {
         sheet.style.width = '210mm';
         sheet.style.maxWidth = '210mm';
         sheet.style.minHeight = 'auto';
-        sheet.style.padding = '8mm 12mm';
+        sheet.style.padding = '7.5mm 11mm';
         sheet.style.background = '#ffffff';
         sheet.style.color = '#000000';
 
@@ -4638,6 +4696,7 @@ class CBTAdmin {
 
     try {
       try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
+      await this.preloadPaperImages(questionsList, options);
       const layoutCols = parseInt(options.layoutCols, 10) === 1 ? 1 : 2;
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = this.generateExamPaperHtml(questionsList, options);
@@ -4775,18 +4834,26 @@ class CBTAdmin {
             @page Section1 {
               size: 21.0cm 33.0cm;
               mso-page-orientation: portrait;
-              margin: 1.0cm 1.2cm 1.0cm 1.2cm;
-              mso-header-margin: 0.5cm;
-              mso-footer-margin: 0.5cm;
+              margin: 0.7cm 1.0cm 0.7cm 1.0cm;
+              mso-header-margin: 0.4cm;
+              mso-footer-margin: 0.4cm;
               mso-paper-source: 0;
             }
             div.Section1 { page: Section1; }
-            html, body { font-family: "Times New Roman", Times, serif; color: #000000; background: #ffffff !important; background-color: #ffffff !important; margin: 0; padding: 0; }
+            html, body { font-family: "Times New Roman", Times, serif; font-size: 10pt; line-height: 1.32; color: #000000; background: #ffffff !important; background-color: #ffffff !important; margin: 0; padding: 0; }
             .naskah-paper-sheet, .naskah-paper-sheet div, .naskah-paper-sheet p, .naskah-paper-sheet span, .naskah-paper-sheet table, .naskah-paper-sheet thead, .naskah-paper-sheet tbody, .naskah-paper-sheet tr, .naskah-paper-sheet th, .naskah-paper-sheet td {
               background: #ffffff !important;
               background-color: #ffffff !important;
               mso-highlight: none !important;
               mso-shading: white;
+            }
+            .naskah-paper-sheet .naskah-justify, .naskah-paper-sheet .naskah-justify p, .naskah-paper-sheet .naskah-justify div {
+              text-align: justify !important;
+              text-justify: inter-word !important;
+            }
+            .naskah-paper-sheet .naskah-soal-item, .naskah-paper-sheet .naskah-soal-item-media {
+              margin-bottom: 4px !important;
+              padding-bottom: 1px !important;
             }
             .naskah-paper-sheet a { color: #000000 !important; text-decoration: none !important; }
             .naskah-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }

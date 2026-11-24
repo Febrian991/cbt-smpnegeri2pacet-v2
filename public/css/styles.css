@@ -1009,7 +1009,11 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
   box-shadow: none !important;
   width: 210mm !important;
   max-width: 210mm !important;
-  padding: 8mm 12mm !important;
+  padding: 7.5mm 11mm !important;
+}
+.naskah-paper-sheet .naskah-justify {
+  text-align: justify;
+  text-justify: inter-word;
 }
 
 /* 5. CETAK DAFTAR HADIR PESERTA RESMI */

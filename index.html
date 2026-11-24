@@ -2946,7 +2946,7 @@
   </div>
 
   <!-- MODAL: TAMBAH / EDIT DATA SISWA (LENGKAP UNTUK KARTU 9,0 x 5,3 CM) -->
-  <div id="modalStudentForm" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+  <div id="modalStudentForm" class="hidden fixed inset-0 z-[55] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
         <div>
@@ -2969,9 +2969,16 @@
           </div>
         </div>
 
-        <div>
-          <label class="block font-bold text-slate-700 mb-1" for="stuInputRoom">Ruang Ujian (Opsional — untuk ruang acak lintas kelas)</label>
-          <input type="text" id="stuInputRoom" placeholder="Misal: Ruang 1 (kosongkan jika mengikuti kelas asli)" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputRoom">Ruang Ujian (Opsional)</label>
+            <input type="text" id="stuInputRoom" list="stuRoomSuggestions" placeholder="Misal: Ruang 1 (kosongkan jika belum ditentukan)" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
+            <datalist id="stuRoomSuggestions"></datalist>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputSeatOrder">No. Urut Kursi (Opsional)</label>
+            <input type="number" id="stuInputSeatOrder" min="0" max="200" placeholder="Otomatis" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
         </div>
 
         <div>
@@ -2981,12 +2988,12 @@
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthPlace">Tempat Lahir</label>
-            <input type="text" id="stuInputBirthPlace" required placeholder="Mojokerto" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthPlace">Tempat Lahir <span class="font-normal text-slate-400">(Opsional)</span></label>
+            <input type="text" id="stuInputBirthPlace" placeholder="Mojokerto" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
           </div>
           <div>
-            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthDate">Tanggal Lahir</label>
-            <input type="text" id="stuInputBirthDate" required placeholder="12 Januari 2011" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block font-bold text-slate-700 mb-1" for="stuInputBirthDate">Tanggal Lahir <span class="font-normal text-slate-400">(Opsional)</span></label>
+            <input type="text" id="stuInputBirthDate" placeholder="12 Januari 2011" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500">
           </div>
         </div>
 
@@ -3005,8 +3012,8 @@
         </div>
 
         <div>
-          <label class="block font-bold text-slate-700 mb-1" for="stuInputAddress">Alamat Lengkap</label>
-          <textarea id="stuInputAddress" rows="2" required placeholder="Ds. Pacet RT 02 RW 01, Kec. Pacet" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+          <label class="block font-bold text-slate-700 mb-1" for="stuInputAddress">Alamat Lengkap <span class="font-normal text-slate-400">(Opsional)</span></label>
+          <textarea id="stuInputAddress" rows="2" placeholder="Ds. Pacet RT 02 RW 01, Kec. Pacet" class="w-full px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-blue-500"></textarea>
         </div>
 
         <div class="pt-3 border-t border-slate-100 flex gap-2">
@@ -3023,11 +3030,11 @@
 
   <!-- MODAL: ATUR & ACAK RUANG UJIAN LINTAS KELAS (7-8-9) -->
   <div id="modalAssignExamRooms" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
       <div class="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 mb-3.5">
         <div>
           <h3 class="font-bold text-base sm:text-lg text-slate-900">🏫 Atur &amp; Acak Ruang Ujian Siswa</h3>
-          <p class="text-xs text-slate-500 mt-0.5">Mengatur di ruang mana siswa duduk saat ujian (bisa acak campur kelas 7, 8, dan 9).</p>
+          <p class="text-xs text-slate-500 mt-0.5">Atur jumlah siswa per ruang, acak campur kelas 7–8–9, pakai Excel, atau tambah peserta secara manual.</p>
         </div>
         <button id="btnCloseAssignExamRooms" type="button" class="text-slate-400 hover:text-slate-700 cursor-pointer text-base p-1">✕</button>
       </div>
@@ -3036,16 +3043,19 @@
       <div class="p-3 rounded-2xl bg-indigo-50/80 border border-indigo-200 text-[11.5px] text-indigo-950 leading-relaxed mb-4 space-y-1">
         <div class="font-bold text-indigo-900">💡 Tidak perlu khawatir soal tertukar:</div>
         <div>• <strong>Kelas Asli</strong> (<code>7A</code>, <code>8B</code>, <code>9C</code>) tetap utuh — siswa tetap mengerjakan soal &amp; jadwal kelasnya.</div>
-        <div>• <strong>Acak Tempat Duduk 7–8–9:</strong> Di dalam tiap ruang, urutan kursi &amp; <strong>Daftar Hadir</strong> diseling acak antar kelas (tidak berurutan <code>7A</code> semua).</div>
+        <div>• <strong>Jumlah per Ruang Fleksibel &amp; Acak 7–8–9:</strong> Anda bisa menentukan kuota berbeda tiap ruang (misal 32, 32, 40, 40, 38, 34, 34) maupun menambah peserta secara manual.</div>
       </div>
 
-      <!-- Pilihan 2 Cara Mudah -->
-      <div class="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 border border-slate-200 mb-4">
-        <button type="button" id="tabBtnAssignRoomAuto" class="py-2 px-3 rounded-xl text-xs font-bold bg-white text-indigo-700 shadow-xs border border-indigo-200 cursor-pointer transition">
-          🎲 1. Acak Otomatis di Sini
+      <!-- Pilihan 3 Cara Mudah -->
+      <div class="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-slate-100 border border-slate-200 mb-4">
+        <button type="button" id="tabBtnAssignRoomAuto" class="py-2 px-2.5 rounded-xl text-[11.5px] sm:text-xs font-bold bg-white text-indigo-700 shadow-xs border border-indigo-200 cursor-pointer transition">
+          🎲 1. Acak &amp; Kuota Ruang
         </button>
-        <button type="button" id="tabBtnAssignRoomExcel" class="py-2 px-3 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition">
-          📊 2. Pakai Template Excel
+        <button type="button" id="tabBtnAssignRoomExcel" class="py-2 px-2.5 rounded-xl text-[11.5px] sm:text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition">
+          📊 2. Template Excel
+        </button>
+        <button type="button" id="tabBtnAssignRoomManual" class="py-2 px-2.5 rounded-xl text-[11.5px] sm:text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition">
+          ✍️ 3. Tambah / Atur Manual
         </button>
       </div>
 
@@ -3061,15 +3071,40 @@
             </select>
           </div>
 
-          <div id="assignRoomOptionsWrap" class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block font-bold text-slate-700 mb-1" for="assignRoomCount">Jumlah Ruang</label>
-              <input type="number" id="assignRoomCount" min="1" max="50" value="8" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
+          <div id="assignRoomOptionsWrap" class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="assignRoomCount">Jumlah Ruang</label>
+                <input type="number" id="assignRoomCount" min="1" max="50" value="7" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="assignRoomPrefix">Nama Ruang</label>
+                <input type="text" id="assignRoomPrefix" value="Ruang" placeholder="Ruang / Lab" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+                <p class="text-[10px] text-slate-400 mt-0.5">Hasilnya: Ruang 1, Ruang 2, dst.</p>
+              </div>
             </div>
-            <div>
-              <label class="block font-bold text-slate-700 mb-1" for="assignRoomPrefix">Nama Ruang</label>
-              <input type="text" id="assignRoomPrefix" value="Ruang" placeholder="Ruang / Lab" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
-              <p class="text-[10px] text-slate-400 mt-0.5">Hasilnya: Ruang 1, Ruang 2, dst.</p>
+
+            <!-- Pengaturan Jumlah Siswa Per Ruang Khusus (Misal: 32, 32, 40, 40, 38, 34, 34) -->
+            <div class="p-3 rounded-2xl bg-violet-50/70 border border-violet-200 space-y-2.5 text-xs">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="inline-flex items-center gap-2 font-bold text-violet-950 cursor-pointer">
+                  <input type="checkbox" id="assignUseCustomCapacities" class="w-4 h-4 rounded border-violet-300 text-violet-600 cursor-pointer">
+                  <span>🎯 Atur Jumlah Siswa per Ruang Sendiri (Kuota Berbeda Tiap Ruang)</span>
+                </label>
+                <button type="button" id="btnPresetSchoolCapacities" class="px-2.5 py-1 rounded-lg text-[11px] font-bold text-violet-800 bg-white hover:bg-violet-100 border border-violet-300 transition cursor-pointer shadow-2xs">
+                  📋 Isi Preset 7 Ruang (32, 32, 40, 40, 38, 34, 34)
+                </button>
+              </div>
+
+              <div id="assignCustomCapacitiesWrap" class="hidden space-y-2 pt-1 border-t border-violet-200/70">
+                <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <span id="assignCustomCapacityTotalBadge" class="font-bold text-violet-900">Total Kuota: 0 / 0 siswa</span>
+                  <button type="button" id="btnEqualizeCapacities" class="px-2 py-0.5 rounded-lg font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 transition cursor-pointer">
+                    ⚖️ Bagi Rata Otomatis
+                  </button>
+                </div>
+                <div id="assignCustomCapacitiesGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-0.5"></div>
+              </div>
             </div>
           </div>
 
@@ -3100,13 +3135,15 @@
           <div class="grid grid-cols-2 gap-2 pt-0.5">
             <div>
               <label class="block text-[11px] font-bold text-slate-700 mb-1" for="assignExcelRoomCount">Jumlah Ruang (untuk Acak Excel)</label>
-              <input type="number" id="assignExcelRoomCount" min="1" max="50" value="8" class="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
+              <input type="number" id="assignExcelRoomCount" min="1" max="50" value="7" class="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
             <div>
               <label class="block text-[11px] font-bold text-slate-700 mb-1" for="assignExcelRoomPrefix">Nama Ruang</label>
               <input type="text" id="assignExcelRoomPrefix" value="Ruang" placeholder="Ruang / Lab" class="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
           </div>
+
+          <div id="assignExcelCustomQuotaHint" class="hidden px-2.5 py-1.5 rounded-xl bg-violet-50 border border-violet-200 text-[11px] text-violet-900 font-semibold"></div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
             <button type="button" id="btnDownloadRoomTemplate" class="py-2.5 px-3 rounded-xl text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs">
@@ -3165,6 +3202,72 @@
 
         <div class="pt-2 border-t border-slate-100 flex justify-end">
           <button id="btnCloseAssignRoomExcelFooter" type="button" class="px-5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB PANEL 3: TAMBAH & ATUR PESERTA MANUAL PER RUANG -->
+      <div id="panelAssignRoomManual" class="hidden space-y-3.5 text-xs">
+        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <label class="font-extrabold text-slate-800" for="assignManualTargetRoom">1. Pilih Ruang Tujuan</label>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" id="btnAddManualNewRoom" class="px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer transition">
+                ➕ Buat Nama Ruang Baru
+              </button>
+              <button type="button" id="btnManualCreateStudentInRoom" class="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer transition shadow-2xs">
+                👤+ Tambah Siswa Baru ke Ruang Ini
+              </button>
+            </div>
+          </div>
+
+          <select id="assignManualTargetRoom" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-indigo-800 outline-none focus:ring-2 focus:ring-indigo-500"></select>
+
+          <div id="assignManualNewRoomBox" class="hidden flex items-center gap-2 pt-0.5">
+            <input type="text" id="assignManualNewRoomName" placeholder="Ketik nama ruang baru, misal: Ruang 8 / Lab IPA" class="flex-1 px-3 py-1.5 rounded-xl border border-indigo-300 bg-white font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
+            <button type="button" id="btnConfirmManualNewRoom" class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer transition">
+              Pakai Ruang
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between pt-1">
+            <span class="font-bold text-slate-700">Peserta Terdaftar di Ruang Ini:</span>
+            <span id="assignManualCurrentCountBadge" class="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 font-bold text-[11px]">0 Peserta</span>
+          </div>
+          <div id="assignManualCurrentList" class="max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100"></div>
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="font-extrabold text-emerald-950">2. Pilih / Masukkan Peserta ke Ruang Ini</span>
+            <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-900 cursor-pointer">
+              <input type="checkbox" id="assignManualOnlyUnassigned" class="w-3.5 h-3.5 rounded border-emerald-300 text-emerald-600 cursor-pointer">
+              <span>Hanya yang belum dapat ruang</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input type="text" id="assignManualSearch" placeholder="🔍 Cari nama / NISN siswa..." class="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-emerald-500">
+            <select id="assignManualClassFilter" class="px-2.5 py-2 rounded-xl border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-emerald-500">
+              <option value="ALL">Semua Kelas</option>
+            </select>
+          </div>
+
+          <div id="assignManualPoolList" class="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100"></div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button type="button" id="btnSelectAllManualPool" class="px-3 py-2 rounded-xl text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 cursor-pointer transition">
+              ☑️ Pilih Semua yang Tampil
+            </button>
+            <button type="button" id="btnAssignManualChecked" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm cursor-pointer transition">
+              ➕ Masukkan Peserta Terpilih ke Ruang
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100 flex justify-end">
+          <button id="btnCloseAssignRoomManualFooter" type="button" class="px-5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
             Tutup
           </button>
         </div>
@@ -3830,7 +3933,10 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnAddStudentFromRoomDocs" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+            <span>➕ Tambah Peserta</span>
+          </button>
           <button id="btnToggleRoomDocFormatEditor" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
             <span>✏️ Edit Format Sendiri</span>
           </button>
@@ -4055,11 +4161,11 @@
   <!-- ======================== SCRIPTS ======================== -->
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
-  <script src="js/default-students.js?v=3.82"></script>
+  <script src="js/default-students.js?v=3.84"></script>
   <script src="js/supabase-config.js?v=3.70"></script>
   <script src="js/exam-engine.js?v=3.80"></script>
-  <script src="js/admin.js?v=3.83"></script>
-  <script src="js/app.js?v=3.83"></script>
+  <script src="js/admin.js?v=3.84"></script>
+  <script src="js/app.js?v=3.84"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
