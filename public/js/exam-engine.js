@@ -5,6 +5,7 @@ const _CBT_KV_SESSION_KEY = 'cbt_exam_kv_seal';
 const _CBT_DEVICE_ID_KEY = 'cbt_device_tab_id';
 const _CBT_OFFLINE_VAULT_KEY = 'cbt_offline_vault_v1';
 const _CBT_OFFLINE_VAULT_HDR = 'CBT_VAULT_V1:';
+const _CBT_PENDING_SUBMISSIONS_KEY = 'cbt_pending_submissions_v1';
 
 const _questionKeyVault = new Map();
 let _fallbackDeviceId = null;
@@ -223,6 +224,8 @@ class ExamEngine {
     this.deadlineEpochMs = 0;
     this.lastTickEpochMs = 0;
     this.lastHeartbeatAt = 0;
+    this._heartbeatIntervalSec = 30;
+    this._heartbeatPhaseOffset = 0;
     this.wakeLock = null;
     this.currentQuestionIndex = 0;
     this.student = null;
@@ -235,6 +238,7 @@ class ExamEngine {
     this.lastViolationAt = null;
     this.isExamActive = false;
     this._isFinishing = false;
+    this._flushPendingPromise = null;
     this._cheatLimitReached = false;
     this._lastScreenshotKeyAt = 0;
     this._lastFocusViolationAt = 0;
@@ -274,9 +278,8 @@ class ExamEngine {
     }
     if (Array.isArray(this.questions)) {
       this.questions = this.questions.map(q => this.stripQuestionKeys(q));
-      try {
-        localStorage.setItem('cbt_questions', JSON.stringify(this.questions));
-      } catch (e) {}
+      const activeSub = (this.activeExamConfig && this.activeExamConfig.subject) || (this.config && this.config.subject) || '';
+      this._persistQuestionsSafe(this.questions, activeSub);
     }
     const isCloud = Boolean(typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.isCloudConfigured === 'function' && window.supabaseSync.isCloudConfigured());
     if (this.config && ('adminPin' in this.config || (isCloud && 'examToken' in this.config))) {
@@ -338,9 +341,7 @@ class ExamEngine {
 
     if (rehydrated.length > 0) {
       this.questions = this.normalizeQuestionsList(rehydrated);
-      try {
-        localStorage.setItem('cbt_questions', JSON.stringify(this.questions));
-      } catch (e) {}
+      this._persistQuestionsSafe(this.questions);
     }
   }
 
@@ -400,7 +401,8 @@ class ExamEngine {
       cloudResults = await window.supabaseSync.fetchStudentAttemptsFromCloud(targetNisn);
     }
 
-    const combined = [...cloudResults, ...localResults];
+    const pendingEntries = this.getPendingSubmissions().map(item => item && item.payload).filter(Boolean);
+    const combined = [...cloudResults, ...localResults, ...pendingEntries];
     const deduped = new Map();
     combined.forEach(r => {
       if (!r) return;
@@ -505,13 +507,47 @@ class ExamEngine {
     }
 
     if (isStaff) {
-      try { localStorage.setItem('cbt_questions', JSON.stringify(sourceList)); } catch (e) {}
+      this._persistQuestionsSafe(sourceList);
       return sourceList;
     }
 
     const stripped = sourceList.map(q => this.stripQuestionKeys(q));
-    try { localStorage.setItem('cbt_questions', JSON.stringify(stripped)); } catch (e) {}
+    this._persistQuestionsSafe(stripped);
     return stripped;
+  }
+
+  _persistQuestionsSafe(list, prioritySubject = '') {
+    const arr = Array.isArray(list) ? list : [];
+    try {
+      localStorage.setItem('cbt_questions', JSON.stringify(arr));
+      return true;
+    } catch (e) {
+      try {
+        const cleanPri = String(prioritySubject || '').trim();
+        if (cleanPri) {
+          const compactOthers = arr.map(q => {
+            if (!q || this.matchesSubject(q.subject, cleanPri)) return q;
+            const slim = { ...q };
+            delete slim.image;
+            delete slim.passageImage;
+            delete slim.chartData;
+            delete slim.tableData;
+            return slim;
+          });
+          try {
+            localStorage.setItem('cbt_questions', JSON.stringify(compactOthers));
+            return true;
+          } catch (e2) {
+            const priOnly = arr.filter(q => q && this.matchesSubject(q.subject, cleanPri));
+            if (priOnly.length > 0) {
+              localStorage.setItem('cbt_questions', JSON.stringify(priOnly));
+              return true;
+            }
+          }
+        }
+      } catch (e3) {}
+      return false;
+    }
   }
 
   generateUniqueQuestionId(existingList = null) {
@@ -536,13 +572,46 @@ class ExamEngine {
     return this.questions;
   }
 
+  mergeSubjectQuestions(subject, subjectRows = []) {
+    const cleanSub = String(subject || '').trim();
+    if (!cleanSub) {
+      return this.applyRemoteQuestions(subjectRows);
+    }
+    let nextSubjectRows = Array.isArray(subjectRows) ? subjectRows : [];
+    if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.applyPendingQuestionOverlay === 'function') {
+      const overlaid = window.supabaseSync.applyPendingQuestionOverlay(nextSubjectRows);
+      nextSubjectRows = overlaid.filter(q => q && this.matchesSubject(q.subject, cleanSub));
+    }
+
+    const existing = Array.isArray(this.questions) ? this.questions : [];
+    const subIdSet = new Set(nextSubjectRows.map(q => q && q.id !== undefined && q.id !== null ? String(q.id) : ''));
+    const preserved = existing.filter(q => {
+      if (!q) return false;
+      if (q.id !== undefined && q.id !== null && subIdSet.has(String(q.id))) return false;
+      return !this.matchesSubject(q.subject, cleanSub);
+    });
+
+    const combined = [...preserved, ...nextSubjectRows];
+    const normalized = this.normalizeQuestionsList(combined);
+    normalized.forEach(q => _stashQuestionKey(q));
+
+    if (this.isPrivilegedStaffMode()) {
+      this.questions = normalized;
+      this._persistQuestionsSafe(this.questions, cleanSub);
+    } else {
+      this.questions = normalized.map(q => this.stripQuestionKeys(q));
+      this._persistQuestionsSafe(this.questions, cleanSub);
+    }
+    return this.questions;
+  }
+
   saveQuestions(newQuestions, skipCloudPush = false) {
     const normalized = this.normalizeQuestionsList(newQuestions);
     normalized.forEach(q => _stashQuestionKey(q));
 
     if (this.isPrivilegedStaffMode()) {
       this.questions = normalized;
-      try { localStorage.setItem('cbt_questions', JSON.stringify(this.questions)); } catch (e) {}
+      this._persistQuestionsSafe(this.questions);
       if (!skipCloudPush && typeof window !== 'undefined' && window.supabaseSync) {
         if (typeof window.supabaseSync.upsertQuestionRows === 'function') {
           window.supabaseSync.upsertQuestionRows(this.questions, { skipMigrationCheck: true });
@@ -554,7 +623,7 @@ class ExamEngine {
     }
 
     this.questions = normalized.map(q => this.stripQuestionKeys(q));
-    try { localStorage.setItem('cbt_questions', JSON.stringify(this.questions)); } catch (e) {}
+    this._persistQuestionsSafe(this.questions);
   }
 
   matchesSubject(qSub, targetSub) {
@@ -845,6 +914,19 @@ class ExamEngine {
       return { questions: [], isFallback: true, emptyForCategory: true, category: effectiveCategory };
     }
 
+    const cleanTargetSub = String(targetSubject || '').trim().toLowerCase();
+    if (cleanTargetSub && cleanTargetSub !== 'umum') {
+      const umumOnly = this.questions.filter(q => String(q?.subject || '').trim().toLowerCase() === 'umum');
+      if (umumOnly.length > 0) {
+        return {
+          questions: this.resolvePassagesIntoQuestions(umumOnly, { keepUnattachedPassages: false }),
+          isFallback: true,
+          category: 'ALL'
+        };
+      }
+      return { questions: [], isFallback: true, category: 'ALL' };
+    }
+
     return {
       questions: this.resolvePassagesIntoQuestions([...this.questions], { keepUnattachedPassages: false }),
       isFallback: true,
@@ -933,8 +1015,9 @@ class ExamEngine {
 
   syncLiveStudentProgress(force = false) {
     if (!this.isExamActive || !this.student || typeof window === 'undefined' || !window.supabaseSync) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     const now = Date.now();
-    if (!force && now - this.lastHeartbeatAt < 15000) return;
+    if (!force && now - this.lastHeartbeatAt < 20000) return;
     this.lastHeartbeatAt = now;
 
     const activeCfg = this.getActiveExamConfig();
@@ -965,6 +1048,8 @@ class ExamEngine {
     this._cheatLimitReached = false;
     this._lastScreenshotKeyAt = 0;
     this._lastFocusViolationAt = 0;
+    this._heartbeatIntervalSec = 40 + Math.floor(Math.random() * 10);
+    this._heartbeatPhaseOffset = Math.floor(Math.random() * this._heartbeatIntervalSec);
     this.student = studentData;
     this.activeExamConfig = examOverride ? { ...examOverride } : (studentData && studentData.examConfig ? { ...studentData.examConfig } : null);
     this.attemptNumber = (studentData && parseInt(studentData.attemptNumber, 10)) || 1;
@@ -1022,6 +1107,8 @@ class ExamEngine {
     this._cheatLimitReached = false;
     this._lastScreenshotKeyAt = 0;
     this._lastFocusViolationAt = 0;
+    this._heartbeatIntervalSec = 40 + Math.floor(Math.random() * 10);
+    this._heartbeatPhaseOffset = Math.floor(Math.random() * this._heartbeatIntervalSec);
     _unsealKvFromSession();
     this.student = sessionData.student;
     this.activeExamConfig = sessionData.activeExamConfig || (sessionData.student && sessionData.student.examConfig) || null;
@@ -1104,7 +1191,16 @@ class ExamEngine {
       isExamActive: this.isExamActive
     };
     basePayload.sessionSig = _computeSessionSig(basePayload);
-    localStorage.setItem('cbt_active_session', JSON.stringify(basePayload));
+    const serialized = JSON.stringify(basePayload);
+    try {
+      localStorage.setItem('cbt_active_session', serialized);
+    } catch (e) {
+      const activeSub = (this.activeExamConfig && this.activeExamConfig.subject) || (this.config && this.config.subject) || '';
+      this._persistQuestionsSafe(this.questions, activeSub);
+      try {
+        localStorage.setItem('cbt_active_session', serialized);
+      } catch (e2) {}
+    }
   }
 
   clearSession() {
@@ -1140,8 +1236,12 @@ class ExamEngine {
       this.lastTickEpochMs = now;
 
       if (this.remainingSeconds > 0) {
-        this.saveSession();
-        if (this.remainingSeconds % 20 === 0) {
+        if (this.remainingSeconds % 5 === 0) {
+          this.saveSession();
+        }
+        const hbInterval = this._heartbeatIntervalSec || 30;
+        const hbOffset = this._heartbeatPhaseOffset || 0;
+        if ((this.remainingSeconds + hbOffset) % hbInterval === 0) {
           this.syncLiveStudentProgress(true);
         }
         window.dispatchEvent(new CustomEvent('cbt-timer-tick', {
@@ -1150,6 +1250,7 @@ class ExamEngine {
       } else {
         clearInterval(this.timerInterval);
         this.timerInterval = null;
+        this.saveSession();
         this.finishExam('Waktu Ujian Habis! Sistem otomatis mengumpulkan lembar jawaban.');
       }
     }, 1000);
@@ -1471,6 +1572,7 @@ class ExamEngine {
 
     window.addEventListener('pagehide', () => {
       if (this.isExamActive) {
+        this.saveSession();
         triggerScreenshotOrFocusViolation(
           'Layar soal dikunci karena halaman ujian ditinggalkan.',
           'Terdeteksi meninggalkan halaman ujian (pagehide)!',
@@ -1572,6 +1674,112 @@ class ExamEngine {
     return merged;
   }
 
+  _hasAnyKeyMaterialForQuestions(questionsList = []) {
+    if (!Array.isArray(questionsList) || questionsList.length === 0) return false;
+    return questionsList.some(q => {
+      if (!q) return false;
+      const resolved = this._resolveKeyForQuestion(q);
+      return _questionHasKeyMaterial(resolved);
+    });
+  }
+
+  getPendingSubmissions() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(_CBT_PENDING_SUBMISSIONS_KEY) || '[]');
+      return Array.isArray(raw) ? raw.filter(item => item && item.payload && item.payload.id) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  savePendingSubmissions(list) {
+    try {
+      const clean = Array.isArray(list) ? list : [];
+      if (clean.length === 0) {
+        localStorage.removeItem(_CBT_PENDING_SUBMISSIONS_KEY);
+      } else {
+        localStorage.setItem(_CBT_PENDING_SUBMISSIONS_KEY, JSON.stringify(clean));
+      }
+    } catch (e) {}
+  }
+
+  enqueuePendingSubmission(payload, receiptMeta = {}) {
+    if (!payload || !payload.id) return;
+    const list = this.getPendingSubmissions().filter(item => String(item.payload.id) !== String(payload.id));
+    list.push({
+      id: String(payload.id),
+      queuedAt: new Date().toISOString(),
+      receiptMeta,
+      payload
+    });
+    this.savePendingSubmissions(list);
+  }
+
+  async flushPendingSubmissions() {
+    if (this._flushPendingPromise) return this._flushPendingPromise;
+    if (typeof window === 'undefined' || !window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+      return { flushed: 0, remaining: this.getPendingSubmissions().length };
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { flushed: 0, remaining: this.getPendingSubmissions().length };
+    }
+
+    const queue = this.getPendingSubmissions();
+    if (queue.length === 0) return { flushed: 0, remaining: 0 };
+
+    this._flushPendingPromise = (async () => {
+      let flushed = 0;
+      const stillPending = [];
+      const syncedReceipts = [];
+      const isStaff = this.isPrivilegedStaffMode();
+
+      for (const entry of queue) {
+        if (!entry || !entry.payload) continue;
+        try {
+          const rpcRes = await window.supabaseSync.gradeAndSubmitExamRpc(entry.payload);
+          if (rpcRes && rpcRes.success && rpcRes.receipt) {
+            flushed++;
+            const isRem = typeof rpcRes.receipt.isRemedial === 'boolean' ? rpcRes.receipt.isRemedial : null;
+            const receipt = {
+              id: rpcRes.receipt.id || entry.payload.id,
+              student: rpcRes.receipt.student || entry.payload.student,
+              examTitle: rpcRes.receipt.examTitle || entry.payload.examTitle,
+              subject: rpcRes.receipt.subject || entry.payload.subject,
+              attemptNumber: rpcRes.receipt.attemptNumber || entry.payload.attemptNumber || 1,
+              completedAt: rpcRes.receipt.completedAt || entry.payload.completedAt,
+              totalQuestions: rpcRes.receipt.totalQuestions || (entry.receiptMeta?.totalQuestions || (entry.payload.questionIds || []).length),
+              cheatCount: rpcRes.receipt.cheatCount !== undefined ? rpcRes.receipt.cheatCount : (entry.payload.cheatCount || 0),
+              finishReason: rpcRes.receipt.finishReason || entry.payload.finishReason,
+              isRemedial: isRem,
+              remedialStatus: rpcRes.receipt.remedialStatus || (isRem === null ? null : (isRem ? 'Remedial' : 'Tidak Remedial')),
+              pendingUpload: false
+            };
+            this._saveStudentReceiptLocal(receipt, isStaff);
+            syncedReceipts.push(receipt);
+          } else {
+            stillPending.push(entry);
+          }
+        } catch (e) {
+          stillPending.push(entry);
+        }
+      }
+
+      this.savePendingSubmissions(stillPending);
+      if (flushed > 0 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('cbt-pending-submissions-synced', {
+          detail: { flushed, remaining: stillPending.length, receipts: syncedReceipts }
+        }));
+      }
+      return { flushed, remaining: stillPending.length, receipts: syncedReceipts };
+    })();
+
+    try {
+      return await this._flushPendingPromise;
+    } finally {
+      this._flushPendingPromise = null;
+    }
+  }
+
   async finishExam(reason = null) {
     if (!this.isExamActive || this._isFinishing) return null;
     this._isFinishing = true;
@@ -1594,11 +1802,14 @@ class ExamEngine {
       const startedAtIsoSnap = this.startedAtIso || new Date().toISOString();
       const isStaff = this.isPrivilegedStaffMode();
       const isCloud = Boolean(typeof window !== 'undefined' && window.supabaseSync && window.supabaseSync.isCloudConfigured());
+      const uniqueResultId = 'RES_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6).toUpperCase();
 
-      // Mode Server-Side Grading v3.38 (Supabase RPC SECURITY DEFINER)
-      if (isCloud && !window.supabaseSync.securityRpcMissing && typeof window.supabaseSync.gradeAndSubmitExamRpc === 'function') {
+      // Mode Server-Side Grading v3.38+ (Supabase RPC SECURITY DEFINER) dengan Retry & Antrean Aman
+      let lastRpcRes = null;
+      const canUseServerGradingRpc = isCloud && !window.supabaseSync.securityRpcMissing && typeof window.supabaseSync.gradeAndSubmitExamRpc === 'function';
+      if (canUseServerGradingRpc) {
         const rpcPayload = {
-          id: 'RES_' + Date.now(),
+          id: uniqueResultId,
           student: {
             nisn: studentSnap.nisn,
             name: studentSnap.name,
@@ -1620,34 +1831,92 @@ class ExamEngine {
           answers: answersSnap
         };
 
-        const rpcRes = await window.supabaseSync.gradeAndSubmitExamRpc(rpcPayload);
-        if (rpcRes && rpcRes.success && rpcRes.receipt) {
-          const isRem = typeof rpcRes.receipt.isRemedial === 'boolean' ? rpcRes.receipt.isRemedial : null;
-          const receipt = {
-            id: rpcRes.receipt.id || rpcPayload.id,
-            student: rpcRes.receipt.student || rpcPayload.student,
-            examTitle: rpcRes.receipt.examTitle || activeCfg.examTitle,
-            subject: rpcRes.receipt.subject || activeCfg.subject,
-            attemptNumber: rpcRes.receipt.attemptNumber || attemptSnap,
-            completedAt: rpcRes.receipt.completedAt || completedAtStr,
-            totalQuestions: rpcRes.receipt.totalQuestions || activeQs.length,
-            cheatCount: rpcRes.receipt.cheatCount !== undefined ? rpcRes.receipt.cheatCount : cheatCountSnap,
-            finishReason: rpcRes.receipt.finishReason || finishReasonText,
-            isRemedial: isRem,
-            remedialStatus: rpcRes.receipt.remedialStatus || (isRem === null ? null : (isRem ? 'Remedial' : 'Tidak Remedial'))
+        const retryDelays = [0, 600, 1400];
+        for (let attemptIdx = 0; attemptIdx < retryDelays.length; attemptIdx++) {
+          if (retryDelays[attemptIdx] > 0) {
+            await new Promise(resolve => setTimeout(resolve, retryDelays[attemptIdx]));
+          }
+          const rpcRes = await window.supabaseSync.gradeAndSubmitExamRpc(rpcPayload);
+          lastRpcRes = rpcRes;
+          if (rpcRes && rpcRes.success && rpcRes.receipt) {
+            const isRem = typeof rpcRes.receipt.isRemedial === 'boolean' ? rpcRes.receipt.isRemedial : null;
+            const receipt = {
+              id: rpcRes.receipt.id || rpcPayload.id,
+              student: rpcRes.receipt.student || rpcPayload.student,
+              examTitle: rpcRes.receipt.examTitle || activeCfg.examTitle,
+              subject: rpcRes.receipt.subject || activeCfg.subject,
+              attemptNumber: rpcRes.receipt.attemptNumber || attemptSnap,
+              completedAt: rpcRes.receipt.completedAt || completedAtStr,
+              totalQuestions: rpcRes.receipt.totalQuestions || activeQs.length,
+              cheatCount: rpcRes.receipt.cheatCount !== undefined ? rpcRes.receipt.cheatCount : cheatCountSnap,
+              finishReason: rpcRes.receipt.finishReason || finishReasonText,
+              isRemedial: isRem,
+              remedialStatus: rpcRes.receipt.remedialStatus || (isRem === null ? null : (isRem ? 'Remedial' : 'Tidak Remedial')),
+              pendingUpload: false
+            };
+
+            this._saveStudentReceiptLocal(receipt, isStaff);
+            this.clearSession();
+            if (!isStaff) this.enterStudentPrivacyMode();
+
+            window.dispatchEvent(new CustomEvent('cbt-exam-finished', {
+              detail: {
+                result: receipt,
+                showScore: false
+              }
+            }));
+            return receipt;
+          }
+
+          // Jangan retry ulang jika memang RPC belum ada / brankas kunci belum di-seed / ditolak aturan batas ujian
+          const msgLower = String(rpcRes?.message || '').toLowerCase();
+          if (rpcRes?.rpcUnavailable || rpcRes?.not_seeded || msgLower.includes('batas maksimal') || msgLower.includes('ditolak')) {
+            break;
+          }
+        }
+
+        const hasLocalKeys = this._hasAnyKeyMaterialForQuestions(activeQs);
+        const allowLegacyFallback = Boolean(
+          lastRpcRes && (lastRpcRes.rpcUnavailable || lastRpcRes.not_seeded) && (hasLocalKeys || isStaff)
+        );
+
+        // KRITIS: Jika siswa mode Cloud tanpa kunci lokal dan server sedang sibuk/terputus,
+        // JANGAN koreksi di browser (yang akan menghasilkan nilai 0!), simpan ke antrean pending lokal.
+        if (!allowLegacyFallback && !hasLocalKeys) {
+          this.enqueuePendingSubmission(rpcPayload, {
+            totalQuestions: activeQs.length,
+            examTitle: activeCfg.examTitle,
+            completedAt: completedAtStr
+          });
+
+          const pendingReceipt = {
+            id: rpcPayload.id,
+            student: rpcPayload.student,
+            examTitle: activeCfg.examTitle,
+            subject: activeCfg.subject,
+            attemptNumber: attemptSnap,
+            completedAt: completedAtStr,
+            totalQuestions: activeQs.length,
+            cheatCount: cheatCountSnap,
+            finishReason: finishReasonText,
+            isRemedial: null,
+            remedialStatus: 'Menunggu Sinkron Server',
+            pendingUpload: true
           };
 
-          this._saveStudentReceiptLocal(receipt, isStaff);
+          this._saveStudentReceiptLocal(pendingReceipt, isStaff);
           this.clearSession();
           if (!isStaff) this.enterStudentPrivacyMode();
 
           window.dispatchEvent(new CustomEvent('cbt-exam-finished', {
             detail: {
-              result: receipt,
-              showScore: false
+              result: pendingReceipt,
+              showScore: false,
+              pendingUpload: true,
+              pendingReason: (lastRpcRes && lastRpcRes.message) || 'Koneksi ke server sedang sibuk.'
             }
           }));
-          return receipt;
+          return pendingReceipt;
         }
       }
 
@@ -1771,7 +2040,7 @@ class ExamEngine {
         : 0;
 
       const resultRecord = {
-        id: 'RES_' + Date.now(),
+        id: uniqueResultId,
         student: studentSnap,
         examTitle: activeCfg.examTitle,
         subject: activeCfg.subject,

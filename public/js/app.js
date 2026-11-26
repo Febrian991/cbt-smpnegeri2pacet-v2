@@ -101,6 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
     showView('login');
     syncFromCloud(false, { publicOnly: true, includeQuestions: false });
 
+    if (window.examEngine && typeof window.examEngine.flushPendingSubmissions === 'function') {
+      setTimeout(() => { window.examEngine.flushPendingSubmissions(); }, 1200);
+    }
+
     // Shortcut URL ?admin / #admin / #guru untuk Proktor & Guru
     const hashLower = (window.location.hash || '').toLowerCase();
     const searchLower = (window.location.search || '').toLowerCase();
@@ -110,6 +114,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (inlineUserEl) inlineUserEl.focus();
     }
   }
+
+  window.addEventListener('online', () => {
+    if (window.examEngine && typeof window.examEngine.flushPendingSubmissions === 'function') {
+      window.examEngine.flushPendingSubmissions();
+    }
+  });
 
   function applyCloudState(stateMap) {
     if (!stateMap || typeof stateMap !== 'object') return false;
@@ -221,20 +231,33 @@ document.addEventListener('DOMContentLoaded', () => {
     ]));
   }
 
-  async function syncQuestionsFromCloud(reRenderIfOpen = true, forceRender = false) {
+  async function syncQuestionsFromCloud(reRenderIfOpen = true, forceRender = false, options = {}) {
     if (!window.supabaseSync || !window.supabaseSync.isCloudConfigured() || !window.examEngine) return false;
     if (window.cbtAdmin && typeof window.cbtAdmin.isPengawasUser === 'function' && window.cbtAdmin.isPengawasUser()) {
       return false;
     }
     if (questionsCloudSyncPromise) return questionsCloudSyncPromise;
 
+    const targetSubject = options && options.subject ? String(options.subject).trim() : '';
+
     questionsCloudSyncPromise = (async () => {
       try {
         await window.supabaseSync.flushPendingQuestionOps();
 
         const curStaff = (window.cbtAdmin && window.cbtAdmin.isAuthenticated) ? window.cbtAdmin.getCurrentTeacher() : null;
-        const scopeKey = curStaff && (curStaff.id || curStaff.nip) ? `staff:${curStaff.id || curStaff.nip}` : 'public';
-        const hasLocalQuestions = Array.isArray(window.examEngine.questions) && window.examEngine.questions.length > 0;
+        const useSubjectScoped = Boolean(
+          targetSubject &&
+          !curStaff &&
+          typeof window.supabaseSync.fetchQuestionRowsForSubject === 'function'
+        );
+        const scopeKey = curStaff && (curStaff.id || curStaff.nip)
+          ? `staff:${curStaff.id || curStaff.nip}`
+          : (useSubjectScoped ? `public:${targetSubject.toLowerCase()}` : 'public:all');
+
+        const localList = Array.isArray(window.examEngine.questions) ? window.examEngine.questions : [];
+        const hasLocalQuestions = useSubjectScoped
+          ? localList.some(q => q && window.examEngine.matchesSubject(q.subject, targetSubject))
+          : localList.length > 0;
         let latestStamp = null;
 
         if (!forceRender && hasLocalQuestions && typeof window.supabaseSync.getQuestionsRemoteStamp === 'function') {
@@ -244,7 +267,13 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        const qRes = await window.supabaseSync.fetchAllQuestionRows();
+        const qRes = useSubjectScoped
+          ? await window.supabaseSync.fetchQuestionRowsForSubject(targetSubject, {
+              subjectMatcher: (a, b) => window.examEngine.matchesSubject(a, b),
+              stripKeys: true
+            })
+          : await window.supabaseSync.fetchAllQuestionRows();
+
         if (qRes && qRes.success && Array.isArray(qRes.rows)) {
           const canApply = qRes.rows.length > 0 || (
             typeof window.supabaseSync.isQuestionsMigrationCompleted === 'function' &&
@@ -253,7 +282,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (canApply) {
             const prevSig = getQuestionsListSignature(window.examEngine.questions);
-            if (typeof window.examEngine.applyRemoteQuestions === 'function') {
+            if (qRes.partialSubject && typeof window.examEngine.mergeSubjectQuestions === 'function') {
+              window.examEngine.mergeSubjectQuestions(qRes.partialSubject, qRes.rows);
+            } else if (typeof window.examEngine.applyRemoteQuestions === 'function') {
               window.examEngine.applyRemoteQuestions(qRes.rows);
             } else {
               window.examEngine.saveQuestions(qRes.rows, true);
@@ -1068,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             applyHintResult(null);
           }
-        }, 250);
+        }, 450);
       });
     }
   }
@@ -1119,9 +1150,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===================== LOGIN SISWA =====================
   const studentLoginForm = document.getElementById('studentLoginForm');
+  let isStudentLoginSubmitting = false;
   if (studentLoginForm) {
+    const loginSubmitBtn = studentLoginForm.querySelector('button[type="submit"]');
+    const loginSubmitBtnDefaultHtml = loginSubmitBtn ? loginSubmitBtn.innerHTML : '';
+    const setLoginSubmittingUi = (busy, labelText = 'Memverifikasi...') => {
+      isStudentLoginSubmitting = busy;
+      if (!loginSubmitBtn) return;
+      loginSubmitBtn.disabled = busy;
+      loginSubmitBtn.classList.toggle('opacity-75', busy);
+      loginSubmitBtn.classList.toggle('cursor-not-allowed', busy);
+      if (busy) {
+        loginSubmitBtn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg><span>${labelText}</span>`;
+      } else {
+        loginSubmitBtn.innerHTML = loginSubmitBtnDefaultHtml;
+      }
+    };
+
     studentLoginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (isStudentLoginSubmitting) return;
       showLoginRejection('');
       const nisn = document.getElementById('studentNisn').value.trim();
       const password = document.getElementById('studentPassword').value.trim();
@@ -1132,324 +1180,345 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const isCloudOnline = Boolean(window.supabaseSync && window.supabaseSync.isCloudConfigured());
-      if (isCloudOnline) {
-        if (cloudSyncPromise) {
+      setLoginSubmittingUi(true, 'Memverifikasi...');
+      try {
+        const isCloudOnline = Boolean(window.supabaseSync && window.supabaseSync.isCloudConfigured());
+        if (isCloudOnline && cloudSyncPromise) {
           await cloudSyncPromise;
         }
-      }
 
-      if (nisn.toLowerCase() === 'admin' || nisn.toLowerCase().includes('proktor')) {
-        const adminRes = await window.cbtAdmin.loginWithCloud('admin', password);
-        if (adminRes && adminRes.success) {
-          showView('admin');
-          if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-            syncFromCloud(true, { publicOnly: false })
-              .then(() => typeof window.supabaseSync.fetchCloudResults === 'function' ? window.supabaseSync.fetchCloudResults() : null)
-              .then(() => {
-                if (viewAdmin && !viewAdmin.classList.contains('hidden')) renderAdminDashboard();
-              })
-              .catch(() => {});
+        if (nisn.toLowerCase() === 'admin' || nisn.toLowerCase().includes('proktor')) {
+          const adminRes = await window.cbtAdmin.loginWithCloud('admin', password);
+          if (adminRes && adminRes.success) {
+            showView('admin');
+            if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
+              syncFromCloud(true, { publicOnly: false })
+                .then(() => typeof window.supabaseSync.fetchCloudResults === 'function' ? window.supabaseSync.fetchCloudResults() : null)
+                .then(() => {
+                  if (viewAdmin && !viewAdmin.classList.contains('hidden')) renderAdminDashboard();
+                })
+                .catch(() => {});
+            }
+            return;
+          } else {
+            switchLoginPortalTab('admin');
+            const inlineUser = document.getElementById('inlineAdminUsernameInput');
+            const inlinePin = document.getElementById('inlineAdminPinInput');
+            if (inlineUser) inlineUser.value = 'admin';
+            if (inlinePin) {
+              inlinePin.value = password;
+              inlinePin.focus();
+            }
+            showInlineAdminBanner('Silakan login melalui tab Admin / Guru di atas dengan PIN Proktor Anda.', true);
+            return;
           }
+        }
+
+        if (!token) {
+          showLoginRejection("Harap masukkan Token Ujian!");
           return;
+        }
+
+        let authenticatedStudent = null;
+        if (window.studentManager) {
+          const auth = typeof window.studentManager.authenticateStudentWithCloud === 'function'
+            ? await window.studentManager.authenticateStudentWithCloud(nisn, password)
+            : window.studentManager.authenticateStudent(nisn, password);
+          if (!auth.success) {
+            showLoginRejection(auth.message);
+            return;
+          }
+          authenticatedStudent = auth.student;
         } else {
-          switchLoginPortalTab('admin');
-          const inlineUser = document.getElementById('inlineAdminUsernameInput');
-          const inlinePin = document.getElementById('inlineAdminPinInput');
-          if (inlineUser) inlineUser.value = 'admin';
-          if (inlinePin) {
-            inlinePin.value = password;
-            inlinePin.focus();
-          }
-          showInlineAdminBanner('Silakan login melalui tab Admin / Guru di atas dengan PIN Proktor Anda.', true);
-          return;
+          authenticatedStudent = { nisn, name: "Siswa Peserta", class: "Umum" };
         }
-      }
 
-      if (!token) {
-        showLoginRejection("Harap masukkan Token Ujian!");
-        return;
-      }
+        const activeSchedules = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
+        const selectEl = document.getElementById('studentScheduleSelect');
+        const selectedScheduleId = selectEl ? selectEl.value : '';
+        let matchedSchedule = null;
 
-      let authenticatedStudent = null;
-      if (window.studentManager) {
-        const auth = typeof window.studentManager.authenticateStudentWithCloud === 'function'
-          ? await window.studentManager.authenticateStudentWithCloud(nisn, password)
-          : window.studentManager.authenticateStudent(nisn, password);
-        if (!auth.success) {
-          showLoginRejection(auth.message);
-          return;
-        }
-        authenticatedStudent = auth.student;
-      } else {
-        authenticatedStudent = { nisn, name: "Siswa Peserta", class: "Umum" };
-      }
-
-      const activeSchedules = window.cbtAdmin ? window.cbtAdmin.getActiveSchedules() : [];
-      const selectEl = document.getElementById('studentScheduleSelect');
-      const selectedScheduleId = selectEl ? selectEl.value : '';
-      let matchedSchedule = null;
-
-      let serverPublicConfigOverride = null;
-      if (isCloudOnline && typeof window.supabaseSync.verifyExamTokenRpc === 'function') {
-        let tokRes = await window.supabaseSync.verifyExamTokenRpc(
-          token,
-          selectedScheduleId || null,
-          authenticatedStudent.class || null
-        );
-        if (tokRes && !tokRes.rpcUnavailable && !tokRes.valid) {
-          const errMsg = String(tokRes.message || '');
-          // Guard jika RPC Postgres masih versi lama (\bKELAS\b) padahal token SUDAH VALID & kelas siswa sebenarnya cocok
-          if (errMsg.includes('⛔ Ujian Ditolak:')) {
-            const manualMatch = errMsg.match(/saat ini dikhususkan untuk\s+(.+?)\.$/i);
-            const schedMatch = errMsg.match(/Jadwal\s+"([^"]+)"\s+\(([^)]+)\)\s+bukan untuk Kelas/i);
-            const rejectedTargetClass = (manualMatch ? manualMatch[1] : (schedMatch ? schedMatch[2] : '')).trim();
-            const stuCls = String(authenticatedStudent.class || '').trim();
-            if (stuCls && rejectedTargetClass && window.examEngine.matchesClassLevel(rejectedTargetClass, stuCls)) {
-              const tokenOnlyCheck = await window.supabaseSync.verifyExamTokenRpc(
-                token,
-                selectedScheduleId || null,
-                null
-              );
-              if (tokenOnlyCheck && tokenOnlyCheck.valid) {
-                if (tokenOnlyCheck.mode === 'schedule' && tokenOnlyCheck.schedule) {
-                  const sCls = tokenOnlyCheck.schedule.classLevel || tokenOnlyCheck.schedule.targetClass || 'Semua Kelas';
-                  if (window.examEngine.matchesClassLevel(sCls, stuCls)) {
-                    tokRes = tokenOnlyCheck;
-                  }
-                } else if (tokenOnlyCheck.mode === 'manual') {
-                  let serverTargetCls = rejectedTargetClass;
-                  if (typeof window.supabaseSync.getPublicExamConfigRpc === 'function') {
-                    try {
-                      const pubCfg = await window.supabaseSync.getPublicExamConfigRpc();
-                      if (pubCfg && pubCfg.success && pubCfg.config) {
-                        serverPublicConfigOverride = pubCfg.config;
-                        if (pubCfg.config.targetClass) serverTargetCls = pubCfg.config.targetClass;
-                      }
-                    } catch (e) {}
-                  }
-                  if (window.examEngine.matchesClassLevel(serverTargetCls, stuCls)) {
-                    tokRes = tokenOnlyCheck;
+        let serverPublicConfigOverride = null;
+        if (isCloudOnline && typeof window.supabaseSync.verifyExamTokenRpc === 'function') {
+          let tokRes = await window.supabaseSync.verifyExamTokenRpc(
+            token,
+            selectedScheduleId || null,
+            authenticatedStudent.class || null
+          );
+          if (tokRes && !tokRes.rpcUnavailable && !tokRes.valid) {
+            const errMsg = String(tokRes.message || '');
+            // Guard jika RPC Postgres masih versi lama (\bKELAS\b) padahal token SUDAH VALID & kelas siswa sebenarnya cocok
+            if (errMsg.includes('⛔ Ujian Ditolak:')) {
+              const manualMatch = errMsg.match(/saat ini dikhususkan untuk\s+(.+?)\.$/i);
+              const schedMatch = errMsg.match(/Jadwal\s+"([^"]+)"\s+\(([^)]+)\)\s+bukan untuk Kelas/i);
+              const rejectedTargetClass = (manualMatch ? manualMatch[1] : (schedMatch ? schedMatch[2] : '')).trim();
+              const stuCls = String(authenticatedStudent.class || '').trim();
+              if (stuCls && rejectedTargetClass && window.examEngine.matchesClassLevel(rejectedTargetClass, stuCls)) {
+                const tokenOnlyCheck = await window.supabaseSync.verifyExamTokenRpc(
+                  token,
+                  selectedScheduleId || null,
+                  null
+                );
+                if (tokenOnlyCheck && tokenOnlyCheck.valid) {
+                  if (tokenOnlyCheck.mode === 'schedule' && tokenOnlyCheck.schedule) {
+                    const sCls = tokenOnlyCheck.schedule.classLevel || tokenOnlyCheck.schedule.targetClass || 'Semua Kelas';
+                    if (window.examEngine.matchesClassLevel(sCls, stuCls)) {
+                      tokRes = tokenOnlyCheck;
+                    }
+                  } else if (tokenOnlyCheck.mode === 'manual') {
+                    let serverTargetCls = rejectedTargetClass;
+                    if (typeof window.supabaseSync.getPublicExamConfigRpc === 'function') {
+                      try {
+                        const pubCfg = await window.supabaseSync.getPublicExamConfigRpc();
+                        if (pubCfg && pubCfg.success && pubCfg.config) {
+                          serverPublicConfigOverride = pubCfg.config;
+                          if (pubCfg.config.targetClass) serverTargetCls = pubCfg.config.targetClass;
+                        }
+                      } catch (e) {}
+                    }
+                    if (window.examEngine.matchesClassLevel(serverTargetCls, stuCls)) {
+                      tokRes = tokenOnlyCheck;
+                    }
                   }
                 }
               }
             }
           }
-        }
-        if (!tokRes || !tokRes.rpcUnavailable) {
-          if (!tokRes || !tokRes.valid) {
-            showLoginRejection((tokRes && tokRes.message) || 'Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang!');
-            return;
-          }
-          if (tokRes.mode === 'schedule' && tokRes.schedule) {
-            matchedSchedule = tokRes.schedule;
-          }
-        } else {
-          // Fallback sementara di memori jika RPC server v3.57 belum dijalankan di Supabase (tanpa menyimpan token ke localStorage siswa)
-          let cloudCfg = null;
-          let cloudScheds = null;
-          try {
-            const client = window.supabaseSync.client;
-            if (client && !window.supabaseSync.stateTableMissing) {
-              const { data } = await client
-                .from('cbt_school_state')
-                .select('key, value')
-                .in('key', ['cbt_config', 'cbt_exam_schedules']);
-              if (Array.isArray(data)) {
-                data.forEach(r => {
-                  if (r.key === 'cbt_config') cloudCfg = r.value;
-                  if (r.key === 'cbt_exam_schedules') cloudScheds = r.value;
-                });
+          if (!tokRes || !tokRes.rpcUnavailable) {
+            if (!tokRes || !tokRes.valid) {
+              showLoginRejection((tokRes && tokRes.message) || 'Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang!');
+              return;
+            }
+            if (tokRes.mode === 'schedule' && tokRes.schedule) {
+              matchedSchedule = tokRes.schedule;
+            }
+          } else {
+            // Fallback sementara di memori jika RPC server v3.57 belum dijalankan di Supabase (tanpa menyimpan token ke localStorage siswa)
+            let cloudCfg = null;
+            let cloudScheds = null;
+            try {
+              const client = window.supabaseSync.client;
+              if (client && !window.supabaseSync.stateTableMissing) {
+                const { data } = await client
+                  .from('cbt_school_state')
+                  .select('key, value')
+                  .in('key', ['cbt_config', 'cbt_exam_schedules']);
+                if (Array.isArray(data)) {
+                  data.forEach(r => {
+                    if (r.key === 'cbt_config') cloudCfg = r.value;
+                    if (r.key === 'cbt_exam_schedules') cloudScheds = r.value;
+                  });
+                }
+              }
+            } catch (e) {}
+
+            const serverActiveScheds = Array.isArray(cloudScheds)
+              ? cloudScheds.filter(s => s && (s.isActive || s.active))
+              : activeSchedules;
+            const serverCfg = cloudCfg || window.examEngine.config;
+
+            if (serverActiveScheds.length > 0) {
+              const selectedSchObj = serverActiveScheds.find(s => s.id === selectedScheduleId) || serverActiveScheds[0];
+              if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
+                matchedSchedule = selectedSchObj;
+              } else {
+                const tokenMatches = serverActiveScheds.filter(s => String(s.token || '').trim().toUpperCase() === token);
+                if (tokenMatches.length === 1) {
+                  matchedSchedule = tokenMatches[0];
+                } else if (tokenMatches.length > 1) {
+                  matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
+                }
+              }
+              if (!matchedSchedule) {
+                showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
+                return;
+              }
+              if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
+                showLoginRejection(`⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`);
+                return;
+              }
+              const { token: _strippedTok, ...cleanMatched } = matchedSchedule;
+              matchedSchedule = cleanMatched;
+            } else {
+              const validToken = String(serverCfg?.examToken || 'CBT80M').trim().toUpperCase();
+              if (token !== validToken) {
+                showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
+                return;
+              }
+              if (serverCfg?.targetClass && !window.examEngine.matchesClassLevel(serverCfg.targetClass, authenticatedStudent.class)) {
+                showLoginRejection(`⛔ Ujian Ditolak: Ujian "${serverCfg.subject}" saat ini dikhususkan untuk ${serverCfg.targetClass}.`);
+                return;
               }
             }
-          } catch (e) {}
-
-          const serverActiveScheds = Array.isArray(cloudScheds)
-            ? cloudScheds.filter(s => s && (s.isActive || s.active))
-            : activeSchedules;
-          const serverCfg = cloudCfg || window.examEngine.config;
-
-          if (serverActiveScheds.length > 0) {
-            const selectedSchObj = serverActiveScheds.find(s => s.id === selectedScheduleId) || serverActiveScheds[0];
+          }
+        } else {
+          // Mode Offline Lokal (tanpa Supabase Cloud)
+          if (activeSchedules.length > 0) {
+            const selectedSchObj = activeSchedules.find(s => s.id === selectedScheduleId) || activeSchedules[0];
             if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
               matchedSchedule = selectedSchObj;
             } else {
-              const tokenMatches = serverActiveScheds.filter(s => String(s.token || '').trim().toUpperCase() === token);
+              const tokenMatches = activeSchedules.filter(s => String(s.token || '').trim().toUpperCase() === token);
               if (tokenMatches.length === 1) {
                 matchedSchedule = tokenMatches[0];
               } else if (tokenMatches.length > 1) {
                 matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
               }
             }
+
             if (!matchedSchedule) {
               showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
               return;
             }
+
             if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
-              showLoginRejection(`⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`);
+              const msg = `⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`;
+              showLoginRejection(msg);
               return;
             }
-            const { token: _strippedTok, ...cleanMatched } = matchedSchedule;
-            matchedSchedule = cleanMatched;
           } else {
-            const validToken = String(serverCfg?.examToken || 'CBT80M').trim().toUpperCase();
+            const validToken = String(window.examEngine.config.examToken || 'CBT80M').toUpperCase();
             if (token !== validToken) {
               showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
               return;
             }
-            if (serverCfg?.targetClass && !window.examEngine.matchesClassLevel(serverCfg.targetClass, authenticatedStudent.class)) {
-              showLoginRejection(`⛔ Ujian Ditolak: Ujian "${serverCfg.subject}" saat ini dikhususkan untuk ${serverCfg.targetClass}.`);
+            if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
+              const msg = `⛔ Ujian Ditolak: Ujian "${window.examEngine.config.subject}" saat ini dikhususkan untuk ${window.examEngine.config.targetClass}.`;
+              showLoginRejection(msg);
               return;
             }
           }
         }
-      } else {
-        // Mode Offline Lokal (tanpa Supabase Cloud)
-        if (activeSchedules.length > 0) {
-          const selectedSchObj = activeSchedules.find(s => s.id === selectedScheduleId) || activeSchedules[0];
-          if (selectedSchObj && String(selectedSchObj.token || '').trim().toUpperCase() === token) {
-            matchedSchedule = selectedSchObj;
-          } else {
-            const tokenMatches = activeSchedules.filter(s => String(s.token || '').trim().toUpperCase() === token);
-            if (tokenMatches.length === 1) {
-              matchedSchedule = tokenMatches[0];
-            } else if (tokenMatches.length > 1) {
-              matchedSchedule = tokenMatches.find(s => window.examEngine.matchesClassLevel(s.classLevel || 'Semua Kelas', authenticatedStudent.class)) || tokenMatches[0];
-            }
-          }
 
-          if (!matchedSchedule) {
-            showLoginRejection(`Token ujian "${token}" tidak cocok dengan jadwal ujian (${selectedSchObj?.subject || '-'}). Periksa kembali atau tanyakan kepada Pengawas Ruang!`);
-            return;
-          }
+        const targetExamConfig = matchedSchedule ? {
+          examTitle: window.examEngine.config.examTitle,
+          subject: matchedSchedule.subject,
+          targetClass: matchedSchedule.classLevel || 'Semua Kelas',
+          scheduleDay: matchedSchedule.day,
+          scheduleDate: matchedSchedule.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(matchedSchedule.dateIso) : ''),
+          scheduleTime: matchedSchedule.timeRange || '',
+          durationMinutes: matchedSchedule.durationMinutes || 80,
+          examToken: '',
+          activeScheduleId: matchedSchedule.id,
+          maxAttempts: matchedSchedule.maxAttempts || 1,
+          questionCategory: matchedSchedule.questionCategory || 'ALL'
+        } : {
+          ...window.examEngine.config,
+          ...(serverPublicConfigOverride && typeof serverPublicConfigOverride === 'object' ? serverPublicConfigOverride : {}),
+          examToken: ''
+        };
 
-          if (matchedSchedule.classLevel && !window.examEngine.matchesClassLevel(matchedSchedule.classLevel, authenticatedStudent.class)) {
-            const msg = `⛔ Ujian Ditolak: Jadwal "${matchedSchedule.subject}" (${matchedSchedule.classLevel}) bukan untuk Kelas ${authenticatedStudent.class}. Pilih mata pelajaran lain yang sesuai kelas Anda.`;
-            showLoginRejection(msg);
-            return;
-          }
-        } else {
-          const validToken = String(window.examEngine.config.examToken || 'CBT80M').toUpperCase();
-          if (token !== validToken) {
-            showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
-            return;
-          }
-          if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
-            const msg = `⛔ Ujian Ditolak: Ujian "${window.examEngine.config.subject}" saat ini dikhususkan untuk ${window.examEngine.config.targetClass}.`;
-            showLoginRejection(msg);
-            return;
-          }
-        }
-      }
+        const canCheckConflict = Boolean(isCloudOnline && typeof window.supabaseSync.checkActiveDeviceSessionConflict === 'function');
+        const [devConflict, attemptStats] = await Promise.all([
+          canCheckConflict
+            ? window.supabaseSync.checkActiveDeviceSessionConflict(
+                authenticatedStudent.nisn,
+                targetExamConfig.subject,
+                window.examEngine.getDeviceId()
+              )
+            : Promise.resolve({ conflict: false }),
+          window.examEngine.getStudentAttemptStats(authenticatedStudent.nisn, targetExamConfig.subject)
+        ]);
 
-      const targetExamConfig = matchedSchedule ? {
-        examTitle: window.examEngine.config.examTitle,
-        subject: matchedSchedule.subject,
-        targetClass: matchedSchedule.classLevel || 'Semua Kelas',
-        scheduleDay: matchedSchedule.day,
-        scheduleDate: matchedSchedule.dateFormatted || (window.cbtAdmin ? window.cbtAdmin.formatIndonesianDate(matchedSchedule.dateIso) : ''),
-        scheduleTime: matchedSchedule.timeRange || '',
-        durationMinutes: matchedSchedule.durationMinutes || 80,
-        examToken: '',
-        activeScheduleId: matchedSchedule.id,
-        maxAttempts: matchedSchedule.maxAttempts || 1,
-        questionCategory: matchedSchedule.questionCategory || 'ALL'
-      } : {
-        ...window.examEngine.config,
-        ...(serverPublicConfigOverride && typeof serverPublicConfigOverride === 'object' ? serverPublicConfigOverride : {}),
-        examToken: ''
-      };
-
-      if (window.supabaseSync && window.supabaseSync.isCloudConfigured() && typeof window.supabaseSync.checkActiveDeviceSessionConflict === 'function') {
-        const devConflict = await window.supabaseSync.checkActiveDeviceSessionConflict(
-          authenticatedStudent.nisn,
-          targetExamConfig.subject,
-          window.examEngine.getDeviceId()
-        );
         if (devConflict && devConflict.conflict) {
           showLoginRejection(`⛔ Login Ditolak: Akun NISN ${authenticatedStudent.nisn} (${authenticatedStudent.name}) sedang aktif mengerjakan ujian "${targetExamConfig.subject}" di perangkat lain. Hubungi Proktor untuk reset sesi jika perangkat sebelumnya bermasalah.`);
           return;
         }
-      }
 
-      const maxAttempts = window.examEngine.getMaxAttemptsForSubject(targetExamConfig.subject, matchedSchedule);
-      const attemptStats = await window.examEngine.getStudentAttemptStats(authenticatedStudent.nisn, targetExamConfig.subject);
-
-      if (attemptStats.count >= maxAttempts) {
-        const rejectMsg = `⛔ Ujian Ditolak: Anda (${authenticatedStudent.name}) sudah menyelesaikan ujian mata pelajaran "${targetExamConfig.subject}" sebanyak ${attemptStats.count} kali (batas maksimal: ${maxAttempts} kali). Hubungi Proktor atau Guru Mapel jika memerlukan izin mengulang.`;
-        showLoginRejection(rejectMsg);
-        return;
-      }
-
-      tempStudent = {
-        name: authenticatedStudent.name,
-        nisn: authenticatedStudent.nisn,
-        class: authenticatedStudent.class,
-        examRoom: authenticatedStudent.examRoom || '',
-        token: token,
-        attemptNumber: attemptStats.count + 1,
-        maxAttempts: maxAttempts,
-        examConfig: targetExamConfig
-      };
-
-      if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
-        window.studentManager.scrubSensitiveDataForStudentMode();
-      }
-
-      try {
-        localStorage.setItem('cbt_confirm_student', JSON.stringify(tempStudent));
-        const chkRememberStudent = document.getElementById('chkRememberStudent');
-        if (chkRememberStudent && chkRememberStudent.checked) {
-          localStorage.setItem('cbt_remember_student_nisn', nisn);
-        } else {
-          localStorage.removeItem('cbt_remember_student_nisn');
+        const maxAttempts = window.examEngine.getMaxAttemptsForSubject(targetExamConfig.subject, matchedSchedule);
+        if (attemptStats.count >= maxAttempts) {
+          const rejectMsg = `⛔ Ujian Ditolak: Anda (${authenticatedStudent.name}) sudah menyelesaikan ujian mata pelajaran "${targetExamConfig.subject}" sebanyak ${attemptStats.count} kali (batas maksimal: ${maxAttempts} kali). Hubungi Proktor atau Guru Mapel jika memerlukan izin mengulang.`;
+          showLoginRejection(rejectMsg);
+          return;
         }
-      } catch (err) {}
 
-      if (window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
-        // Pastikan bank soal terbaru ditarik dari Cloud sebelum siswa masuk ruang ujian (batas tunggu aman 3,5 detik)
-        await Promise.race([
-          syncQuestionsFromCloud(false),
-          new Promise(resolve => setTimeout(resolve, 3500))
-        ]);
-      }
-
-      const targetCat = targetExamConfig.questionCategory || 'ALL';
-      const examQsCheck = window.examEngine.getQuestionsForExam(
-        targetExamConfig.subject,
-        authenticatedStudent.class || targetExamConfig.targetClass,
-        targetCat
-      );
-      if (!examQsCheck.questions || examQsCheck.questions.length === 0) {
-        const catLabel = targetCat === 'trial' ? 'Soal Simulasi' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
-        showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Proktor / Guru Mapel.`);
-        tempStudent = null;
-        try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
-        return;
-      }
-
-      if (window.supabaseSync) {
-        const qCount = examQsCheck.questions.length;
-        window.supabaseSync.upsertStudentSession({
-          nisn: authenticatedStudent.nisn,
+        tempStudent = {
           name: authenticatedStudent.name,
+          nisn: authenticatedStudent.nisn,
           class: authenticatedStudent.class,
           examRoom: authenticatedStudent.examRoom || '',
-          subject: targetExamConfig.subject,
-          status: 'logged_in',
-          attemptNumber: tempStudent.attemptNumber,
-          answeredCount: 0,
-          totalQuestions: qCount,
-          remainingSeconds: (targetExamConfig.durationMinutes || 80) * 60,
-          cheatCount: 0,
-          deviceId: window.examEngine.getDeviceId(),
-          loginAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-      }
+          token: token,
+          attemptNumber: attemptStats.count + 1,
+          maxAttempts: maxAttempts,
+          examConfig: targetExamConfig
+        };
 
-      populateConfirmView(tempStudent);
-      showView('confirm');
+        if (window.studentManager && typeof window.studentManager.scrubSensitiveDataForStudentMode === 'function') {
+          window.studentManager.scrubSensitiveDataForStudentMode();
+        }
+
+        try {
+          localStorage.setItem('cbt_confirm_student', JSON.stringify(tempStudent));
+          const chkRememberStudent = document.getElementById('chkRememberStudent');
+          if (chkRememberStudent && chkRememberStudent.checked) {
+            localStorage.setItem('cbt_remember_student_nisn', nisn);
+          } else {
+            localStorage.removeItem('cbt_remember_student_nisn');
+          }
+        } catch (err) {}
+
+        if (isCloudOnline) {
+          setLoginSubmittingUi(true, 'Menyiapkan Soal...');
+          // Tarik khusus mapel ujian aktif saja agar hemat bandwidth 253 siswa (batas tunggu aman 12 detik)
+          await Promise.race([
+            syncQuestionsFromCloud(false, false, { subject: targetExamConfig.subject }),
+            new Promise(resolve => setTimeout(resolve, 12000))
+          ]);
+        }
+
+        const targetCat = targetExamConfig.questionCategory || 'ALL';
+        let examQsCheck = window.examEngine.getQuestionsForExam(
+          targetExamConfig.subject,
+          authenticatedStudent.class || targetExamConfig.targetClass,
+          targetCat
+        );
+
+        if ((!examQsCheck.questions || examQsCheck.questions.length === 0) && isCloudOnline) {
+          // Retry paksa sekali jika jaringan lambat atau stamp lokal sempat tertinggal
+          await Promise.race([
+            syncQuestionsFromCloud(false, true, { subject: targetExamConfig.subject }),
+            new Promise(resolve => setTimeout(resolve, 10000))
+          ]);
+          examQsCheck = window.examEngine.getQuestionsForExam(
+            targetExamConfig.subject,
+            authenticatedStudent.class || targetExamConfig.targetClass,
+            targetCat
+          );
+        }
+
+        if (!examQsCheck.questions || examQsCheck.questions.length === 0) {
+          const catLabel = targetCat === 'trial' ? 'Soal Simulasi' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
+          showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Proktor / Guru Mapel.`);
+          tempStudent = null;
+          try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
+          return;
+        }
+
+        if (window.supabaseSync) {
+          const qCount = examQsCheck.questions.length;
+          window.supabaseSync.upsertStudentSession({
+            nisn: authenticatedStudent.nisn,
+            name: authenticatedStudent.name,
+            class: authenticatedStudent.class,
+            examRoom: authenticatedStudent.examRoom || '',
+            subject: targetExamConfig.subject,
+            status: 'logged_in',
+            attemptNumber: tempStudent.attemptNumber,
+            answeredCount: 0,
+            totalQuestions: qCount,
+            remainingSeconds: (targetExamConfig.durationMinutes || 80) * 60,
+            cheatCount: 0,
+            deviceId: window.examEngine.getDeviceId(),
+            loginAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        populateConfirmView(tempStudent);
+        showView('confirm');
+      } finally {
+        setLoginSubmittingUi(false);
+      }
     });
   }
 
@@ -1471,6 +1540,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStartExam = document.getElementById('btnStartExam');
   if (btnStartExam) {
     btnStartExam.addEventListener('click', () => {
+      if (btnStartExam.disabled || (window.examEngine && window.examEngine.isExamActive)) return;
+      btnStartExam.disabled = true;
+      setTimeout(() => { btnStartExam.disabled = false; }, 1500);
+
+      let studentToStart = tempStudent;
+      if (!studentToStart) {
+        try {
+          const saved = localStorage.getItem('cbt_confirm_student');
+          if (saved) studentToStart = JSON.parse(saved);
+        } catch (e) {}
+      }
+      if (!studentToStart) {
+        showView('login');
+        return;
+      }
+
       try {
         if (document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
@@ -1479,7 +1564,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (err) {}
 
-      const studentToStart = tempStudent;
       const overrideCfg = studentToStart && studentToStart.examConfig ? studentToStart.examConfig : null;
       try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
       window.examEngine.startExam(studentToStart, overrideCfg);
@@ -1518,7 +1602,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render Wacana / Stimulus Berkelompok (jika soal bagian dari kelompok 3-5 soal)
     const qStimulusContainer = document.getElementById('questionStimulusContainer');
     if (qStimulusContainer) {
-      if (q.passageText || q.passageTitle || q.passageTable || q.passageChart) {
+      if (q.passageText || q.passageTitle || q.passageTable || q.passageChart || q.passageImage) {
         let rangeLabel = '';
         if (q.passageGroupId) {
           const indices = [];
@@ -1841,9 +1925,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnConfirmFinishFinal = document.getElementById('btnConfirmFinishFinal');
   if (btnConfirmFinishFinal) {
-    btnConfirmFinishFinal.addEventListener('click', () => {
-      modalFinishConfirm.classList.add('hidden');
-      window.examEngine.finishExam('Selesai mandiri oleh peserta');
+    btnConfirmFinishFinal.addEventListener('click', async () => {
+      if (btnConfirmFinishFinal.disabled) return;
+      const origHtml = btnConfirmFinishFinal.innerHTML;
+      btnConfirmFinishFinal.disabled = true;
+      btnConfirmFinishFinal.innerText = 'Mengumpulkan Jawaban...';
+      try {
+        modalFinishConfirm.classList.add('hidden');
+        await window.examEngine.finishExam('Selesai mandiri oleh peserta');
+      } finally {
+        btnConfirmFinishFinal.disabled = false;
+        btnConfirmFinishFinal.innerHTML = origHtml;
+      }
     });
   }
 
@@ -1900,30 +1993,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnAcknowledgeCheat = document.getElementById('btnAcknowledgeCheat');
   if (btnAcknowledgeCheat) btnAcknowledgeCheat.addEventListener('click', () => modalCheatWarning.classList.add('hidden'));
 
-  window.addEventListener('cbt-exam-finished', (e) => {
-    const { result } = e.detail;
-    if (examPrivacyShield) examPrivacyShield.classList.add('hidden');
-    if (modalCheatWarning) modalCheatWarning.classList.add('hidden');
-    showView('result');
-    document.getElementById('resStudentName').innerText = result.student?.name || '-';
-    document.getElementById('resStudentNisn').innerText = result.student?.nisn || '-';
-    document.getElementById('resStudentClass').innerText = result.student?.class ? `Kelas ${result.student.class}` : '-';
-    document.getElementById('resSubject').innerText = result.subject;
-    document.getElementById('resCompletedAt').innerText = result.completedAt;
-    document.getElementById('resTotalQuestions').innerText = `${result.totalQuestions} Butir Soal`;
-    document.getElementById('resCheatCount').innerText = `${result.cheatCount || 0} Kali Pelanggaran`;
+  function applyVerificationAndRemedialResultUi(result, isPendingUpload = false, pendingReason = '') {
     const resRemEl = document.getElementById('resRemedialStatus');
     if (resRemEl) {
       let isRem = null;
-      if (typeof result.isRemedial === 'boolean') {
+      if (typeof result?.isRemedial === 'boolean') {
         isRem = result.isRemedial;
-      } else if (typeof result.remedialStatus === 'string' && result.remedialStatus.trim()) {
-        isRem = result.remedialStatus.trim().toLowerCase() === 'remedial';
-      } else if (result.finalScore !== undefined && result.finalScore !== null && !Number.isNaN(Number(result.finalScore))) {
+      } else if (typeof result?.remedialStatus === 'string' && result.remedialStatus.trim()) {
+        const low = result.remedialStatus.trim().toLowerCase();
+        if (low === 'remedial' || low === 'tidak remedial') {
+          isRem = low === 'remedial';
+        }
+      } else if (result?.finalScore !== undefined && result?.finalScore !== null && !Number.isNaN(Number(result.finalScore))) {
         isRem = Number(result.finalScore) < 75;
       }
 
-      if (isRem === null) {
+      if (isPendingUpload) {
+        resRemEl.innerText = '⏳ Menunggu Kirim ke Server';
+        resRemEl.className = 'font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-0.5 rounded-full text-[11px]';
+      } else if (isRem === null) {
         resRemEl.innerText = '⏳ Cek di Rekap Guru';
         resRemEl.className = 'font-bold bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full text-[11px]';
       } else if (isRem) {
@@ -1934,11 +2022,82 @@ document.addEventListener('DOMContentLoaded', () => {
         resRemEl.className = 'font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px]';
       }
     }
+
+    const verBadge = document.getElementById('resVerificationBadge');
+    const pendingBanner = document.getElementById('resPendingSyncBanner');
+    const pendingDesc = document.getElementById('resPendingSyncDesc');
+    if (verBadge) {
+      if (isPendingUpload) {
+        verBadge.innerText = 'Menunggu Sinkron Server';
+        verBadge.className = 'text-amber-800 font-bold bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full text-[11px]';
+      } else {
+        verBadge.innerText = 'Terverifikasi Masuk Server';
+        verBadge.className = 'text-emerald-700 font-bold bg-emerald-100 px-2.5 py-0.5 rounded-full text-[11px]';
+      }
+    }
+    if (pendingBanner) {
+      pendingBanner.classList.toggle('hidden', !isPendingUpload);
+    }
+    if (pendingDesc && isPendingUpload && pendingReason) {
+      pendingDesc.innerText = `${pendingReason} Jawaban Anda tersimpan aman di perangkat ini — klik tombol di bawah atau tunggu sinyal kembali normal untuk mengirim ulang otomatis.`;
+    }
+  }
+
+  let activeDisplayedResultId = null;
+  window.addEventListener('cbt-exam-finished', (e) => {
+    const { result, pendingUpload, pendingReason } = e.detail;
+    const isPending = Boolean(pendingUpload || result?.pendingUpload);
+    activeDisplayedResultId = result?.id ? String(result.id) : null;
+    if (examPrivacyShield) examPrivacyShield.classList.add('hidden');
+    if (modalCheatWarning) modalCheatWarning.classList.add('hidden');
+    showView('result');
+    document.getElementById('resStudentName').innerText = result.student?.name || '-';
+    document.getElementById('resStudentNisn').innerText = result.student?.nisn || '-';
+    document.getElementById('resStudentClass').innerText = result.student?.class ? `Kelas ${result.student.class}` : '-';
+    document.getElementById('resSubject').innerText = result.subject;
+    document.getElementById('resCompletedAt').innerText = result.completedAt;
+    document.getElementById('resTotalQuestions').innerText = `${result.totalQuestions} Butir Soal`;
+    document.getElementById('resCheatCount').innerText = `${result.cheatCount || 0} Kali Pelanggaran`;
+    applyVerificationAndRemedialResultUi(result, isPending, pendingReason || '');
     const resAutoNoteEl = document.getElementById('resAutoPrintNote');
     if (resAutoNoteEl && window.cbtAdmin && typeof window.cbtAdmin.getPrintStampText === 'function') {
       resAutoNoteEl.innerText = window.cbtAdmin.getPrintStampText();
     }
   });
+
+  window.addEventListener('cbt-pending-submissions-synced', (e) => {
+    const receipts = Array.isArray(e.detail?.receipts) ? e.detail.receipts : [];
+    const matched = receipts.find(r => r && activeDisplayedResultId && String(r.id) === activeDisplayedResultId) || receipts[0];
+    if (matched) {
+      applyVerificationAndRemedialResultUi(matched, false, '');
+    }
+  });
+
+  const btnRetryPendingSync = document.getElementById('btnRetryPendingSync');
+  if (btnRetryPendingSync) {
+    btnRetryPendingSync.addEventListener('click', async () => {
+      if (btnRetryPendingSync.disabled || !window.examEngine) return;
+      const origTxt = btnRetryPendingSync.innerText;
+      let keepFeedbackUntilReset = false;
+      btnRetryPendingSync.disabled = true;
+      btnRetryPendingSync.innerText = 'Mengirim Ulang ke Server...';
+      try {
+        const res = await window.examEngine.flushPendingSubmissions();
+        if (res && res.remaining > 0) {
+          keepFeedbackUntilReset = true;
+          btnRetryPendingSync.innerText = `Masih Belum Terhubung — Coba Lagi (${res.remaining})`;
+          setTimeout(() => {
+            btnRetryPendingSync.innerText = origTxt;
+          }, 2200);
+        }
+      } finally {
+        btnRetryPendingSync.disabled = false;
+        if (!keepFeedbackUntilReset) {
+          btnRetryPendingSync.innerText = origTxt;
+        }
+      }
+    });
+  }
 
   const btnPrintResult = document.getElementById('btnPrintResult');
   if (btnPrintResult) btnPrintResult.addEventListener('click', () => {
@@ -2599,6 +2758,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
         const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
         switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
+        if (typeof refreshWorkerEgressMonitorUI === 'function') {
+          setTimeout(() => { refreshWorkerEgressMonitorUI(); }, 350);
+        }
+      }
+      if (!isAdmin) {
+        const warnBanner = document.getElementById('adminEgressEarlyWarningBanner');
+        if (warnBanner) warnBanner.classList.add('hidden');
       }
     }
     const btnOpenAttMon = document.getElementById('btnOpenAttendanceFromMonitoring');
@@ -4270,15 +4436,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (pullCloud && window.supabaseSync && window.supabaseSync.isCloudConfigured()) {
       const now = Date.now();
-      const cloudTasks = [
-        window.supabaseSync.fetchStudentSessions({ force: forcePull }),
-        window.supabaseSync.fetchCloudResults({ skipIfUnchanged: !forcePull })
-      ];
-      if (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function' && (forcePull || now - lastPengawasStatePullAt >= 60000)) {
-        lastPengawasStatePullAt = now;
-        cloudTasks.push(window.supabaseSync.pullAllSchoolState({ publicOnly: false, includeQuestions: false }));
-      }
-      const [sessRes, , stateRes] = await Promise.all(cloudTasks);
+      const sessTask = window.supabaseSync.fetchStudentSessions({ force: forcePull });
+      const resTask = isPengawas
+        ? Promise.resolve(null)
+        : window.supabaseSync.fetchCloudResults({ skipIfUnchanged: !forcePull });
+      const stateTask = (isPengawas && typeof window.supabaseSync.pullAllSchoolState === 'function' && (forcePull || now - lastPengawasStatePullAt >= 300000))
+        ? (() => {
+            lastPengawasStatePullAt = now;
+            return window.supabaseSync.pullAllSchoolState({ publicOnly: false, includeQuestions: false });
+          })()
+        : Promise.resolve(null);
+      const [sessRes, , stateRes] = await Promise.all([sessTask, resTask, stateTask]);
       if (sessRes && Array.isArray(sessRes.data)) {
         cachedMonitoringSessions = sessRes.data;
       }
@@ -12947,7 +13115,186 @@ document.addEventListener('DOMContentLoaded', () => {
     `);
 
     grid.innerHTML = cards.join('');
+    refreshWorkerEgressMonitorUI(targetUrl);
     return health;
+  }
+
+  function renderWorkerEgressStatsUI(stats) {
+    const warnBanner = document.getElementById('adminEgressEarlyWarningBanner');
+    const warnTitle = document.getElementById('adminEgressWarningTitle');
+    const warnText = document.getElementById('adminEgressWarningText');
+    const warnIcon = document.getElementById('adminEgressWarningIcon');
+    const badge = document.getElementById('workerEgressStatusBadge');
+    const body = document.getElementById('workerEgressMonitorBody');
+
+    const isAdmin = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isSuperAdminUser === 'function' && window.cbtAdmin.isSuperAdminUser());
+
+    if (!stats || !stats.supported) {
+      if (warnBanner) warnBanner.classList.add('hidden');
+      if (badge) {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold';
+        badge.innerText = stats && stats.reason === 'not_proxy' ? 'Non-Worker' : 'Pelacak Belum Aktif';
+      }
+      if (body) {
+        body.innerHTML = stats && stats.reason === 'not_proxy'
+          ? '<p class="text-slate-500">URL Cloud saat ini mengarah langsung ke Supabase (belum lewat Cloudflare Worker).</p>'
+          : '<p class="text-slate-500">Endpoint <code>/__cbt-egress-stats</code> belum tersedia di Worker. Pasang script pelacak egress di Cloudflare Worker Anda lalu klik <strong>🔄 Cek Kuota Egress</strong>.</p>';
+      }
+      return;
+    }
+
+    const pct = Math.max(0, Number(stats.percentUsed || 0));
+    const barPct = Math.min(100, pct);
+    const status = String(stats.status || 'OK').toUpperCase();
+
+    if (warnBanner && isAdmin) {
+      if (status === 'EXCEEDED' || status === 'CRITICAL') {
+        warnBanner.className = 'rounded-2xl border p-3.5 sm:p-4 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-3 bg-rose-50 border-rose-300 text-rose-900';
+        if (warnIcon) warnIcon.innerText = '🚨';
+        if (warnTitle) warnTitle.innerText = status === 'EXCEEDED' ? 'Kuota Egress Supabase Terlampaui!' : 'Peringatan Kritis Kuota Egress Supabase';
+        if (warnText) warnText.innerText = stats.warningMessage || `Pemakaian mencapai ${pct}% (${stats.egressMB} MB dari ${stats.quotaGB || 5} GB).`;
+      } else if (status === 'WARNING') {
+        warnBanner.className = 'rounded-2xl border p-3.5 sm:p-4 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-3 bg-amber-50 border-amber-300 text-amber-900';
+        if (warnIcon) warnIcon.innerText = '⚠️';
+        if (warnTitle) warnTitle.innerText = 'Peringatan Dini Kuota Egress Supabase';
+        if (warnText) warnText.innerText = stats.warningMessage || `Pemakaian mencapai ${pct}% (${stats.egressMB} MB dari ${stats.quotaGB || 5} GB).`;
+      } else {
+        warnBanner.classList.add('hidden');
+      }
+    } else if (warnBanner) {
+      warnBanner.classList.add('hidden');
+    }
+
+    if (badge) {
+      if (status === 'EXCEEDED' || status === 'CRITICAL') {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-bold';
+        badge.innerText = `${status === 'EXCEEDED' ? '🚨 Penuh' : '🚨 Kritis'} (${pct}%)`;
+      } else if (status === 'WARNING') {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold';
+        badge.innerText = `⚠️ Peringatan (${pct}%)`;
+      } else {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold';
+        badge.innerText = `✅ Aman (${pct}%)`;
+      }
+    }
+
+    if (body) {
+      const barColor = (status === 'EXCEEDED' || status === 'CRITICAL')
+        ? 'bg-rose-600'
+        : (status === 'WARNING' ? 'bg-amber-500' : 'bg-emerald-600');
+      const warnBox = stats.warningMessage
+        ? `<div class="p-2.5 rounded-xl border ${status === 'WARNING' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-rose-50 border-rose-200 text-rose-900'} font-semibold">${escapeHtmlSafe(stats.warningMessage)}</div>`
+        : '';
+      const epRows = Array.isArray(stats.topEndpoints) && stats.topEndpoints.length > 0
+        ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">${stats.topEndpoints.map(ep => `
+            <div class="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 text-[11px]">
+              <span class="font-mono text-slate-700 truncate">${escapeHtmlSafe(ep.name)}</span>
+              <span class="font-bold text-slate-900 shrink-0">${ep.egressMB} MB <span class="text-emerald-700 font-semibold">(hemat ${ep.savedMB} MB)</span></span>
+            </div>
+          `).join('')}</div>`
+        : '';
+
+      body.innerHTML = `
+        ${warnBox}
+        <div class="space-y-1.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span class="font-bold text-slate-800">Terpakai: ${stats.egressMB} MB / ${stats.quotaMB} MB (${pct}%)</span>
+            <span class="text-[11px] text-slate-500">Periode: ${escapeHtmlSafe(String(stats.billingWindow || '-').replace('_to_', ' s/d '))}</span>
+          </div>
+          <div class="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+            <div class="h-full ${barColor} transition-all" style="width:${barPct}%"></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+            <p class="text-slate-500">Egress ke Supabase</p>
+            <p class="font-extrabold text-slate-900 text-xs mt-0.5">${stats.egressMB} MB</p>
+          </div>
+          <div class="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
+            <p class="text-emerald-700">Dihemat Cache CF</p>
+            <p class="font-extrabold text-emerald-900 text-xs mt-0.5">${stats.savedMB} MB</p>
+          </div>
+          <div class="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200">
+            <p class="text-indigo-700">Rasio Cache Hit</p>
+            <p class="font-extrabold text-indigo-900 text-xs mt-0.5">${stats.cacheHitRatePct || 0}% (${stats.cacheHits || 0} hit)</p>
+          </div>
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+            <p class="text-slate-500">Penyimpanan Counter</p>
+            <p class="font-extrabold text-slate-800 text-xs mt-0.5">${escapeHtmlSafe(stats.persistentBackend || 'worker-memory')}</p>
+          </div>
+        </div>
+        ${epRows}
+      `;
+    }
+  }
+
+  async function refreshWorkerEgressMonitorUI(urlOverride = null) {
+    if (!window.supabaseSync || typeof window.supabaseSync.fetchWorkerEgressStats !== 'function') {
+      return null;
+    }
+    const inputUrl = document.getElementById('cfgSupabaseUrl')?.value?.trim() || '';
+    const targetUrl = String(urlOverride || inputUrl || window.supabaseSync.config?.supabaseUrl || '').trim();
+    const stats = await window.supabaseSync.fetchWorkerEgressStats(targetUrl);
+    renderWorkerEgressStatsUI(stats);
+    return stats;
+  }
+
+  const btnRefreshWorkerEgress = document.getElementById('btnRefreshWorkerEgress');
+  if (btnRefreshWorkerEgress) {
+    btnRefreshWorkerEgress.addEventListener('click', async () => {
+      btnRefreshWorkerEgress.disabled = true;
+      btnRefreshWorkerEgress.innerText = '⏳ Mengecek...';
+      await refreshWorkerEgressMonitorUI();
+      btnRefreshWorkerEgress.disabled = false;
+      btnRefreshWorkerEgress.innerText = '🔄 Cek Kuota Egress';
+    });
+  }
+
+  const btnCalibrateWorkerEgress = document.getElementById('btnCalibrateWorkerEgress');
+  const workerEgressCalibrateBox = document.getElementById('workerEgressCalibrateBox');
+  const inputWorkerEgressInitialMb = document.getElementById('inputWorkerEgressInitialMb');
+  const btnSaveWorkerEgressInitialMb = document.getElementById('btnSaveWorkerEgressInitialMb');
+  const btnCancelWorkerEgressInitialMb = document.getElementById('btnCancelWorkerEgressInitialMb');
+  const workerEgressActionMsg = document.getElementById('workerEgressActionMsg');
+
+  if (btnCalibrateWorkerEgress && workerEgressCalibrateBox) {
+    btnCalibrateWorkerEgress.addEventListener('click', () => {
+      workerEgressCalibrateBox.classList.toggle('hidden');
+      if (!workerEgressCalibrateBox.classList.contains('hidden') && inputWorkerEgressInitialMb) {
+        inputWorkerEgressInitialMb.focus();
+      }
+    });
+  }
+  if (btnCancelWorkerEgressInitialMb && workerEgressCalibrateBox) {
+    btnCancelWorkerEgressInitialMb.addEventListener('click', () => {
+      workerEgressCalibrateBox.classList.add('hidden');
+    });
+  }
+  if (btnSaveWorkerEgressInitialMb) {
+    btnSaveWorkerEgressInitialMb.addEventListener('click', async () => {
+      const mbVal = Math.max(0, Number(inputWorkerEgressInitialMb?.value || 0));
+      const res = await window.supabaseSync.calibrateWorkerEgress('set_initial_mb', mbVal);
+      if (workerEgressCalibrateBox) workerEgressCalibrateBox.classList.add('hidden');
+      if (res && res.supported) {
+        renderWorkerEgressStatsUI(res);
+        if (workerEgressActionMsg) workerEgressActionMsg.innerText = `Kalibrasi tersimpan (${mbVal} MB).`;
+      } else if (workerEgressActionMsg) {
+        workerEgressActionMsg.innerText = 'Pelacak egress belum aktif di Worker.';
+      }
+    });
+  }
+
+  const btnResetWorkerEgress = document.getElementById('btnResetWorkerEgress');
+  if (btnResetWorkerEgress) {
+    btnResetWorkerEgress.addEventListener('click', async () => {
+      const res = await window.supabaseSync.calibrateWorkerEgress('reset', 0);
+      if (res && res.supported) {
+        renderWorkerEgressStatsUI(res);
+        if (workerEgressActionMsg) workerEgressActionMsg.innerText = 'Counter periode ini direset ke 0 MB.';
+      } else if (workerEgressActionMsg) {
+        workerEgressActionMsg.innerText = 'Pelacak egress belum aktif di Worker.';
+      }
+    });
   }
 
   async function loadSupabaseSchemaSqlText() {

@@ -2904,14 +2904,19 @@ class CBTAdmin {
   saveSchoolConfig(cfg, skipCloudPush = false) {
     try {
       const existing = this.getSchoolConfig();
+      const incoming = (cfg && typeof cfg === 'object') ? cfg : {};
       const normalizedCfg = {
-        ...(cfg && typeof cfg === 'object' ? cfg : {}),
-        buttonPermissions: this.normalizeButtonPermissions(cfg?.buttonPermissions || existing.buttonPermissions),
-        attendanceIdentity: (cfg?.attendanceIdentity && typeof cfg.attendanceIdentity === 'object')
-          ? { ...this.getDefaultAttendanceIdentity(cfg), ...cfg.attendanceIdentity }
+        ...incoming,
+        logoLeft: incoming.logoLeft !== undefined ? incoming.logoLeft : existing.logoLeft,
+        logoRight: incoming.logoRight !== undefined ? incoming.logoRight : existing.logoRight,
+        logoCbt: incoming.logoCbt !== undefined ? incoming.logoCbt : existing.logoCbt,
+        kopSuratImage: incoming.kopSuratImage !== undefined ? incoming.kopSuratImage : existing.kopSuratImage,
+        buttonPermissions: this.normalizeButtonPermissions(incoming.buttonPermissions || existing.buttonPermissions),
+        attendanceIdentity: (incoming.attendanceIdentity && typeof incoming.attendanceIdentity === 'object')
+          ? { ...this.getDefaultAttendanceIdentity(incoming), ...incoming.attendanceIdentity }
           : existing.attendanceIdentity,
-        roomDocsFormat: (cfg?.roomDocsFormat && typeof cfg.roomDocsFormat === 'object')
-          ? { ...this.getDefaultRoomDocsFormat(cfg), ...cfg.roomDocsFormat }
+        roomDocsFormat: (incoming.roomDocsFormat && typeof incoming.roomDocsFormat === 'object')
+          ? { ...this.getDefaultRoomDocsFormat(incoming), ...incoming.roomDocsFormat }
           : existing.roomDocsFormat
       };
       localStorage.setItem('cbt_school_config', JSON.stringify(normalizedCfg));

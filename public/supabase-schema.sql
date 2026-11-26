@@ -40,6 +40,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_cbt_exam_results_nisn_subject ON cbt_exam_results(student_nisn, subject);
 CREATE INDEX IF NOT EXISTS idx_cbt_exam_results_exam_title ON cbt_exam_results(exam_title);
+CREATE INDEX IF NOT EXISTS idx_cbt_exam_results_raw_id ON cbt_exam_results((raw_data->>'id')) WHERE raw_data ? 'id';
 
 -- Tabel sinkronisasi pengaturan ujian, jadwal, bank soal, data siswa & guru lintas perangkat
 CREATE TABLE IF NOT EXISTS cbt_school_state (
@@ -750,13 +751,45 @@ DECLARE
   v_matched_cnt INTEGER := 0;
   v_final_score INTEGER := 0;
   v_details JSONB := '[]'::jsonb;
-  v_res_id TEXT := 'RES_' || (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint::text;
+  v_res_id TEXT := COALESCE(
+    NULLIF(BTRIM(p_payload->>'id'), ''),
+    'RES_' || (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint::text || '_' || SUBSTR(MD5(RANDOM()::text), 1, 4)
+  );
+  v_existing_rec RECORD;
   v_full_record JSONB;
   v_sess_key TEXT;
   v_nisn TEXT := BTRIM(COALESCE(v_student->>'nisn', ''));
 BEGIN
   IF v_nisn = '' THEN
     RETURN jsonb_build_object('success', false, 'message', 'Identitas NISN peserta tidak valid.');
+  END IF;
+
+  -- Idempotensi: jika submit ulang akibat gangguan jaringan mengirim ID yang sama, kembalikan bukti yang sudah tersimpan tanpa duplikasi
+  SELECT final_score, total_questions, cheat_count, completed_at, finish_reason
+  INTO v_existing_rec
+  FROM cbt_exam_results
+  WHERE student_nisn = v_nisn
+    AND raw_data->>'id' = v_res_id
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'duplicate', true,
+      'receipt', jsonb_build_object(
+        'id', v_res_id,
+        'student', v_student,
+        'examTitle', v_exam_title,
+        'subject', v_subject,
+        'attemptNumber', v_attempt,
+        'completedAt', COALESCE(v_existing_rec.completed_at, v_completed_at),
+        'totalQuestions', COALESCE(v_existing_rec.total_questions, jsonb_array_length(v_q_ids)),
+        'cheatCount', COALESCE(v_existing_rec.cheat_count, v_cheat_count),
+        'finishReason', COALESCE(v_existing_rec.finish_reason, v_finish_reason),
+        'isRemedial', (COALESCE(v_existing_rec.final_score, 0) < 75),
+        'remedialStatus', CASE WHEN COALESCE(v_existing_rec.final_score, 0) < 75 THEN 'Remedial' ELSE 'Tidak Remedial' END
+      )
+    );
   END IF;
 
   FOR v_qid_elem IN SELECT * FROM jsonb_array_elements(v_q_ids) LOOP
@@ -1081,8 +1114,8 @@ BEGIN
 
   SELECT value INTO v_migrated FROM cbt_school_state WHERE key = 'cbt_questions_migrated_v1' LIMIT 1;
 
-  IF v_school_cfg IS NOT NULL THEN
-    v_state := jsonb_set(v_state, '{cbt_school_config}', v_school_cfg, true);
+  IF v_school_cfg IS NOT NULL AND jsonb_typeof(v_school_cfg) = 'object' THEN
+    v_state := jsonb_set(v_state, '{cbt_school_config}', (v_school_cfg - 'kopSuratImage' - 'logoLeft' - 'logoRight'), true);
   END IF;
   IF v_cfg IS NOT NULL AND jsonb_typeof(v_cfg) = 'object' THEN
     v_state := jsonb_set(v_state, '{cbt_config}', (v_cfg - 'examToken' - 'adminPin'), true);

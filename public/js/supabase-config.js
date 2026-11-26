@@ -28,6 +28,7 @@ class SupabaseSyncManager {
     this._lastQuestionsRemoteStamp = '';
     this._lastCloudResultsStamp = '';
     this._lastSessionsCache = { at: 0, res: null };
+    this._inflightSessionHeartbeats = new Set();
     this.initClient();
   }
 
@@ -136,6 +137,30 @@ class SupabaseSyncManager {
     return clone;
   }
 
+  isNetworkLikeError(errorOrMsg) {
+    if (!errorOrMsg) return false;
+    const status = Number(errorOrMsg.status || errorOrMsg.statusCode || 0);
+    if (status >= 500 || status === 429 || status === 408 || status === 0 && errorOrMsg.name === 'TypeError') {
+      return true;
+    }
+    const msg = String(errorOrMsg.message || errorOrMsg || '').toLowerCase();
+    return (
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network error') ||
+      msg.includes('load failed') ||
+      msg.includes('timeout') ||
+      msg.includes('timed out') ||
+      msg.includes('abort') ||
+      msg.includes('unexpected token <') ||
+      msg.includes('502') ||
+      msg.includes('503') ||
+      msg.includes('504') ||
+      msg.includes('too many requests') ||
+      msg.includes('connection')
+    );
+  }
+
   async callSecurityRpc(fnName, params = {}) {
     if (!this.client || !this.isConnected || this.securityRpcMissing || typeof this.client.rpc !== 'function') {
       return { rpcUnavailable: true };
@@ -147,14 +172,24 @@ class SupabaseSyncManager {
           this.securityRpcMissing = true;
           return { rpcUnavailable: true };
         }
-        return { rpcUnavailable: false, success: false, message: error.message };
+        return {
+          rpcUnavailable: false,
+          networkError: this.isNetworkLikeError(error),
+          success: false,
+          message: error.message
+        };
       }
       if (data && typeof data === 'object') {
         return data;
       }
-      return { success: false, message: 'Respons server tidak valid.' };
+      return { rpcUnavailable: false, networkError: true, success: false, message: 'Respons server tidak valid.' };
     } catch (err) {
-      return { rpcUnavailable: true, message: err.message };
+      return {
+        rpcUnavailable: false,
+        networkError: true,
+        success: false,
+        message: err && err.message ? err.message : 'Gangguan koneksi ke server.'
+      };
     }
   }
 
@@ -225,18 +260,34 @@ class SupabaseSyncManager {
           this.tokenRpcMissing = true;
           return { rpcUnavailable: true };
         }
-        return { rpcUnavailable: false, success: false, valid: false, message: error.message };
+        return {
+          rpcUnavailable: false,
+          networkError: this.isNetworkLikeError(error),
+          success: false,
+          valid: false,
+          message: error.message
+        };
       }
       if (data && typeof data === 'object') {
         return data;
       }
-      return { success: false, valid: false, message: 'Respons server tidak valid.' };
+      return { rpcUnavailable: false, networkError: true, success: false, valid: false, message: 'Respons server tidak valid.' };
     } catch (err) {
-      return { rpcUnavailable: true, message: err.message };
+      return {
+        rpcUnavailable: false,
+        networkError: true,
+        success: false,
+        valid: false,
+        message: err && err.message ? err.message : 'Gangguan koneksi ke server.'
+      };
     }
   }
 
   stripSensitiveStateFields(key, val) {
+    if (key === 'cbt_school_config' && val && typeof val === 'object') {
+      const { kopSuratImage, logoLeft, logoRight, ...restSchoolCfg } = val;
+      return restSchoolCfg;
+    }
     if (key === 'cbt_config' && val && typeof val === 'object') {
       const { adminPin, examToken, ...restCfg } = val;
       return restCfg;
@@ -1236,6 +1287,109 @@ class SupabaseSyncManager {
     return this._flushPromise;
   }
 
+  _defaultMatchesSubject(qSub, targetSub) {
+    const a = String(qSub || '').trim().toLowerCase();
+    const b = String(targetSub || '').trim().toLowerCase();
+    if (!a || !b || a === '-' || b === '-') return false;
+    if (a === b) return true;
+    const acA = (a.match(/\(([^)]+)\)/) || [])[1] || '';
+    const acB = (b.match(/\(([^)]+)\)/) || [])[1] || '';
+    if (acA && acA.trim() === b) return true;
+    if (acB && acB.trim() === a) return true;
+    const baseA = a.replace(/\s*\([^)]*\)/g, '').trim();
+    const baseB = b.replace(/\s*\([^)]*\)/g, '').trim();
+    return Boolean(baseA && baseB && baseA === baseB);
+  }
+
+  async fetchQuestionRowsForSubject(subject, options = {}) {
+    const cleanSub = String(subject || '').trim();
+    if (!cleanSub) return this.fetchAllQuestionRows(options);
+    if (!this.client || !this.isConnected) {
+      return { success: false, rows: [] };
+    }
+    if (this.questionTableMissing || this.getPrivilegedCredentials()) {
+      return this.fetchAllQuestionRows(options);
+    }
+
+    const matchFn = typeof options.subjectMatcher === 'function'
+      ? options.subjectMatcher
+      : ((qSub, tSub) => this._defaultMatchesSubject(qSub, tSub));
+
+    try {
+      const metaRows = [];
+      let from = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await this.client
+          .from('cbt_questions')
+          .select('question_key, subject, updated_at')
+          .range(from, from + PAGE - 1);
+
+        if (error) {
+          if (this.isMissingQuestionsTableError(error)) {
+            this.questionTableMissing = true;
+          }
+          return this.fetchAllQuestionRows(options);
+        }
+        if (Array.isArray(data)) metaRows.push(...data);
+        if (!Array.isArray(data) || data.length < PAGE) break;
+        from += PAGE;
+      }
+
+      if (metaRows.length === 0) {
+        return this.fetchAllQuestionRows(options);
+      }
+
+      const targetKeys = metaRows
+        .filter(r => r && r.question_key && matchFn(r.subject, cleanSub))
+        .map(r => String(r.question_key));
+
+      if (targetKeys.length === 0) {
+        this.markQuestionsMigrationDoneLocal();
+        return {
+          success: true,
+          rows: [],
+          partialSubject: cleanSub,
+          source: 'cbt_questions_subject'
+        };
+      }
+
+      const rowMap = new Map();
+      const CHUNK = 100;
+      for (let i = 0; i < targetKeys.length; i += CHUNK) {
+        const keySlice = targetKeys.slice(i, i + CHUNK);
+        const { data, error } = await this.client
+          .from('cbt_questions')
+          .select('question_key, updated_at, raw_data')
+          .in('question_key', keySlice);
+        if (error) {
+          return this.fetchAllQuestionRows(options);
+        }
+        if (Array.isArray(data)) {
+          data.forEach(r => {
+            if (r && r.raw_data && typeof r.raw_data === 'object' && r.raw_data.id !== undefined) {
+              const obj = (!r.raw_data.updatedAt && r.updated_at)
+                ? { ...r.raw_data, updatedAt: r.updated_at }
+                : r.raw_data;
+              rowMap.set(String(obj.id), options.stripKeys ? this.stripQuestionKeys(obj) : obj);
+            }
+          });
+        }
+      }
+
+      this.markQuestionsMigrationDoneLocal();
+      return {
+        success: true,
+        rows: this.sortQuestionsList(Array.from(rowMap.values())),
+        partialSubject: cleanSub,
+        source: 'cbt_questions_subject'
+      };
+    } catch (err) {
+      console.warn('Gagal fetchQuestionRowsForSubject:', err);
+      return this.fetchAllQuestionRows(options);
+    }
+  }
+
   async fetchAllQuestionRows(options = {}) {
     if (!this.client || !this.isConnected) {
       return { success: false, rows: [] };
@@ -1304,33 +1458,47 @@ class SupabaseSyncManager {
         }
       }
 
-      // Selalu cek baris cadangan __CBT_QUESTION_ROW__ agar tidak ada soal guru lain yang tertinggal saat masa transisi tabel
-      const fallbackToPromote = [];
-      let fbFrom = 0;
-      const FB_PAGE = 1000;
-      let fbOk = true;
-      while (true) {
-        const { data: fbData, error: fbErr } = await this.client
-          .from('cbt_exam_results')
-          .select('exam_title, completed_at, raw_data, id')
-          .eq('student_nisn', '__CBT_QUESTION_ROW__')
-          .order('id', { ascending: false })
-          .range(fbFrom, fbFrom + FB_PAGE - 1);
+      let migrationDoneLocal = false;
+      try {
+        migrationDoneLocal = localStorage.getItem(this.questionsMigrationStorageKey) === '1';
+      } catch (e) {}
 
-        if (fbErr || !Array.isArray(fbData)) {
-          if (fbErr) fbOk = false;
-          break;
-        }
-        fbData.forEach(r => {
-          if (r && r.raw_data && typeof r.raw_data === 'object') {
-            const updated = putRow(r.raw_data, r.completed_at || '');
-            if (primaryOk && updated) {
-              fallbackToPromote.push(rowMap.get(String(r.raw_data.id)));
-            }
+      const skipFallbackScan = Boolean(
+        primaryOk &&
+        !this.questionTableMissing &&
+        rowMap.size > 0 &&
+        migrationDoneLocal &&
+        !options.includeFallbackRows
+      );
+
+      const fallbackToPromote = [];
+      let fbOk = true;
+      if (!skipFallbackScan) {
+        let fbFrom = 0;
+        const FB_PAGE = 1000;
+        while (true) {
+          const { data: fbData, error: fbErr } = await this.client
+            .from('cbt_exam_results')
+            .select('exam_title, completed_at, raw_data, id')
+            .eq('student_nisn', '__CBT_QUESTION_ROW__')
+            .order('id', { ascending: false })
+            .range(fbFrom, fbFrom + FB_PAGE - 1);
+
+          if (fbErr || !Array.isArray(fbData)) {
+            if (fbErr) fbOk = false;
+            break;
           }
-        });
-        if (fbData.length < FB_PAGE) break;
-        fbFrom += FB_PAGE;
+          fbData.forEach(r => {
+            if (r && r.raw_data && typeof r.raw_data === 'object') {
+              const updated = putRow(r.raw_data, r.completed_at || '');
+              if (primaryOk && updated) {
+                fallbackToPromote.push(rowMap.get(String(r.raw_data.id)));
+              }
+            }
+          });
+          if (fbData.length < FB_PAGE) break;
+          fbFrom += FB_PAGE;
+        }
       }
 
       if (!primaryOk && !fbOk) {
@@ -1503,24 +1671,31 @@ class SupabaseSyncManager {
       window.cbtAdmin.isSuperAdminUser()
     );
 
-    const entries = [
-      ['cbt_config', window.examEngine ? window.examEngine.config : null],
-      ['cbt_school_config', window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : null],
-      ['cbt_exam_schedules', window.cbtAdmin ? window.cbtAdmin.schedules : null]
-    ];
-
+    // Pastikan cbt_teachers_list dikirim PALING PERTAMA agar RPC cbt_sync_token_vault & cbt_sync_question_vault
+    // langsung mengenali kredensial Proktor/Admin saat migrasi ke project Supabase baru yang masih kosong!
+    const entries = [];
     if (isSuperAdmin) {
-      if (window.studentManager) {
-        entries.push(['cbt_students_list', window.studentManager.getAllStudents()]);
-      }
       if (window.cbtAdmin) {
         entries.push(['cbt_teachers_list', window.cbtAdmin.getAllTeachers()]);
       }
+      if (window.studentManager) {
+        entries.push(['cbt_students_list', window.studentManager.getAllStudents()]);
+      }
     }
+    entries.push(
+      ['cbt_school_config', window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : null],
+      ['cbt_config', window.examEngine ? window.examEngine.config : null],
+      ['cbt_exam_schedules', window.cbtAdmin ? window.cbtAdmin.schedules : null]
+    );
 
     const validEntries = entries.filter(([, val]) => val !== null && val !== undefined);
 
     let pushed = 0;
+    for (const [k, v] of validEntries) {
+      const res = await this.pushStateKey(k, v);
+      if (res && res.success) pushed++;
+    }
+
     const legacyMirror = !this.securityRpcMissing
       ? mergedQuestions.map(q => this.stripQuestionKeys(q))
       : mergedQuestions;
@@ -1536,10 +1711,6 @@ class SupabaseSyncManager {
       pushed++;
     }
 
-    for (const [k, v] of validEntries) {
-      const res = await this.pushStateKey(k, v);
-      if (res && res.success) pushed++;
-    }
     return { success: pushed > 0, count: pushed };
   }
 
@@ -1752,10 +1923,12 @@ class SupabaseSyncManager {
   async upsertStudentSession(sessionObj) {
     if (!sessionObj || !sessionObj.nisn) return { success: false };
     const sessionKey = this.buildSessionKey(sessionObj.nisn, sessionObj.subject);
-    const cappedLogs = Array.isArray(sessionObj.violationLogs) ? sessionObj.violationLogs.slice(-10) : undefined;
+    const cappedViolationLogs = Array.isArray(sessionObj.violationLogs) ? sessionObj.violationLogs.slice(-10) : undefined;
+    const cappedCheatLogs = Array.isArray(sessionObj.cheatLogs) ? sessionObj.cheatLogs.slice(-10) : undefined;
     const enriched = {
       ...sessionObj,
-      ...(cappedLogs ? { violationLogs: cappedLogs } : {}),
+      ...(cappedViolationLogs ? { violationLogs: cappedViolationLogs } : {}),
+      ...(cappedCheatLogs ? { cheatLogs: cappedCheatLogs } : {}),
       sessionKey,
       updatedAt: sessionObj.updatedAt || new Date().toISOString()
     };
@@ -1763,6 +1936,12 @@ class SupabaseSyncManager {
 
     if (!this.client || !this.isConnected) return { success: true, localOnly: true };
 
+    const isFinalStatus = String(enriched.status || '') === 'completed';
+    if (!isFinalStatus && this._inflightSessionHeartbeats.has(sessionKey)) {
+      return { success: true, deduplicated: true };
+    }
+
+    this._inflightSessionHeartbeats.add(sessionKey);
     try {
       if (!this.sessionTableMissing) {
         const { error } = await this.client
@@ -1823,6 +2002,8 @@ class SupabaseSyncManager {
       return { success: !fbErr };
     } catch (err) {
       return { success: false, message: err.message };
+    } finally {
+      this._inflightSessionHeartbeats.delete(sessionKey);
     }
   }
 
@@ -2372,6 +2553,49 @@ class SupabaseSyncManager {
       } catch (e) {}
     }
     this.realtimeChannel = null;
+  }
+
+  async fetchWorkerEgressStats(customUrl = null) {
+    const rawUrl = String(customUrl || this.config?.supabaseUrl || '').trim().replace(/\/+$/, '');
+    if (!rawUrl || !this.isProxyUrl(rawUrl)) {
+      return { supported: false, reason: 'not_proxy' };
+    }
+    try {
+      const resp = await fetch(`${rawUrl}/__cbt-egress-stats`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
+      if (!resp.ok) {
+        return { supported: false, status: resp.status };
+      }
+      const data = await resp.json();
+      if (!data || typeof data !== 'object' || data.quotaMB === undefined) {
+        return { supported: false };
+      }
+      return { supported: true, ...data };
+    } catch (e) {
+      return { supported: false, message: e && e.message ? e.message : 'Network error' };
+    }
+  }
+
+  async calibrateWorkerEgress(action = 'set_initial_mb', mb = 0, customUrl = null) {
+    const rawUrl = String(customUrl || this.config?.supabaseUrl || '').trim().replace(/\/+$/, '');
+    if (!rawUrl || !this.isProxyUrl(rawUrl)) {
+      return { supported: false };
+    }
+    try {
+      const resp = await fetch(`${rawUrl}/__cbt-egress-stats`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, mb: Number(mb) || 0 })
+      });
+      if (!resp.ok) return { supported: false, status: resp.status };
+      const data = await resp.json();
+      return { supported: true, ...data };
+    } catch (e) {
+      return { supported: false, message: e && e.message ? e.message : 'Network error' };
+    }
   }
 }
 
