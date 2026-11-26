@@ -6503,9 +6503,10 @@ class CBTAdmin {
     const showLegend = fmt.seatingShowLegend !== false;
 
     const colWidthPct = (100 / cols).toFixed(2);
-    const maxPerPage = cols <= 4 ? cols * 6 : cols * 7;
+    const maxRowsPerPage = 10;
+    const maxPerPage = cols * maxRowsPerPage;
 
-    const buildDeskCellHtml = (entry) => {
+    const buildDeskCellHtml = (entry, layoutOpts) => {
       if (!entry || !entry.student) {
         return `<td style="width:${colWidthPct}%; vertical-align:top; padding:0;"></td>`;
       }
@@ -6522,7 +6523,7 @@ class CBTAdmin {
 
       const fontSizeNum = cols >= 5 ? '8.8px' : (participantNumberText.length > 12 ? '9.2px' : '10px');
       const fontSizeHdr = cols >= 5 ? '7.5px' : '8.5px';
-      const bottomHeight = cols >= 5 ? '24px' : '30px';
+      const bottomHeight = cols >= 5 ? '22px' : layoutOpts.bottomHeight;
 
       let leftBottomHtml = '&nbsp;';
       let rightBottomHtml = '&nbsp;';
@@ -6530,7 +6531,7 @@ class CBTAdmin {
         leftBottomHtml = `<div style="font-size:8px; font-weight:800; line-height:1.15;">${seatPad}</div><div style="font-size:8px; font-weight:700; line-height:1.15;">${this.escapePrintHtml(clsTxt || '-')}</div>`;
       } else if (bottomMode === 'seat_name') {
         leftBottomHtml = `<div style="font-size:8px; font-weight:800; line-height:1.15;">${seatPad}</div><div style="font-size:7.5px; font-weight:700; line-height:1.15;">${this.escapePrintHtml(clsTxt || '-')}</div>`;
-        rightBottomHtml = `<div style="font-size:7px; font-weight:700; line-height:1.12; overflow:hidden; max-height:24px;">${this.escapePrintHtml(nameTxt)}</div>`;
+        rightBottomHtml = `<div style="font-size:7px; font-weight:700; line-height:1.12; overflow:hidden; max-height:22px;">${this.escapePrintHtml(nameTxt)}</div>`;
       }
 
       return `
@@ -6538,10 +6539,10 @@ class CBTAdmin {
           <table style="width:100%; border-collapse:collapse; border:1.3px solid #000000; table-layout:fixed; break-inside:avoid; page-break-inside:avoid;">
             <tbody>
               <tr>
-                <td colspan="2" style="border-bottom:1px solid #000000; padding:3px 2px; text-align:center; font-size:${fontSizeHdr}; font-weight:800; letter-spacing:0.2px; background:#ffffff;" data-preserve-bg="1">NOMOR PESERTA</td>
+                <td colspan="2" style="border-bottom:1px solid #000000; padding:${layoutOpts.hdrPad}; text-align:center; font-size:${fontSizeHdr}; font-weight:800; letter-spacing:0.2px; background:#ffffff;" data-preserve-bg="1">NOMOR PESERTA</td>
               </tr>
               <tr>
-                <td colspan="2" style="border-bottom:1px solid #000000; padding:4px 2px; text-align:center; font-size:${fontSizeNum}; font-weight:800; font-family:'Courier New', monospace; background:#ffffff; white-space:nowrap; overflow:hidden;" data-preserve-bg="1">${this.escapePrintHtml(participantNumberText)}</td>
+                <td colspan="2" style="border-bottom:1px solid #000000; padding:${layoutOpts.numPad}; text-align:center; font-size:${fontSizeNum}; font-weight:800; font-family:'Courier New', monospace; background:#ffffff; white-space:nowrap; overflow:hidden;" data-preserve-bg="1">${this.escapePrintHtml(participantNumberText)}</td>
               </tr>
               <tr>
                 <td style="width:50%; height:${bottomHeight}; border-right:1px solid #000000; text-align:center; vertical-align:middle; padding:2px; background:#ffffff;" data-preserve-bg="1">${leftBottomHtml}</td>
@@ -6557,7 +6558,6 @@ class CBTAdmin {
     groups.forEach((grp) => {
       const students = Array.isArray(grp.students) ? grp.students : [];
       const roomBadge = this._formatRoomBadgeNumber(grp.roomLabel);
-      const badgeFontSize = roomBadge.length > 4 ? '14px' : '26px';
 
       const gradeTotals = {};
       students.forEach(s => {
@@ -6586,6 +6586,60 @@ class CBTAdmin {
       }
 
       chunks.forEach((pageEntries, pageIdx) => {
+        const pageRowCount = Math.ceil(pageEntries.length / cols);
+        const isTight = pageRowCount >= 9;
+        const isMedium = pageRowCount === 7 || pageRowCount === 8;
+        const layoutOpts = isTight
+          ? {
+              sheetPad: '8mm 12mm',
+              titlePad: '6px 10px',
+              titleMb: '8px',
+              badgePad: '4px 6px',
+              badgeMb: '8px',
+              badgeFontSize: roomBadge.length > 4 ? '13px' : '22px',
+              proctorPad: '4px 14px',
+              proctorMb: '4px',
+              hdrPad: '2px 2px',
+              numPad: '2.5px 2px',
+              bottomHeight: '22px',
+              colGap: '9px',
+              rowGap: '6px',
+              legendMt: '6px'
+            }
+          : (isMedium
+            ? {
+                sheetPad: '8mm 12mm',
+                titlePad: '7px 10px',
+                titleMb: '10px',
+                badgePad: '5px 6px',
+                badgeMb: '10px',
+                badgeFontSize: roomBadge.length > 4 ? '14px' : '24px',
+                proctorPad: '5px 14px',
+                proctorMb: '5px',
+                hdrPad: '2.5px 2px',
+                numPad: '3.5px 2px',
+                bottomHeight: '26px',
+                colGap: '10px',
+                rowGap: '8px',
+                legendMt: '8px'
+              }
+            : {
+                sheetPad: '10mm 13mm',
+                titlePad: '8px 12px',
+                titleMb: '14px',
+                badgePad: '7px 6px',
+                badgeMb: '16px',
+                badgeFontSize: roomBadge.length > 4 ? '14px' : '26px',
+                proctorPad: '7px 16px',
+                proctorMb: '6px',
+                hdrPad: '3px 2px',
+                numPad: '4px 2px',
+                bottomHeight: '30px',
+                colGap: '10px',
+                rowGap: '12px',
+                legendMt: '12px'
+              });
+
         const rows = [];
         for (let i = 0; i < pageEntries.length; i += cols) {
           const rowItems = pageEntries.slice(i, i + cols);
@@ -6594,16 +6648,16 @@ class CBTAdmin {
           const orderedRow = (flow === 'zigzag' && rowIndex % 2 === 1)
             ? padded.reverse()
             : padded;
-          rows.push(`<tr>${orderedRow.map(buildDeskCellHtml).join('')}</tr>`);
+          rows.push(`<tr>${orderedRow.map(entry => buildDeskCellHtml(entry, layoutOpts)).join('')}</tr>`);
         }
 
         const proctorTdHtml = `
-          <div style="display:inline-block; border:1.3px solid #000000; background:${proctorColor}; background-color:${proctorColor}; padding:7px 16px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px;" data-preserve-bg="1">MEJA PENGAWAS</div>
+          <div style="display:inline-block; border:1.3px solid #000000; background:${proctorColor}; background-color:${proctorColor}; padding:${layoutOpts.proctorPad}; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px;" data-preserve-bg="1">MEJA PENGAWAS</div>
         `;
         const proctorRowHtml = proctorPos === 'none'
           ? ''
           : `
-            <table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
+            <table style="width:100%; border-collapse:collapse; margin-bottom:${layoutOpts.proctorMb};">
               <tbody>
                 <tr>
                   <td style="text-align:${proctorPos}; padding:0 5px;">${proctorTdHtml}</td>
@@ -6616,11 +6670,11 @@ class CBTAdmin {
         const pageSub = chunks.length > 1 ? ` (Bagian ${pageIdx + 1}/${chunks.length})` : '';
 
         allPages.push(`
-          <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:10mm 13mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
-            <table style="width:94%; margin:0 auto 14px auto; border-collapse:collapse; border:1.5px solid #000000;">
+          <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:${layoutOpts.sheetPad}; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+            <table style="width:94%; margin:0 auto ${layoutOpts.titleMb} auto; border-collapse:collapse; border:1.5px solid #000000;">
               <tbody>
                 <tr>
-                  <td style="padding:8px 12px; text-align:center; line-height:1.38;">
+                  <td style="padding:${layoutOpts.titlePad}; text-align:center; line-height:1.35;">
                     <div style="font-size:13.5px; font-weight:800; text-transform:uppercase;">${this.escapePrintHtml(seatingTitle)}</div>
                     <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; margin-top:2px;">${this.escapePrintHtml(examSubtitle)}</div>
                     <div style="font-size:11px; font-weight:700; text-transform:uppercase; margin-top:2px;">${this.escapePrintHtml(academicYear)}</div>
@@ -6629,13 +6683,13 @@ class CBTAdmin {
               </tbody>
             </table>
 
-            <table style="width:126px; margin:0 auto 16px auto; border-collapse:collapse; border:1.3px solid #000000;">
+            <table style="width:126px; margin:0 auto ${layoutOpts.badgeMb} auto; border-collapse:collapse; border:1.3px solid #000000;">
               <tbody>
                 <tr>
                   <td style="border-bottom:1.2px solid #000000; padding:3px 6px; text-align:center; font-size:11px; font-weight:800; text-transform:uppercase;">RUANGAN</td>
                 </tr>
                 <tr>
-                  <td style="padding:7px 6px; text-align:center; font-size:${badgeFontSize}; font-weight:800; line-height:1.1;">${this.escapePrintHtml(roomBadge)}</td>
+                  <td style="padding:${layoutOpts.badgePad}; text-align:center; font-size:${layoutOpts.badgeFontSize}; font-weight:800; line-height:1.1;">${this.escapePrintHtml(roomBadge)}</td>
                 </tr>
               </tbody>
             </table>
@@ -6643,12 +6697,12 @@ class CBTAdmin {
             ${pageIdx === 0 ? proctorRowHtml : ''}
 
             ${rows.length > 0
-              ? `<table style="width:100%; border-collapse:separate; border-spacing:10px 14px; table-layout:fixed;"><tbody>${rows.join('')}</tbody></table>`
+              ? `<table style="width:100%; border-collapse:separate; border-spacing:${layoutOpts.colGap} ${layoutOpts.rowGap}; table-layout:fixed;"><tbody>${rows.join('')}</tbody></table>`
               : `<div style="border:1px dashed #000000; padding:24px; text-align:center; font-size:11px;">Belum ada siswa di ruang ini.</div>`
             }
 
             ${showLegend
-              ? `<div style="margin-top:12px; padding-top:6px; border-top:1px solid #cbd5e1; font-size:9.5px; text-align:center;">
+              ? `<div style="margin-top:${layoutOpts.legendMt}; padding-top:6px; border-top:1px solid #cbd5e1; font-size:9.5px; text-align:center;">
                   <strong>${this.escapePrintHtml(grp.roomLabel || 'Ruang')}</strong>${this.escapePrintHtml(pageSub)} &bull; Total: <strong>${students.length} Peserta</strong>${legendParts ? ` (${this.escapePrintHtml(legendParts)})` : ''} &bull; Nomor Peserta diambil dari NISN
                 </div>`
               : ''
