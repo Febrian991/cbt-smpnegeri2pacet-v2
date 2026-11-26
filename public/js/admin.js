@@ -4021,10 +4021,22 @@ class CBTAdmin {
     return Math.ceil(h + 8);
   }
 
+  _formatJustifiedLinesHtml(cleanText) {
+    const str = String(cleanText || '');
+    if (!str) return '';
+    const lines = str.split(/\r?\n/);
+    if (lines.length === 1) {
+      return `<div align="justify" class="naskah-justify" style="margin:0; text-align:justify; text-justify:inter-word;">${this.escapePrintHtml(lines[0])}</div>`;
+    }
+    return lines.map((line) => (
+      `<div align="justify" class="naskah-justify" style="margin:0; text-align:justify; text-justify:inter-word;">${line.trim() ? this.escapePrintHtml(line) : '&nbsp;'}</div>`
+    )).join('');
+  }
+
   renderSingleQuestionPrintHtml(q, displayNumber, layoutCols = 2) {
     const type = q.type || 'single';
     const cleanedQuestion = this._cleanPrintText(q.question || '', false);
-    const qText = this.escapePrintHtml(cleanedQuestion).replace(/\r?\n/g, '<br>');
+    const qTextHtml = this._formatJustifiedLinesHtml(cleanedQuestion);
     const imgMaxH = layoutCols === 2 ? '128px' : '200px';
     const imgHtml = (q.image && String(q.image).trim() !== '')
       ? `<div style="margin:3px 0 4px 0; text-align:left;"><img src="${q.image}" alt="Gambar Soal ${displayNumber}" style="max-width:100%; max-height:${imgMaxH}; width:auto; height:auto; object-fit:contain; display:block; border:1px solid #cbd5e1; border-radius:4px; padding:2px; background:#ffffff;"></div>`
@@ -4066,9 +4078,7 @@ class CBTAdmin {
         const bullet = type === 'multiple' ? `☐ ${lowerKey}.` : `${lowerKey}.`;
         const optTbl = q.optionTables && q.optionTables[upKey] ? this.renderQuestionTableHtml(q.optionTables[upKey], true) : '';
         const cleanOptText = this._cleanPrintText(opt.text || '', false);
-        const optHtml = cleanOptText
-          ? `<div align="justify" class="naskah-justify" style="text-align:justify; text-justify:inter-word;">${this.escapePrintHtml(cleanOptText).replace(/\r?\n/g, '<br>')}</div>`
-          : '';
+        const optHtml = cleanOptText ? this._formatJustifiedLinesHtml(cleanOptText) : '';
         return `
           <tr style="background:transparent;">
             <td style="width:${type === 'multiple' ? '26px' : '16px'}; vertical-align:top; font-size:10.5px; line-height:1.35; padding:1px 0; background:transparent;">${bullet}</td>
@@ -4089,10 +4099,10 @@ class CBTAdmin {
       <div class="${keepClass}" style="margin-bottom:5px; padding-bottom:2px; ${keepStyle} background:transparent;">
         <table class="naskah-clean-table cbt-question-table" style="width:100%; border-collapse:collapse; table-layout:fixed; background:transparent;">
           <tbody>
-            <tr style="background:transparent;">
+            <tr style="${keepStyle} background:transparent;">
               <td style="width:20px; vertical-align:top; font-size:10.5px; line-height:1.35; font-weight:normal; background:transparent;">${displayNumber}.</td>
               <td align="justify" class="naskah-justify" style="vertical-align:top; font-size:10.5px; line-height:1.35; text-align:justify; text-justify:inter-word; background:transparent;">
-                <div align="justify" class="naskah-justify" style="text-align:justify; text-justify:inter-word;">${qText}</div>
+                ${qTextHtml}
                 ${imgHtml}${stemTableHtml}${stemChartHtml}
                 <div style="margin-top:1px;">${bodyHtml}</div>
               </td>
@@ -4103,7 +4113,7 @@ class CBTAdmin {
     `;
   }
 
-  generateExamPaperHtml(questionsList, options = {}) {
+  buildExamPaperData(questionsList, options = {}) {
     const cfg = this.getSchoolConfig();
     const examCfg = window.examEngine ? window.examEngine.config : {};
     const layoutCols = parseInt(options.layoutCols, 10) === 1 ? 1 : 2;
@@ -4286,7 +4296,7 @@ class CBTAdmin {
         isHeading: true,
         height: 34,
         html: `
-          <div style="margin:2px 0 5px 0;">
+          <div style="margin:2px 0 5px 0; break-after:avoid; page-break-after:avoid;">
             <div style="font-weight:bold; font-size:11px;">I. PILIHAN GANDA</div>
             <div align="justify" class="naskah-justify" style="font-size:10.5px; margin-top:2px; text-align:justify; text-justify:inter-word;">Pilihlah salah satu jawaban yang tepat dari huruf a, b, c, dan d!</div>
           </div>
@@ -4302,7 +4312,7 @@ class CBTAdmin {
       blocks.push({
         isHeading: true,
         height: 26,
-        html: `<div align="justify" class="naskah-justify" style="font-weight:bold; font-size:11px; margin:5px 0 4px 0; text-align:justify; text-justify:inter-word;">${roman}. PILIHAN GANDA KOMPLEKS (Pilihlah lebih dari satu jawaban yang benar!)</div>`
+        html: `<div align="justify" class="naskah-justify" style="font-weight:bold; font-size:11px; margin:5px 0 4px 0; text-align:justify; text-justify:inter-word; break-after:avoid; page-break-after:avoid;">${roman}. PILIHAN GANDA KOMPLEKS (Pilihlah lebih dari satu jawaban yang benar!)</div>`
       });
       pushSectionQuestions(multiQs, (q) => {
         const rawAns = Array.isArray(q.correctAnswer)
@@ -4317,7 +4327,7 @@ class CBTAdmin {
       blocks.push({
         isHeading: true,
         height: 28,
-        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0;">${roman}. BENAR / SALAH (Tentukan Benar atau Salah pada pernyataan berikut!)</div>`
+        html: `<div style="font-weight:bold; font-size:11px; margin:6px 0 6px 0; break-after:avoid; page-break-after:avoid;">${roman}. BENAR / SALAH (Tentukan Benar atau Salah pada pernyataan berikut!)</div>`
       });
       pushSectionQuestions(tfQs, (q) => (Array.isArray(q.statements) ? q.statements.map((s, idx) => `${idx + 1}:${s.correct || s.answer || '-'}`).join(', ') : '-'));
     }
@@ -4342,10 +4352,37 @@ class CBTAdmin {
       });
     }
 
+    return {
+      layoutCols,
+      examTitle,
+      semester,
+      academicYear,
+      subjectName,
+      classLevel: options.classLevel || 'ALL',
+      includeAnswerKey,
+      kopAndMetaHtml,
+      blocks
+    };
+  }
+
+  generateExamPaperHtml(questionsList, options = {}) {
+    const paperData = this.buildExamPaperData(questionsList, options);
+    const {
+      layoutCols,
+      examTitle,
+      semester,
+      academicYear,
+      subjectName,
+      classLevel,
+      includeAnswerKey,
+      kopAndMetaHtml,
+      blocks
+    } = paperData;
+
     // Ukur tinggi aktual kop & setiap blok soal di lebar kertas F4 (210mm) agar halaman terisi penuh & rapi tanpa space kosong besar
     const measured = this.measureExamPaperLayout(kopAndMetaHtml, blocks, layoutCols);
     const blockHeights = measured.blockHeights;
-    const pageBudgetPx = 1142; // 330mm (~1247px) - padding 15mm (57px) - footer (26px) - margin aman (22px)
+    const pageBudgetPx = 1154; // 330mm (~1247px) - padding 15mm (57px) - footer (22px) - margin aman (14px)
     const firstPageColLimit = Math.max(480, pageBudgetPx - measured.kopHeight);
     const nextPageColLimit = pageBudgetPx;
 
@@ -4431,8 +4468,8 @@ class CBTAdmin {
           <span style="font-weight:bold; color:#1d4ed8;">${this.escapePrintHtml(item.answerKeyText)}</span>
         </div>
       `).join('');
-      const keyClassSuffix = (options.classLevel && options.classLevel !== 'ALL')
-        ? ` • ${options.classLevel}`
+      const keyClassSuffix = (classLevel && classLevel !== 'ALL')
+        ? ` • ${classLevel}`
         : '';
       keyHtml = `
         <div class="naskah-paper-sheet naskah-page-break" style="page-break-before:always; break-before:page; width:210mm; max-width:100%; margin:0 auto 14px auto; padding:7.5mm 11mm; background:#ffffff; color:#000000; box-shadow:0 4px 18px rgba(15,23,42,0.12);">
@@ -4544,10 +4581,237 @@ class CBTAdmin {
     if (cfg.logoRight) urls.add(cfg.logoRight);
     (questionsList || []).forEach(q => {
       if (q && q.image && String(q.image).trim() !== '') urls.add(q.image);
+      if (q && q.passageImage && String(q.passageImage).trim() !== '') urls.add(q.passageImage);
     });
     if (urls.size > 0) {
       await Promise.all(Array.from(urls).map(u => this.measureImageDimensions(u)));
     }
+  }
+
+  _encodeQuotedPrintableUtf8(str) {
+    const input = String(str || '');
+    let bytes;
+    if (typeof TextEncoder !== 'undefined') {
+      bytes = new TextEncoder().encode(input);
+    } else {
+      const utf8Str = unescape(encodeURIComponent(input));
+      bytes = new Uint8Array(utf8Str.length);
+      for (let i = 0; i < utf8Str.length; i++) bytes[i] = utf8Str.charCodeAt(i);
+    }
+    const out = [];
+    let lineLen = 0;
+    const emitToken = (tok) => {
+      if (lineLen + tok.length > 75) {
+        out.push('=\r\n');
+        lineLen = 0;
+      }
+      out.push(tok);
+      lineLen += tok.length;
+    };
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      if (b === 13) continue;
+      if (b === 10) {
+        out.push('\r\n');
+        lineLen = 0;
+        continue;
+      }
+      const nextByte = i + 1 < bytes.length ? bytes[i + 1] : 10;
+      const isLineEnd = nextByte === 10 || nextByte === 13;
+      if ((b === 32 || b === 9) && !isLineEnd) {
+        emitToken(String.fromCharCode(b));
+      } else if ((b >= 33 && b <= 60) || (b >= 62 && b <= 126)) {
+        emitToken(String.fromCharCode(b));
+      } else {
+        emitToken('=' + b.toString(16).toUpperCase().padStart(2, '0'));
+      }
+    }
+    return out.join('');
+  }
+
+  _wrapBase64Lines(b64, lineLen = 76) {
+    const clean = String(b64 || '').replace(/\s+/g, '');
+    if (!clean) return '';
+    const lines = [];
+    for (let i = 0; i < clean.length; i += lineLen) {
+      lines.push(clean.slice(i, i + lineLen));
+    }
+    return lines.join('\r\n');
+  }
+
+  async _rasterizeImageToPngForWord(src, useCors = false) {
+    return new Promise((resolve) => {
+      if (!src || typeof Image === 'undefined' || typeof document === 'undefined') {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      if (useCors) img.crossOrigin = 'anonymous';
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        resolve(val);
+      };
+      const timer = setTimeout(() => finish(null), 4000);
+      img.onload = () => {
+        clearTimeout(timer);
+        try {
+          const natW = img.naturalWidth || img.width || 0;
+          const natH = img.naturalHeight || img.height || 0;
+          if (!natW || !natH) {
+            finish(null);
+            return;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = natW;
+          canvas.height = natH;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, natW, natH);
+          ctx.drawImage(img, 0, 0, natW, natH);
+          const pngUrl = canvas.toDataURL('image/png');
+          const b64 = pngUrl.split(',')[1] || '';
+          finish(b64 ? { mime: 'image/png', ext: 'png', base64: b64, width: natW, height: natH } : null);
+        } catch (err) {
+          finish(null);
+        }
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        finish(null);
+      };
+      img.src = src;
+    });
+  }
+
+  async _resolveImageAssetForWord(src, depth = 0) {
+    const raw = String(src || '').trim();
+    if (!raw || depth > 2) return null;
+
+    if (/^data:image\//i.test(raw)) {
+      const mB64 = raw.match(/^data:(image\/[a-z0-9.+-]+)(?:;[^,]*)?;base64,([\s\S]*)$/i);
+      if (mB64) {
+        const mimeRaw = mB64[1].toLowerCase();
+        const payload = mB64[2] || '';
+        const dims = await this.measureImageDimensions(raw);
+        if (mimeRaw === 'image/png' || mimeRaw === 'image/jpeg' || mimeRaw === 'image/jpg' || mimeRaw === 'image/gif') {
+          const normMime = mimeRaw === 'image/jpg' ? 'image/jpeg' : mimeRaw;
+          const ext = normMime === 'image/jpeg' ? 'jpg' : (normMime === 'image/gif' ? 'gif' : 'png');
+          return {
+            mime: normMime,
+            ext,
+            base64: payload.replace(/\s+/g, ''),
+            width: dims.width || 0,
+            height: dims.height || 0
+          };
+        }
+      }
+      return await this._rasterizeImageToPngForWord(raw, false);
+    }
+
+    if (typeof fetch === 'function' && typeof FileReader !== 'undefined') {
+      try {
+        const resp = await fetch(raw);
+        if (resp && resp.ok) {
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(blob);
+          });
+          if (dataUrl) {
+            return await this._resolveImageAssetForWord(dataUrl, depth + 1);
+          }
+        }
+      } catch (e) {}
+    }
+
+    return await this._rasterizeImageToPngForWord(raw, true);
+  }
+
+  async _prepareWordImagesAndBuildBlob(containerEl, buildWordHtmlFn, sizeRuleFn = null, extraParts = []) {
+    const imgs = Array.from(containerEl.querySelectorAll('img'));
+    const cacheBySrc = new Map();
+    const attachments = [];
+    let imgCounter = 0;
+
+    for (const img of imgs) {
+      const origSrc = String(img.getAttribute('src') || '').trim();
+      if (!origSrc) continue;
+
+      let cached = cacheBySrc.get(origSrc);
+      if (cached === undefined) {
+        const asset = await this._resolveImageAssetForWord(origSrc);
+        if (asset && asset.base64) {
+          const location = `file:///C:/cbt_word_assets/img_${imgCounter++}.${asset.ext}`;
+          cached = { ...asset, location };
+          attachments.push(cached);
+        } else {
+          const dims = await this.measureImageDimensions(origSrc);
+          cached = { mime: '', ext: '', base64: '', width: dims.width || 0, height: dims.height || 0, location: '' };
+        }
+        cacheBySrc.set(origSrc, cached);
+      }
+
+      if (typeof sizeRuleFn === 'function') {
+        sizeRuleFn(img, { width: cached.width || 0, height: cached.height || 0 });
+      }
+
+      if (cached.location) {
+        img.setAttribute('src', cached.location);
+      }
+    }
+
+    const fullHtml = buildWordHtmlFn(containerEl.innerHTML);
+    const hasExtraParts = Array.isArray(extraParts) && extraParts.length > 0;
+    if (attachments.length === 0 && !hasExtraParts) {
+      return new Blob(['\ufeff', fullHtml], { type: 'application/msword;charset=utf-8' });
+    }
+
+    const boundary = '----=_NextPart_CBT_WORD_001';
+    const parts = [
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Location: file:///C:/cbt_word_assets/document.htm',
+      'Content-Transfer-Encoding: quoted-printable',
+      'Content-Type: text/html; charset="utf-8"',
+      '',
+      this._encodeQuotedPrintableUtf8(fullHtml)
+    ];
+
+    if (hasExtraParts) {
+      extraParts.forEach((part) => {
+        if (!part || !part.location || !part.html) return;
+        parts.push(
+          '',
+          `--${boundary}`,
+          `Content-Location: ${part.location}`,
+          'Content-Transfer-Encoding: quoted-printable',
+          'Content-Type: text/html; charset="utf-8"',
+          '',
+          this._encodeQuotedPrintableUtf8(part.html)
+        );
+      });
+    }
+
+    attachments.forEach((att) => {
+      parts.push(
+        '',
+        `--${boundary}`,
+        `Content-Location: ${att.location}`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Type: ${att.mime}`,
+        '',
+        this._wrapBase64Lines(att.base64, 76)
+      );
+    });
+
+    parts.push('', `--${boundary}--`, '');
+    return new Blob([parts.join('\r\n')], { type: 'application/msword;charset=utf-8' });
   }
 
   async downloadQuestionsPDF(questionsList, options = {}) {
@@ -4697,26 +4961,74 @@ class CBTAdmin {
     try {
       try { window.getSelection && window.getSelection().removeAllRanges(); } catch (e) {}
       await this.preloadPaperImages(questionsList, options);
-      const layoutCols = parseInt(options.layoutCols, 10) === 1 ? 1 : 2;
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = this.generateExamPaperHtml(questionsList, options);
+      const paperData = this.buildExamPaperData(questionsList, options);
+      const {
+        layoutCols,
+        examTitle,
+        semester,
+        academicYear,
+        subjectName,
+        classLevel,
+        includeAnswerKey,
+        kopAndMetaHtml,
+        blocks
+      } = paperData;
 
-      // Bersihkan gaya khusus preview layar agar halaman Word F4 tidak double-margin/overflow/blok warna
-      const sheets = Array.from(tempDiv.querySelectorAll('.naskah-paper-sheet'));
-      sheets.forEach((sheet, idx) => {
-        sheet.style.width = '100%';
-        sheet.style.maxWidth = '100%';
-        sheet.style.margin = '0';
-        sheet.style.padding = '0';
-        sheet.style.boxShadow = 'none';
-        sheet.style.minHeight = 'auto';
-        sheet.style.background = '#ffffff';
-        sheet.style.backgroundColor = '#ffffff';
-        if (idx > 0) {
-          sheet.style.pageBreakBefore = 'always';
-          sheet.style.breakBefore = 'page';
+      const bodyBlocksHtml = blocks.map(b => b.html).join('');
+      let wordBodyHtml = '';
+      if (layoutCols === 2) {
+        wordBodyHtml = `
+          <div class="WordSection1">
+            ${kopAndMetaHtml}
+          </div>
+          <span style="font-size:1pt; line-height:1pt; mso-fareast-font-family:'Times New Roman';"><br clear="all" style="page-break-before:auto; mso-break-type:section-break"></span>
+          <div class="WordSection2" style="column-count:2; column-gap:0.55cm;">
+            ${bodyBlocksHtml}
+          </div>
+        `;
+      } else {
+        wordBodyHtml = `
+          <div class="WordSection1">
+            ${kopAndMetaHtml}
+            ${bodyBlocksHtml}
+          </div>
+        `;
+      }
+
+      if (includeAnswerKey) {
+        const keyItems = blocks.filter(b => !b.isHeading && b.answerKeyNum !== undefined);
+        const keyRowsHtml = [];
+        for (let i = 0; i < keyItems.length; i += 4) {
+          const cells = [0, 1, 2, 3].map((offset) => {
+            const item = keyItems[i + offset];
+            if (!item) {
+              return `<td style="width:25%; border:1px solid #cbd5e1; padding:4px 7px; font-size:9.5pt;">&nbsp;</td>`;
+            }
+            return `
+              <td style="width:25%; border:1px solid #cbd5e1; padding:4px 7px; font-size:9.5pt;">
+                <b>No. ${item.answerKeyNum}</b> : <b style="color:#1d4ed8;">${this.escapePrintHtml(item.answerKeyText)}</b>
+              </td>
+            `;
+          }).join('');
+          keyRowsHtml.push(`<tr>${cells}</tr>`);
         }
-      });
+        const keyClassSuffix = (classLevel && classLevel !== 'ALL') ? ` • ${classLevel}` : '';
+        wordBodyHtml += `
+          <span style="font-size:1pt; line-height:1pt;"><br clear="all" style="page-break-before:always; mso-break-type:section-break"></span>
+          <div class="WordSectionKey">
+            <div style="text-align:center; border-bottom:2px solid #000000; padding-bottom:6px; margin-bottom:10px;">
+              <div style="font-size:12pt; font-weight:bold; text-transform:uppercase;">KUNCI JAWABAN • ${this.escapePrintHtml(subjectName)}${this.escapePrintHtml(keyClassSuffix)}</div>
+              <div style="font-size:10pt;">${this.escapePrintHtml(examTitle)} (${this.escapePrintHtml(semester)} ${this.escapePrintHtml(academicYear)})</div>
+            </div>
+            <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+              <tbody>${keyRowsHtml.join('')}</tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = wordBodyHtml;
 
       // Pastikan seluruh elemen teks/tabel di dokumen Word bersih dari latar belakang biru/shading
       tempDiv.querySelectorAll('div, p, span, table, thead, tbody, tr, th, td, mark').forEach(el => {
@@ -4765,56 +5077,48 @@ class CBTAdmin {
             const imgNode = document.createElement('img');
             imgNode.setAttribute('src', pngDataUrl);
             imgNode.setAttribute('alt', 'Bagan Soal');
-            imgNode.setAttribute('width', String(Math.min(wAttr, layoutCols === 2 ? 265 : 540)));
-            const ratio = Math.min((layoutCols === 2 ? 265 : 540) / wAttr, 1);
+            imgNode.setAttribute('width', String(Math.min(wAttr, layoutCols === 2 ? 255 : 530)));
+            const ratio = Math.min((layoutCols === 2 ? 255 : 530) / wAttr, 1);
             imgNode.setAttribute('height', String(Math.round(hAttr * ratio)));
             svgEl.replaceWith(imgNode);
           }
         } catch (err) {}
       }
 
+      const footerNotePlain = this.getPrintFooterNoteHtml('', 'font-size:8pt;');
+      const headerDocLocation = 'file:///C:/cbt_word_assets/header.htm';
+      const headerDocHtml = `
+        <html xmlns:v="urn:schemas-microsoft-com:vml"
+              xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:w="urn:schemas-microsoft-com:office:word"
+              xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <style>
+            p.MsoFooter, div.MsoFooter {
+              margin: 0;
+              font-family: "Times New Roman", Times, serif;
+              font-size: 8pt;
+              font-style: italic;
+              color: #1d4ed8;
+              text-align: center;
+            }
+          </style>
+        </head>
+        <body>
+          <div style="mso-element:footer" id="f1">
+            <div style="border-top:0.5pt solid #cbd5e1; padding-top:3pt; text-align:center;">
+              ${footerNotePlain}
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
       // Microsoft Word membutuhkan atribut HTML width & height eksplisit pada <img>
-      // agar gambar tidak dirender dalam ukuran pixel aslinya yang meluber keluar margin kanan.
-      const imgs = Array.from(tempDiv.querySelectorAll('img'));
-      for (const img of imgs) {
-        const alt = String(img.getAttribute('alt') || '');
-        const src = img.getAttribute('src') || '';
-        const dims = await this.measureImageDimensions(src);
-        const natW = dims.width || 800;
-        const natH = dims.height || 200;
-
-        if (alt === 'Kop Surat Sekolah') {
-          const maxW = 665;
-          const maxH = 105;
-          const ratio = Math.min(maxW / natW, maxH / natH, 1);
-          const targetW = Math.max(1, Math.round(natW * ratio));
-          const targetH = Math.max(1, Math.round(natH * ratio));
-          img.setAttribute('width', String(targetW));
-          img.setAttribute('height', String(targetH));
-          img.style.width = `${targetW}px`;
-          img.style.height = `${targetH}px`;
-          img.style.maxWidth = '100%';
-          img.style.objectFit = 'contain';
-        } else if (alt === 'Logo Sekolah') {
-          img.setAttribute('width', '64');
-          img.setAttribute('height', '64');
-          img.style.width = '64px';
-          img.style.height = '64px';
-        } else {
-          const maxW = layoutCols === 2 ? 265 : 540;
-          const maxH = layoutCols === 2 ? 132 : 210;
-          const ratio = Math.min(maxW / natW, maxH / natH, 1);
-          const targetW = Math.max(1, Math.round(natW * ratio));
-          const targetH = Math.max(1, Math.round(natH * ratio));
-          img.setAttribute('width', String(targetW));
-          img.setAttribute('height', String(targetH));
-          img.style.width = `${targetW}px`;
-          img.style.height = `${targetH}px`;
-        }
-      }
-
-      const cleanedHtml = tempDiv.innerHTML;
-      const wordDocHtml = `
+      // serta aliran section Word (WordSection1 1-kolom kop -> Continuous Section Break -> WordSection2 2-kolom soal)
+      // agar halaman F4 terisi penuh tanpa space kosong akibat page-break buatan.
+      const buildQuestionsWordHtml = (cleanedHtml) => `
         <html xmlns:o="urn:schemas-microsoft-com:office:office"
               xmlns:w="urn:schemas-microsoft-com:office:word"
               xmlns="http://www.w3.org/TR/REC-html40">
@@ -4831,44 +5135,113 @@ class CBTAdmin {
           </xml>
           <![endif]-->
           <style>
-            @page Section1 {
+            @page {
               size: 21.0cm 33.0cm;
               mso-page-orientation: portrait;
-              margin: 0.7cm 1.0cm 0.7cm 1.0cm;
-              mso-header-margin: 0.4cm;
-              mso-footer-margin: 0.4cm;
+              margin: 0.7cm 1.0cm 1.05cm 1.0cm;
+              mso-header-margin: 0.3cm;
+              mso-footer-margin: 0.35cm;
+              mso-footer: url("${headerDocLocation}") f1;
               mso-paper-source: 0;
             }
-            div.Section1 { page: Section1; }
+            @page WordSection1 {
+              size: 21.0cm 33.0cm;
+              mso-page-orientation: portrait;
+              margin: 0.7cm 1.0cm 1.05cm 1.0cm;
+              mso-header-margin: 0.3cm;
+              mso-footer-margin: 0.35cm;
+              mso-footer: url("${headerDocLocation}") f1;
+              mso-paper-source: 0;
+            }
+            div.WordSection1 { page: WordSection1; }
+            @page WordSection2 {
+              size: 21.0cm 33.0cm;
+              mso-page-orientation: portrait;
+              margin: 0.7cm 1.0cm 1.05cm 1.0cm;
+              mso-header-margin: 0.3cm;
+              mso-footer-margin: 0.35cm;
+              mso-columns: 2 even 0.55cm;
+              mso-footer: url("${headerDocLocation}") f1;
+              mso-paper-source: 0;
+            }
+            div.WordSection2 { page: WordSection2; }
+            @page WordSectionKey {
+              size: 21.0cm 33.0cm;
+              mso-page-orientation: portrait;
+              margin: 0.7cm 1.0cm 1.05cm 1.0cm;
+              mso-header-margin: 0.3cm;
+              mso-footer-margin: 0.35cm;
+              mso-footer: url("${headerDocLocation}") f1;
+              mso-paper-source: 0;
+            }
+            div.WordSectionKey { page: WordSectionKey; }
             html, body { font-family: "Times New Roman", Times, serif; font-size: 10pt; line-height: 1.32; color: #000000; background: #ffffff !important; background-color: #ffffff !important; margin: 0; padding: 0; }
-            .naskah-paper-sheet, .naskah-paper-sheet div, .naskah-paper-sheet p, .naskah-paper-sheet span, .naskah-paper-sheet table, .naskah-paper-sheet thead, .naskah-paper-sheet tbody, .naskah-paper-sheet tr, .naskah-paper-sheet th, .naskah-paper-sheet td {
+            p { margin: 0; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; }
+            .WordSection1, .WordSection2, .WordSectionKey,
+            .WordSection1 div, .WordSection1 p, .WordSection1 span, .WordSection1 table, .WordSection1 td, .WordSection1 th,
+            .WordSection2 div, .WordSection2 p, .WordSection2 span, .WordSection2 table, .WordSection2 td, .WordSection2 th {
               background: #ffffff !important;
               background-color: #ffffff !important;
               mso-highlight: none !important;
               mso-shading: white;
             }
-            .naskah-paper-sheet .naskah-justify, .naskah-paper-sheet .naskah-justify p, .naskah-paper-sheet .naskah-justify div {
+            .naskah-justify, .naskah-justify p, .naskah-justify div {
               text-align: justify !important;
               text-justify: inter-word !important;
             }
-            .naskah-paper-sheet .naskah-soal-item, .naskah-paper-sheet .naskah-soal-item-media {
+            .naskah-soal-item, .naskah-soal-item-media {
               margin-bottom: 4px !important;
               padding-bottom: 1px !important;
             }
-            .naskah-paper-sheet a { color: #000000 !important; text-decoration: none !important; }
-            .naskah-paper-sheet { width: 100% !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; min-height: auto !important; }
-            .naskah-page-break { page-break-before: always; break-before: page; }
-            .cbt-print-footer-note { color: #1d4ed8 !important; font-style: italic !important; font-size: 8pt !important; text-align: center !important; white-space: nowrap !important; }
+            a { color: #000000 !important; text-decoration: none !important; }
+            .cbt-print-footer-note { color: #1d4ed8 !important; font-style: italic !important; font-size: 8pt !important; text-align: center !important; }
           </style>
         </head>
-        <body><div class="Section1">${cleanedHtml}</div></body>
+        <body>${cleanedHtml}</body>
         </html>
       `;
+
+      const blob = await this._prepareWordImagesAndBuildBlob(tempDiv, buildQuestionsWordHtml, (img, dims) => {
+        const alt = String(img.getAttribute('alt') || '');
+        const natW = dims.width || 600;
+        const natH = dims.height || 240;
+
+        img.style.maxHeight = 'none';
+        img.style.objectFit = '';
+
+        if (alt === 'Kop Surat Sekolah') {
+          const maxW = 665;
+          const maxH = 105;
+          const ratio = Math.min(maxW / natW, maxH / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+          img.style.maxWidth = '100%';
+        } else if (alt === 'Logo Sekolah') {
+          img.setAttribute('width', '64');
+          img.setAttribute('height', '64');
+          img.style.width = '64px';
+          img.style.height = '64px';
+        } else {
+          const maxW = layoutCols === 2 ? 255 : 530;
+          const maxH = layoutCols === 2 ? 150 : 230;
+          const ratio = Math.min(maxW / natW, maxH / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+        }
+      }, [{ location: headerDocLocation, html: headerDocHtml }]);
+
       const subSlug = String(options.subject || 'Naskah_Soal').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'Naskah_Soal';
       const clsSlug = (options.classLevel && options.classLevel !== 'ALL')
         ? '_' + String(options.classLevel).replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')
         : '';
-      const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -6014,6 +6387,7 @@ class CBTAdmin {
             </tbody>
           </table>
           ${showFooter ? footerHtml : ''}
+          ${this.getPrintFooterNoteHtml('margin-top:8px; font-size:8px;')}
         </div>
       `;
     }).join('');
@@ -6178,32 +6552,9 @@ class CBTAdmin {
         }
       });
 
-      const imgs = Array.from(tempDiv.querySelectorAll('img'));
-      for (const img of imgs) {
-        const alt = String(img.getAttribute('alt') || '');
-        const src = img.getAttribute('src') || '';
-        const dims = await this.measureImageDimensions(src);
-        const natW = dims.width || 800;
-        const natH = dims.height || 200;
-        if (alt === 'Kop Surat Sekolah') {
-          const ratio = Math.min(665 / natW, 105 / natH, 1);
-          const targetW = Math.max(1, Math.round(natW * ratio));
-          const targetH = Math.max(1, Math.round(natH * ratio));
-          img.setAttribute('width', String(targetW));
-          img.setAttribute('height', String(targetH));
-          img.style.width = `${targetW}px`;
-          img.style.height = `${targetH}px`;
-        } else {
-          img.setAttribute('width', '60');
-          img.setAttribute('height', '60');
-          img.style.width = '60px';
-          img.style.height = '60px';
-        }
-      }
-
       const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
       const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
-      const wordDocHtml = `
+      const buildAttWordHtml = (innerHtml) => `
         <html xmlns:o="urn:schemas-microsoft-com:office:office"
               xmlns:w="urn:schemas-microsoft-com:office:word"
               xmlns="http://www.w3.org/TR/REC-html40">
@@ -6228,12 +6579,32 @@ class CBTAdmin {
             .attendance-page-break { page-break-before: always; break-before: page; }
           </style>
         </head>
-        <body><div class="Section1">${tempDiv.innerHTML}</div></body>
+        <body><div class="Section1">${innerHtml}</div></body>
         </html>
       `;
 
       const roomSlug = String(options.classLabel || options.serverRoom || 'Semua_Kelas').replace(/[^a-z0-9]+/gi, '_');
-      const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
+      const blob = await this._prepareWordImagesAndBuildBlob(tempDiv, buildAttWordHtml, (img, dims) => {
+        const alt = String(img.getAttribute('alt') || '');
+        const natW = dims.width || 800;
+        const natH = dims.height || 200;
+        img.style.maxHeight = 'none';
+        img.style.objectFit = '';
+        if (alt === 'Kop Surat Sekolah') {
+          const ratio = Math.min(665 / natW, 105 / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+        } else {
+          img.setAttribute('width', '60');
+          img.setAttribute('height', '60');
+          img.style.width = '60px';
+          img.style.height = '60px';
+        }
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -6467,6 +6838,7 @@ class CBTAdmin {
               </tr>
             </tbody>
           </table>
+          ${this.getPrintFooterNoteHtml('margin-top:10px; font-size:8px;')}
         </div>
       `;
     }).join('');
@@ -6707,6 +7079,7 @@ class CBTAdmin {
                 </div>`
               : ''
             }
+            ${this.getPrintFooterNoteHtml(`margin-top:${isTight ? '4px' : '6px'}; font-size:8px;`)}
           </div>
         `);
       });
@@ -6867,33 +7240,10 @@ class CBTAdmin {
         }
       });
 
-      const imgs = Array.from(tempDiv.querySelectorAll('img'));
-      for (const img of imgs) {
-        const alt = String(img.getAttribute('alt') || '');
-        const src = img.getAttribute('src') || '';
-        const dims = await this.measureImageDimensions(src);
-        const natW = dims.width || 800;
-        const natH = dims.height || 200;
-        if (alt === 'Kop Surat Sekolah') {
-          const ratio = Math.min(665 / natW, 105 / natH, 1);
-          const targetW = Math.max(1, Math.round(natW * ratio));
-          const targetH = Math.max(1, Math.round(natH * ratio));
-          img.setAttribute('width', String(targetW));
-          img.setAttribute('height', String(targetH));
-          img.style.width = `${targetW}px`;
-          img.style.height = `${targetH}px`;
-        } else {
-          img.setAttribute('width', '58');
-          img.setAttribute('height', '58');
-          img.style.width = '58px';
-          img.style.height = '58px';
-        }
-      }
-
       const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
       const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
       const docTitle = options.docType === 'seating' ? 'Denah Posisi Duduk Peserta Ujian' : 'Daftar Nama Peserta Ujian';
-      const wordDocHtml = `
+      const buildRoomWordHtml = (innerHtml) => `
         <html xmlns:o="urn:schemas-microsoft-com:office:office"
               xmlns:w="urn:schemas-microsoft-com:office:word"
               xmlns="http://www.w3.org/TR/REC-html40">
@@ -6912,13 +7262,33 @@ class CBTAdmin {
             .room-doc-page-break { page-break-before: always; break-before: page; }
           </style>
         </head>
-        <body><div class="Section1">${tempDiv.innerHTML}</div></body>
+        <body><div class="Section1">${innerHtml}</div></body>
         </html>
       `;
 
       const docSlug = options.docType === 'seating' ? 'Denah_Peserta' : 'Daftar_Peserta';
       const scopeSlug = String(options.scopeLabel || 'Ruang').replace(/[^a-z0-9]+/gi, '_');
-      const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
+      const blob = await this._prepareWordImagesAndBuildBlob(tempDiv, buildRoomWordHtml, (img, dims) => {
+        const alt = String(img.getAttribute('alt') || '');
+        const natW = dims.width || 800;
+        const natH = dims.height || 200;
+        img.style.maxHeight = 'none';
+        img.style.objectFit = '';
+        if (alt === 'Kop Surat Sekolah') {
+          const ratio = Math.min(665 / natW, 105 / natH, 1);
+          const targetW = Math.max(1, Math.round(natW * ratio));
+          const targetH = Math.max(1, Math.round(natH * ratio));
+          img.setAttribute('width', String(targetW));
+          img.setAttribute('height', String(targetH));
+          img.style.width = `${targetW}px`;
+          img.style.height = `${targetH}px`;
+        } else {
+          img.setAttribute('width', '58');
+          img.setAttribute('height', '58');
+          img.style.width = '58px';
+          img.style.height = '58px';
+        }
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
