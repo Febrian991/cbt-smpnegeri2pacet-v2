@@ -8994,6 +8994,21 @@ document.addEventListener('DOMContentLoaded', () => {
     container.innerHTML = window.cbtAdmin.generateExamPaperHtml(questions, options);
   }
 
+  const btnToggleNqSettingsPanel = document.getElementById('btnToggleNqSettingsPanel');
+  const nqExtraSettingsPanel = document.getElementById('nqExtraSettingsPanel');
+  if (btnToggleNqSettingsPanel && nqExtraSettingsPanel) {
+    btnToggleNqSettingsPanel.addEventListener('click', () => {
+      const isHidden = nqExtraSettingsPanel.classList.contains('hidden');
+      if (isHidden) {
+        nqExtraSettingsPanel.classList.remove('hidden');
+        btnToggleNqSettingsPanel.innerHTML = '<span>⚙️ Sembunyikan Pengaturan</span>';
+      } else {
+        nqExtraSettingsPanel.classList.add('hidden');
+        btnToggleNqSettingsPanel.innerHTML = '<span>⚙️ Tampilkan Pengaturan</span>';
+      }
+    });
+  }
+
   document.getElementById('btnFixSuspiciousWacanaInPreview')?.addEventListener('click', () => {
     if (!window.cbtAdmin || lastPreviewSuspiciousWacanaIds.length === 0) return;
     const res = window.cbtAdmin.convertQuestionsBatchToPassage(lastPreviewSuspiciousWacanaIds, 5);
@@ -10731,12 +10746,33 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyScheduleToAttendanceFields(scheduleId) {
     if (!window.cbtAdmin) return;
     const schedules = window.cbtAdmin.getAllSchedules() || [];
+    const subjEl = document.getElementById('attSubjectName');
+    const dayEl = document.getElementById('attDayText');
+    const dateEl = document.getElementById('attDateText');
+    const timeEl = document.getElementById('attTimeRange');
+
+    if (String(scheduleId).startsWith('__SUBJ__:')) {
+      const subjName = String(scheduleId).slice('__SUBJ__:'.length).trim();
+      if (subjEl && subjName) subjEl.value = subjName;
+      const matchingSchedules = schedules.filter(s =>
+        window.examEngine && typeof window.examEngine.matchesSubject === 'function'
+          ? window.examEngine.matchesSubject(s.subject, subjName)
+          : String(s.subject || '').trim().toLowerCase() === subjName.toLowerCase()
+      );
+      if (matchingSchedules.length === 1) {
+        const matchedSch = matchingSchedules[0];
+        if (dayEl && matchedSch.day) dayEl.value = matchedSch.day;
+        if (dateEl) {
+          const dStr = matchedSch.dateFormatted || (matchedSch.dateIso && window.cbtAdmin.formatIndonesianDate ? window.cbtAdmin.formatIndonesianDate(matchedSch.dateIso) : '');
+          if (dStr) dateEl.value = dStr;
+        }
+        if (timeEl && matchedSch.timeRange) timeEl.value = matchedSch.timeRange;
+      }
+      return;
+    }
+
     if (scheduleId === '__AUTO_PER_GRADE__') {
       const activeList = schedules.filter(s => s.isActive);
-      const subjEl = document.getElementById('attSubjectName');
-      const dayEl = document.getElementById('attDayText');
-      const dateEl = document.getElementById('attDateText');
-      const timeEl = document.getElementById('attTimeRange');
       const uniqueSubs = [...new Set(activeList.map(s => String(s.subject || '').trim()).filter(Boolean))];
       if (subjEl && uniqueSubs.length > 0) subjEl.value = uniqueSubs.join(' / ');
       const firstSch = activeList[0] || schedules[0];
@@ -10752,10 +10788,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const sch = schedules.find(s => String(s.id) === String(scheduleId));
     if (!sch) return;
-    const subjEl = document.getElementById('attSubjectName');
-    const dayEl = document.getElementById('attDayText');
-    const dateEl = document.getElementById('attDateText');
-    const timeEl = document.getElementById('attTimeRange');
     if (subjEl && sch.subject) subjEl.value = sch.subject;
     if (dayEl && sch.day) dayEl.value = sch.day;
     if (dateEl) {
@@ -10919,9 +10951,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Isi dropdown jadwal ujian
+    // Isi dropdown jadwal ujian & seluruh mata pelajaran yang terdaftar
     const schedules = window.cbtAdmin.getAllSchedules() || [];
     const activeSchedules = schedules.filter(s => s.isActive);
+    const knownSubjectMap = new Map();
+    const registerSubjectOption = (rawSubj) => {
+      const clean = String(rawSubj || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (!knownSubjectMap.has(key)) knownSubjectMap.set(key, clean);
+    };
+    (typeof window.cbtAdmin.getAllSubjects === 'function' ? window.cbtAdmin.getAllSubjects() : []).forEach(registerSubjectOption);
+    schedules.forEach(s => { if (s && s.subject) registerSubjectOption(s.subject); });
+    const allSortedSubjects = Array.from(knownSubjectMap.values()).sort((a, b) => a.localeCompare(b, 'id'));
+
     if (attScheduleSelect) {
       attScheduleSelect.innerHTML = '';
       if (activeSchedules.length > 1) {
@@ -10930,12 +10973,28 @@ document.addEventListener('DOMContentLoaded', () => {
         autoOpt.innerText = '🔀 Otomatis Sesuai Jadwal Kelas Aktif (Campur 7–8–9)';
         attScheduleSelect.appendChild(autoOpt);
       }
-      schedules.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.innerText = `${s.isActive ? '🟢 ' : ''}${s.subject}${s.classLevel ? ' • ' + s.classLevel : ''}`;
-        attScheduleSelect.appendChild(opt);
-      });
+      if (schedules.length > 0) {
+        const schGroup = document.createElement('optgroup');
+        schGroup.label = '📅 Dari Jadwal Ujian';
+        schedules.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.innerText = `${s.isActive ? '🟢 ' : ''}${s.subject}${s.classLevel ? ' • ' + s.classLevel : ''}`;
+          schGroup.appendChild(opt);
+        });
+        attScheduleSelect.appendChild(schGroup);
+      }
+      if (allSortedSubjects.length > 0) {
+        const subjGroup = document.createElement('optgroup');
+        subjGroup.label = '📚 Semua Mata Pelajaran';
+        allSortedSubjects.forEach(subj => {
+          const opt = document.createElement('option');
+          opt.value = `__SUBJ__:${subj}`;
+          opt.innerText = `📘 ${subj}`;
+          subjGroup.appendChild(opt);
+        });
+        attScheduleSelect.appendChild(subjGroup);
+      }
       const manualOpt = document.createElement('option');
       manualOpt.value = '__MANUAL__';
       manualOpt.innerText = '-- Isi Mapel / Jadwal Manual --';
@@ -10980,12 +11039,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pilih jadwal paling relevan (aktif / per-jenjang jika ruang campur / filter monitoring)
     if (attScheduleSelect) {
       let matchedSch = null;
+      let matchedDirectSubj = null;
       if (preferredSubject && preferredSubject !== 'ALL' && window.examEngine) {
         matchedSch = schedules.find(s => window.examEngine.matchesSubject(s.subject, preferredSubject));
+        if (!matchedSch) {
+          matchedDirectSubj = allSortedSubjects.find(subj => window.examEngine.matchesSubject(subj, preferredSubject)) || null;
+        }
       }
       if (matchedSch) {
         attScheduleSelect.value = matchedSch.id;
         applyScheduleToAttendanceFields(matchedSch.id);
+      } else if (matchedDirectSubj) {
+        attScheduleSelect.value = `__SUBJ__:${matchedDirectSubj}`;
+        applyScheduleToAttendanceFields(`__SUBJ__:${matchedDirectSubj}`);
       } else if (isChosenRoom && activeSchedules.length > 1) {
         const roomMembers = window.studentManager.getStudentsByRoom(String(chosenFilter).slice(5));
         const activeMatchingRoom = activeSchedules.filter(sch =>
@@ -10999,14 +11065,18 @@ document.addEventListener('DOMContentLoaded', () => {
           applyScheduleToAttendanceFields(activeMatchingRoom[0].id);
         } else {
           const fallbackSch = activeSchedules[0] || schedules[0];
-          attScheduleSelect.value = fallbackSch ? fallbackSch.id : '__MANUAL__';
+          attScheduleSelect.value = fallbackSch ? fallbackSch.id : (allSortedSubjects[0] ? `__SUBJ__:${allSortedSubjects[0]}` : '__MANUAL__');
           if (fallbackSch) applyScheduleToAttendanceFields(fallbackSch.id);
+          else if (allSortedSubjects[0]) applyScheduleToAttendanceFields(`__SUBJ__:${allSortedSubjects[0]}`);
         }
       } else {
         matchedSch = schedules.find(s => s.isActive) || schedules[0] || null;
         if (matchedSch) {
           attScheduleSelect.value = matchedSch.id;
           applyScheduleToAttendanceFields(matchedSch.id);
+        } else if (allSortedSubjects.length > 0) {
+          attScheduleSelect.value = `__SUBJ__:${allSortedSubjects[0]}`;
+          applyScheduleToAttendanceFields(`__SUBJ__:${allSortedSubjects[0]}`);
         } else {
           attScheduleSelect.value = '__MANUAL__';
         }
