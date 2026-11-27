@@ -821,7 +821,10 @@ class CBTAdmin {
         const loggedTeacher = { ...rpcRes.teacher, pin: cleanPin };
         return this._completeStaffLogin(loggedTeacher, null);
       }
-      if (rpcRes && !rpcRes.rpcUnavailable && !rpcRes.not_seeded) {
+      const allowCloudFallback = Boolean(
+        !rpcRes || rpcRes.rpcUnavailable || rpcRes.not_seeded || rpcRes.cloudRestricted || rpcRes.networkError
+      );
+      if (!allowCloudFallback) {
         return {
           success: false,
           message: rpcRes.message || "Username / NIP atau Kata Sandi (PIN) tidak sesuai!"
@@ -829,15 +832,25 @@ class CBTAdmin {
       }
 
       // Mode Kompatibilitas Pra-SQL / Belum Ter-seed: tarik direktori ke memori sementara tanpa menulis localStorage pada login gagal
-      if (typeof window.supabaseSync.pullAuthDirectoryFallback === 'function') {
-        const dirRes = await window.supabaseSync.pullAuthDirectoryFallback();
-        const cloudTeachers = dirRes && dirRes.state && Array.isArray(dirRes.state.cbt_teachers_list)
-          ? dirRes.state.cbt_teachers_list
-          : null;
-        if (cloudTeachers && cloudTeachers.length > 0) {
-          return this.login(cleanId, cleanPin, cloudTeachers);
+      if (!rpcRes || (!rpcRes.cloudRestricted && !rpcRes.networkError)) {
+        if (typeof window.supabaseSync.pullAuthDirectoryFallback === 'function') {
+          const dirRes = await window.supabaseSync.pullAuthDirectoryFallback();
+          const cloudTeachers = dirRes && dirRes.state && Array.isArray(dirRes.state.cbt_teachers_list)
+            ? dirRes.state.cbt_teachers_list
+            : null;
+          if (cloudTeachers && cloudTeachers.length > 0) {
+            return this.login(cleanId, cleanPin, cloudTeachers);
+          }
         }
       }
+
+      const localRes = this.login(cleanId, cleanPin, this._getOfflineCandidateTeachers());
+      if (localRes && localRes.success && rpcRes && (rpcRes.cloudRestricted || rpcRes.networkError)) {
+        localRes.offlineFallback = true;
+        localRes.cloudRestricted = Boolean(rpcRes.cloudRestricted);
+        localRes.cloudErrorMessage = rpcRes.message || '';
+      }
+      return localRes;
     }
 
     return this.login(cleanId, cleanPin, this._getOfflineCandidateTeachers());

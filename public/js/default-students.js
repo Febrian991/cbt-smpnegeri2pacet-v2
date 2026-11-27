@@ -395,6 +395,12 @@ class StudentManager {
         };
       }
       if (rpcRes && !rpcRes.rpcUnavailable && !rpcRes.not_seeded) {
+        if (rpcRes.cloudRestricted) {
+          return {
+            success: false,
+            message: "Server database ujian sedang dibatasi sementara (kuota habis). Segera hubungi Proktor / Admin sekolah."
+          };
+        }
         return {
           success: false,
           message: rpcRes.message || "NISN atau Password akun siswa salah!"

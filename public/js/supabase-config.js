@@ -93,6 +93,7 @@ class SupabaseSyncManager {
     this.sessionTableMissing = false;
     this.questionTableMissing = false;
     this.securityRpcMissing = false;
+    this.lastCloudRestrictionMessage = '';
     this._migrationPromise = null;
     this._flushPromise = null;
     localStorage.setItem('cbt_supabase_config', JSON.stringify(this.config));
@@ -161,6 +162,24 @@ class SupabaseSyncManager {
     );
   }
 
+  isCloudRestrictionError(errorOrMsg) {
+    if (!errorOrMsg) return false;
+    const status = Number(errorOrMsg.status || errorOrMsg.statusCode || 0);
+    if (status === 402) return true;
+    const msg = String(errorOrMsg.message || errorOrMsg || '').toLowerCase();
+    return (
+      msg.includes('exceed_egress_quota') ||
+      msg.includes('exceed_cached_egress_quota') ||
+      msg.includes('exceed_db_size_quota') ||
+      msg.includes('service for this project is restricted') ||
+      msg.includes('spend caps') ||
+      msg.includes('project is paused') ||
+      msg.includes('quota exceeded') ||
+      msg.includes('exceeded quota') ||
+      msg.includes('egress quota')
+    );
+  }
+
   async callSecurityRpc(fnName, params = {}) {
     if (!this.client || !this.isConnected || this.securityRpcMissing || typeof this.client.rpc !== 'function') {
       return { rpcUnavailable: true };
@@ -172,20 +191,31 @@ class SupabaseSyncManager {
           this.securityRpcMissing = true;
           return { rpcUnavailable: true };
         }
+        const restricted = this.isCloudRestrictionError(error);
+        if (restricted) {
+          this.lastCloudRestrictionMessage = String(error.message || 'Cloud database restricted (exceed_egress_quota)');
+        }
         return {
           rpcUnavailable: false,
+          cloudRestricted: restricted,
           networkError: this.isNetworkLikeError(error),
           success: false,
           message: error.message
         };
       }
+      this.lastCloudRestrictionMessage = '';
       if (data && typeof data === 'object') {
         return data;
       }
       return { rpcUnavailable: false, networkError: true, success: false, message: 'Respons server tidak valid.' };
     } catch (err) {
+      const restricted = this.isCloudRestrictionError(err);
+      if (restricted) {
+        this.lastCloudRestrictionMessage = String((err && err.message) || 'Cloud database restricted');
+      }
       return {
         rpcUnavailable: false,
+        cloudRestricted: restricted,
         networkError: true,
         success: false,
         message: err && err.message ? err.message : 'Gangguan koneksi ke server.'
@@ -260,8 +290,13 @@ class SupabaseSyncManager {
           this.tokenRpcMissing = true;
           return { rpcUnavailable: true };
         }
+        const restricted = this.isCloudRestrictionError(error);
+        if (restricted) {
+          this.lastCloudRestrictionMessage = String(error.message || 'Cloud database restricted');
+        }
         return {
           rpcUnavailable: false,
+          cloudRestricted: restricted,
           networkError: this.isNetworkLikeError(error),
           success: false,
           valid: false,
@@ -275,6 +310,7 @@ class SupabaseSyncManager {
     } catch (err) {
       return {
         rpcUnavailable: false,
+        cloudRestricted: this.isCloudRestrictionError(err),
         networkError: true,
         success: false,
         valid: false,
@@ -1561,8 +1597,14 @@ class SupabaseSyncManager {
               dirMap[row.key] = row.value;
             }
           });
-        } else if (this.isMissingTableError(error)) {
-          this.stateTableMissing = true;
+        } else if (error) {
+          if (this.isCloudRestrictionError(error)) {
+            this.lastCloudRestrictionMessage = String(error.message || 'Cloud database restricted');
+            return { success: false, cloudRestricted: true, message: error.message, state: {} };
+          }
+          if (this.isMissingTableError(error)) {
+            this.stateTableMissing = true;
+          }
         }
       }
 
@@ -1579,11 +1621,14 @@ class SupabaseSyncManager {
               dirMap[row.student_name] = row.raw_data;
             }
           });
+        } else if (fbError && this.isCloudRestrictionError(fbError)) {
+          this.lastCloudRestrictionMessage = String(fbError.message || 'Cloud database restricted');
+          return { success: false, cloudRestricted: true, message: fbError.message, state: {} };
         }
       }
       return { success: true, state: dirMap };
     } catch (e) {
-      return { success: false, state: {} };
+      return { success: false, cloudRestricted: this.isCloudRestrictionError(e), state: {} };
     }
   }
 

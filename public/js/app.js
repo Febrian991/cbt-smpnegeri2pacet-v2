@@ -2758,6 +2758,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
         const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
         switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
+        if (window.supabaseSync && window.supabaseSync.lastCloudRestrictionMessage) {
+          const warnBanner = document.getElementById('adminEgressEarlyWarningBanner');
+          const warnTitle = document.getElementById('adminEgressWarningTitle');
+          const warnText = document.getElementById('adminEgressWarningText');
+          const warnIcon = document.getElementById('adminEgressWarningIcon');
+          if (warnBanner) {
+            warnBanner.className = 'rounded-2xl border p-3.5 sm:p-4 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-3 bg-rose-50 border-rose-300 text-rose-900';
+            if (warnIcon) warnIcon.innerText = '🚨';
+            if (warnTitle) warnTitle.innerText = 'Cloud Supabase Terkunci (exceed_egress_quota) — Mode Login Darurat Lokal Aktif';
+            if (warnText) warnText.innerText = 'Anda masuk menggunakan verifikasi lokal agar tetap bisa membuka Backup & Manajemen Database. Segera pindahkan Worker ke Cloudflare D1 atau ganti URL Project Supabase yang aktif.';
+          }
+        }
         if (typeof refreshWorkerEgressMonitorUI === 'function') {
           setTimeout(() => { refreshWorkerEgressMonitorUI(); }, 350);
         }
@@ -13129,8 +13141,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isAdmin = Boolean(window.cbtAdmin && typeof window.cbtAdmin.isSuperAdminUser === 'function' && window.cbtAdmin.isSuperAdminUser());
 
+    const cloudRestrictedMsg = (window.supabaseSync && window.supabaseSync.lastCloudRestrictionMessage) || '';
+
     if (!stats || !stats.supported) {
-      if (warnBanner) warnBanner.classList.add('hidden');
+      if (warnBanner) {
+        if (isAdmin && cloudRestrictedMsg) {
+          warnBanner.className = 'rounded-2xl border p-3.5 sm:p-4 text-xs sm:text-sm flex flex-wrap items-center justify-between gap-3 bg-rose-50 border-rose-300 text-rose-900';
+          if (warnIcon) warnIcon.innerText = '🚨';
+          if (warnTitle) warnTitle.innerText = 'Cloud Supabase Terkunci (exceed_egress_quota) — Mode Login Darurat Lokal Aktif';
+          if (warnText) warnText.innerText = 'Database Supabase sedang dibatasi kuota egress. Segera buka menu Manajemen Database untuk beralih ke Cloudflare D1 atau ganti ke project aktif.';
+        } else {
+          warnBanner.classList.add('hidden');
+        }
+      }
       if (badge) {
         badge.className = 'px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold';
         badge.innerText = stats && stats.reason === 'not_proxy' ? 'Non-Worker' : 'Pelacak Belum Aktif';
