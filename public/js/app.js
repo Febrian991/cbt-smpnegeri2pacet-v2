@@ -2789,6 +2789,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAdmin) btnOpenRoomDocsMon.classList.remove('hidden');
       else btnOpenRoomDocsMon.classList.add('hidden');
     }
+    const btnOpenBeritaAcaraMon = document.getElementById('btnOpenBeritaAcaraFromMonitoring');
+    if (btnOpenBeritaAcaraMon) {
+      if (isAdmin) btnOpenBeritaAcaraMon.classList.remove('hidden');
+      else btnOpenBeritaAcaraMon.classList.add('hidden');
+    }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
     if (btnResetQs) {
       if (isAdmin) btnResetQs.classList.remove('hidden');
@@ -10870,46 +10875,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    const isRoomTarget = Boolean(selectedFilter && String(selectedFilter).startsWith('ROOM:'));
-    const cleanTarget = isRoomTarget ? String(selectedFilter).slice(5) : String(selectedFilter || '').trim();
-    const normTargetRoomKey = typeof window.cbtAdmin.normalizeRoomKey === 'function'
-      ? window.cbtAdmin.normalizeRoomKey(cleanTarget)
-      : cleanTarget.toUpperCase();
-
-    const matchesTargetStr = (rawAssigned) => {
-      if (!rawAssigned || !cleanTarget) return false;
-      if (isRoomTarget && normTargetRoomKey && typeof window.cbtAdmin.parseTeacherClasses === 'function') {
-        const tokens = window.cbtAdmin.parseTeacherClasses(rawAssigned);
-        if (tokens.some(tok => window.cbtAdmin.normalizeRoomKey(tok) === normTargetRoomKey)) {
-          return true;
-        }
-      }
-      if (!isRoomTarget && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
-        return window.examEngine.matchesClassLevel(rawAssigned, cleanTarget);
-      }
-      return false;
-    };
-
-    let matched = null;
-    if (cleanTarget && cleanTarget !== 'ALL') {
-      if (attDayVal) {
-        matched = pengawasList.find(t => {
-          const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
-          const dayKey = Object.keys(normSched).find(k => k.toLowerCase() === attDayVal.toLowerCase());
-          return dayKey && normSched[dayKey] && matchesTargetStr(normSched[dayKey]);
-        });
-      }
-      if (!matched) {
-        matched = pengawasList.find(t => {
-          if (t.classes && matchesTargetStr(t.classes)) return true;
-          const normSched = window.cbtAdmin.normalizePengawasRoomSchedule ? window.cbtAdmin.normalizePengawasRoomSchedule(t.roomSchedule) : {};
-          return Object.values(normSched).some(rm => rm && matchesTargetStr(rm));
-        });
-      }
-    }
-    if (!matched && pengawasList.length === 1) {
-      matched = pengawasList[0];
-    }
+    const matched = typeof window.cbtAdmin.resolvePengawasForRoomAndDay === 'function'
+      ? window.cbtAdmin.resolvePengawasForRoomAndDay(selectedFilter, attDayVal)
+      : null;
 
     const nameEl = document.getElementById('attPengawasName');
     const nipEl = document.getElementById('attPengawasNip');
@@ -10920,6 +10888,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanNip = String(matched.nip || '').trim();
         nipEl.value = /^\d[\d\s.\-]{5,}$/.test(cleanNip) ? cleanNip : '';
       }
+    } else {
+      if (attPengawasPreset) attPengawasPreset.value = '';
+      if (nameEl) nameEl.value = '';
+      if (nipEl) nipEl.value = '';
     }
   }
 
@@ -10939,8 +10911,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ? window.examEngine.matchesSubject(s.subject, subjName)
           : String(s.subject || '').trim().toLowerCase() === subjName.toLowerCase()
       );
-      if (matchingSchedules.length === 1) {
-        const matchedSch = matchingSchedules[0];
+      if (matchingSchedules.length > 0) {
+        const matchedSch = matchingSchedules.find(s => s.isActive) || matchingSchedules[0];
         if (dayEl && matchedSch.day) dayEl.value = matchedSch.day;
         if (dateEl) {
           const dStr = matchedSch.dateFormatted || (matchedSch.dateIso && window.cbtAdmin.formatIndonesianDate ? window.cbtAdmin.formatIndonesianDate(matchedSch.dateIso) : '');
@@ -10979,16 +10951,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getAttendanceStudentsAndOptions() {
     const selectedFilter = attClassFilter ? attClassFilter.value : 'ALL';
+    const isAllRoomsMode = selectedFilter === 'ALL_ROOMS';
     const isRoomMode = Boolean(selectedFilter && selectedFilter.startsWith('ROOM:'));
     const roomName = isRoomMode ? selectedFilter.slice(5) : '';
+    const rooms = window.studentManager && typeof window.studentManager.getAllRooms === 'function'
+      ? window.studentManager.getAllRooms()
+      : [];
     let students = window.studentManager ? window.studentManager.getAllStudents() : [];
-    if (isRoomMode) {
+    const dayTextVal = document.getElementById('attDayText')?.value.trim() || '';
+    let roomGroups = null;
+
+    if (isAllRoomsMode && rooms.length > 0) {
+      roomGroups = rooms.map(rm => {
+        const rmStudents = window.studentManager.getStudentsByRoom(rm);
+        const matchedP = window.cbtAdmin && typeof window.cbtAdmin.resolvePengawasForRoomAndDay === 'function'
+          ? window.cbtAdmin.resolvePengawasForRoomAndDay(`ROOM:${rm}`, dayTextVal)
+          : null;
+        const cleanNip = matchedP ? String(matchedP.nip || '').trim() : '';
+        return {
+          roomLabel: rm,
+          serverRoom: rm,
+          isMixedRoom: true,
+          students: rmStudents,
+          pengawasName: matchedP ? (matchedP.name || '') : '',
+          pengawasNip: /^\d[\d\s.\-]{5,}$/.test(cleanNip) ? cleanNip : ''
+        };
+      });
+      students = roomGroups.flatMap(g => g.students);
+    } else if (isRoomMode) {
       students = students.filter(s =>
         typeof window.studentManager.matchesRoom === 'function'
           ? window.studentManager.matchesRoom(s.examRoom, roomName)
           : String(s.examRoom || '').trim().toUpperCase() === roomName.trim().toUpperCase()
       );
-    } else if (selectedFilter && selectedFilter !== 'ALL') {
+    } else if (selectedFilter && selectedFilter !== 'ALL' && !isAllRoomsMode) {
       students = students.filter(s => {
         if (window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
           return window.examEngine.matchesClassLevel(s.class, selectedFilter);
@@ -10996,14 +10992,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(s.class || '').trim().toUpperCase() === String(selectedFilter).trim().toUpperCase();
       });
     }
-    if (isRoomMode && window.studentManager && typeof window.studentManager.sortRoomStudents === 'function') {
-      students = window.studentManager.sortRoomStudents(students);
-    } else {
-      students = [...students].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+    if (!isAllRoomsMode) {
+      if (isRoomMode && window.studentManager && typeof window.studentManager.sortRoomStudents === 'function') {
+        students = window.studentManager.sortRoomStudents(students);
+      } else {
+        students = [...students].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'id'));
+      }
     }
 
     const uniqueClassesInSelection = new Set(students.map(s => String(s.class || '').trim()).filter(Boolean));
-    const isMixedRoom = Boolean(isRoomMode || uniqueClassesInSelection.size > 1);
+    const isMixedRoom = Boolean(isRoomMode || isAllRoomsMode || uniqueClassesInSelection.size > 1);
     const activeSchedules = window.cbtAdmin && typeof window.cbtAdmin.getActiveSchedules === 'function'
       ? window.cbtAdmin.getActiveSchedules()
       : [];
@@ -11020,8 +11018,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const paperVal = attPaperSize ? attPaperSize.value : 'F4';
     const rowsVal = attRowsPerPage ? parseInt(attRowsPerPage.value, 10) : 25;
     const options = {
-      classLabel: (!isRoomMode && selectedFilter && selectedFilter !== 'ALL') ? selectedFilter : '',
+      classLabel: (!isRoomMode && !isAllRoomsMode && selectedFilter && selectedFilter !== 'ALL') ? selectedFilter : '',
       roomLabel: roomName,
+      roomGroups,
       isMixedRoom,
       resolveSubjectForStudent,
       docTitle: document.getElementById('attDocTitle')?.value.trim() || 'DAFTAR HADIR PESERTA',
@@ -11031,9 +11030,9 @@ document.addEventListener('DOMContentLoaded', () => {
       cityCode: document.getElementById('attCityCode')?.value.trim() || '',
       schoolName: document.getElementById('attSchoolName')?.value.trim() || 'SMP NEGERI 2 PACET',
       schoolCode: document.getElementById('attSchoolCode')?.value.trim() || '',
-      serverRoom: document.getElementById('attServerRoom')?.value.trim() || (roomName || (selectedFilter && selectedFilter !== 'ALL' ? `Ruang Ujian ${selectedFilter}` : 'Ruang Ujian 1')),
+      serverRoom: document.getElementById('attServerRoom')?.value.trim() || (roomName || (selectedFilter && selectedFilter !== 'ALL' && !isAllRoomsMode ? `Ruang Ujian ${selectedFilter}` : 'Ruang Ujian 1')),
       session: document.getElementById('attSession')?.value.trim() || '1',
-      dayText: document.getElementById('attDayText')?.value.trim() || '',
+      dayText: dayTextVal,
       dateText: document.getElementById('attDateText')?.value.trim() || '',
       timeRange: document.getElementById('attTimeRange')?.value.trim() || '07.30 - 09.30',
       subjectName: document.getElementById('attSubjectName')?.value.trim() || '',
@@ -11056,9 +11055,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.cbtAdmin) return;
     const { students, options } = getAttendanceStudentsAndOptions();
     if (countBadge) {
-      const roomLbl = options.roomLabel
-        ? options.roomLabel
-        : (options.classLabel ? `Kelas ${options.classLabel}` : 'Semua Peserta');
+      const roomLbl = options.roomGroups && options.roomGroups.length > 0
+        ? `Semua ${options.roomGroups.length} Ruang`
+        : (options.roomLabel
+          ? options.roomLabel
+          : (options.classLabel ? `Kelas ${options.classLabel}` : 'Semua Peserta'));
       countBadge.innerText = `${students.length} Peserta (${roomLbl})`;
     }
     if (paperBadge) {
@@ -11087,7 +11088,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (attClassFilter) {
       let optHtml = '';
       if (rooms.length > 0) {
-        optHtml += '<optgroup label="🏫 Berdasarkan Ruang Ujian (Campur Kelas)">';
+        optHtml += `<option value="ALL_ROOMS">🏫 Semua Ruang Ujian (${rooms.length} Ruang • Pengawas Per Ruang)</option>`;
+        optHtml += '<optgroup label="🚪 Berdasarkan Ruang Ujian (Campur Kelas)">';
         rooms.forEach(rm => {
           const members = window.studentManager.getStudentsByRoom(rm);
           const gradeNums = [...new Set(members.map(m => {
@@ -11109,7 +11111,9 @@ document.addEventListener('DOMContentLoaded', () => {
       optHtml += `<option value="ALL">Semua Peserta (${allStudents.length} Siswa)</option>`;
       attClassFilter.innerHTML = optHtml;
 
-      if (preferredClass && preferredClass !== 'ALL') {
+      if (preferredClass === 'ALL_ROOMS' && rooms.length > 0) {
+        attClassFilter.value = 'ALL_ROOMS';
+      } else if (preferredClass && preferredClass !== 'ALL') {
         if (String(preferredClass).startsWith('ROOM:')) {
           const rmName = String(preferredClass).slice(5);
           const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, rmName));
@@ -11304,11 +11308,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const cls = attClassFilter.value;
       const roomEl = document.getElementById('attServerRoom');
       if (roomEl) {
-        if (cls && cls.startsWith('ROOM:')) {
+        if (cls === 'ALL_ROOMS') {
+          roomEl.value = 'Sesuai Masing-Masing Ruang';
+        } else if (cls && cls.startsWith('ROOM:')) {
           roomEl.value = cls.slice(5);
         } else {
           const curRoom = roomEl.value.trim();
-          if (!curRoom || /^Ruang/i.test(curRoom) || /^Lab/i.test(curRoom) || curRoom.includes('/')) {
+          if (!curRoom || /^Ruang/i.test(curRoom) || /^Lab/i.test(curRoom) || /^Sesuai/i.test(curRoom) || curRoom.includes('/')) {
             const basePrefix = curRoom.includes('/') ? curRoom.split('/')[0].trim() + ' / ' : '';
             roomEl.value = cls && cls !== 'ALL' ? `${basePrefix}Ruang Ujian ${cls}` : `${basePrefix}Ruang Ujian 1`;
           }
@@ -11324,8 +11330,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (attScheduleSelect.value && attScheduleSelect.value !== '__MANUAL__') {
         applyScheduleToAttendanceFields(attScheduleSelect.value);
       }
+      applyPengawasForSelectedClass(attClassFilter ? attClassFilter.value : 'ALL');
       refreshAttendancePreview();
     });
+  }
+
+  const attDayInputEl = document.getElementById('attDayText');
+  if (attDayInputEl) {
+    const syncPengawasOnDayChange = () => {
+      applyPengawasForSelectedClass(attClassFilter ? attClassFilter.value : 'ALL');
+      refreshAttendancePreview();
+    };
+    attDayInputEl.addEventListener('input', syncPengawasOnDayChange);
+    attDayInputEl.addEventListener('change', syncPengawasOnDayChange);
   }
 
   if (attPengawasPreset) {
@@ -11387,7 +11404,7 @@ document.addEventListener('DOMContentLoaded', () => {
   [
     'attPaperSize', 'attRowsPerPage', 'attDocTitle', 'attExamTitle', 'attAcademicYear',
     'attCityRegency', 'attCityCode', 'attSchoolName', 'attSchoolCode',
-    'attServerRoom', 'attSession', 'attDayText', 'attDateText', 'attTimeRange',
+    'attServerRoom', 'attSession', 'attDateText', 'attTimeRange',
     'attSubjectName', 'attHeadmasterName', 'attHeadmasterNip',
     'attPengawasName', 'attPengawasNip', 'attNotes', 'attAutoTotalStudents'
   ].forEach(id => {
@@ -11476,14 +11493,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ===================== MODAL STUDIO DAFTAR PESERTA PER RUANGAN & DENAH DUDUK (v3.83) =====================
+  // ===================== MODAL STUDIO DAFTAR PESERTA PER RUANGAN, DENAH DUDUK & BERITA ACARA (v3.98) =====================
   const modalRoomDocsStudio = document.getElementById('modalRoomDocsStudio');
   const btnOpenRoomDocsModal = document.getElementById('btnOpenRoomDocsModal');
   const btnOpenRoomDocsFromMonitoring = document.getElementById('btnOpenRoomDocsFromMonitoring');
+  const btnOpenBeritaAcaraModal = document.getElementById('btnOpenBeritaAcaraModal');
+  const btnOpenBeritaAcaraFromMonitoring = document.getElementById('btnOpenBeritaAcaraFromMonitoring');
   const btnCloseRoomDocsModal = document.getElementById('btnCloseRoomDocsModal');
   const btnCancelRoomDocsModal = document.getElementById('btnCancelRoomDocsModal');
   const btnRoomDocModeRoster = document.getElementById('btnRoomDocModeRoster');
   const btnRoomDocModeSeating = document.getElementById('btnRoomDocModeSeating');
+  const btnRoomDocModeBeritaAcara = document.getElementById('btnRoomDocModeBeritaAcara');
   const roomDocClassFilter = document.getElementById('roomDocClassFilter');
   const roomDocPaperSize = document.getElementById('roomDocPaperSize');
   const roomDocKopImageFile = document.getElementById('roomDocKopImageFile');
@@ -11517,27 +11537,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function syncBeritaAcaraAutoCountInputState() {
+    const autoChk = document.getElementById('rdBaAutoCounts');
+    const expectedInput = document.getElementById('rdBaTotalExpected');
+    if (!autoChk || !expectedInput) return;
+    const isAuto = Boolean(autoChk.checked);
+    expectedInput.disabled = isAuto;
+    expectedInput.classList.toggle('bg-slate-100', isAuto);
+    expectedInput.classList.toggle('text-slate-400', isAuto);
+    expectedInput.classList.toggle('bg-white', !isAuto);
+  }
+
   function setRoomDocMode(mode) {
-    activeRoomDocMode = mode === 'seating' ? 'seating' : 'roster';
+    activeRoomDocMode = (mode === 'seating' || mode === 'berita_acara') ? mode : 'roster';
+    const commonGrp = document.getElementById('rdCommonSchoolFormatGroup');
     const rosterGrp = document.getElementById('rdRosterFormatGroup');
     const seatingGrp = document.getElementById('rdSeatingFormatGroup');
-    if (btnRoomDocModeRoster) {
-      btnRoomDocModeRoster.className = activeRoomDocMode === 'roster'
-        ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white'
-        : 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
-    }
-    if (btnRoomDocModeSeating) {
-      btnRoomDocModeSeating.className = activeRoomDocMode === 'seating'
-        ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white'
-        : 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
+    const baGrp = document.getElementById('rdBeritaAcaraFormatGroup');
+
+    const activeBtnCls = 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white';
+    const inactiveBtnCls = 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
+    if (btnRoomDocModeRoster) btnRoomDocModeRoster.className = activeRoomDocMode === 'roster' ? activeBtnCls : inactiveBtnCls;
+    if (btnRoomDocModeSeating) btnRoomDocModeSeating.className = activeRoomDocMode === 'seating' ? activeBtnCls : inactiveBtnCls;
+    if (btnRoomDocModeBeritaAcara) btnRoomDocModeBeritaAcara.className = activeRoomDocMode === 'berita_acara' ? activeBtnCls : inactiveBtnCls;
+
+    if (commonGrp) {
+      commonGrp.classList.toggle('hidden', activeRoomDocMode === 'berita_acara');
     }
     if (rosterGrp) {
+      rosterGrp.classList.toggle('hidden', activeRoomDocMode !== 'roster');
       rosterGrp.style.borderColor = activeRoomDocMode === 'roster' ? '#7c3aed' : '#e2e8f0';
       rosterGrp.style.boxShadow = activeRoomDocMode === 'roster' ? '0 0 0 2px rgba(124,58,237,0.14)' : 'none';
     }
     if (seatingGrp) {
+      seatingGrp.classList.toggle('hidden', activeRoomDocMode !== 'seating');
       seatingGrp.style.borderColor = activeRoomDocMode === 'seating' ? '#7c3aed' : '#e2e8f0';
       seatingGrp.style.boxShadow = activeRoomDocMode === 'seating' ? '0 0 0 2px rgba(124,58,237,0.14)' : 'none';
+    }
+    if (baGrp) {
+      baGrp.classList.toggle('hidden', activeRoomDocMode !== 'berita_acara');
     }
     refreshRoomDocsPreview();
   }
@@ -11577,6 +11615,42 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('rdSeatingBottomMode', fmt.seatingBottomMode || 'seat_class');
     setVal('rdSeatingAccentColor', fmt.seatingAccentColor || '#b2a1c7');
     setChk('rdSeatingShowLegend', fmt.seatingShowLegend !== false);
+
+    // Berita Acara (Full Edit)
+    setVal('rdBaLogoMode', fmt.baLogoMode || 'tutwuri');
+    setVal('rdBaTitle1', fmt.baTitle1 !== undefined ? fmt.baTitle1 : 'BERITA ACARA PELAKSANAAN');
+    setVal('rdBaTitle2', fmt.baTitle2 !== undefined ? fmt.baTitle2 : 'ASESMEN NASIONAL SMP/MTS');
+    setVal('rdBaTitle3', fmt.baTitle3 !== undefined ? fmt.baTitle3 : `TAHUN ${new Date().getFullYear()}`);
+    setVal('rdBaDayName', fmt.baDayName !== undefined ? fmt.baDayName : '');
+    setVal('rdBaDateNum', fmt.baDateNum !== undefined ? fmt.baDateNum : '');
+    setVal('rdBaMonthName', fmt.baMonthName !== undefined ? fmt.baMonthName : '');
+    setVal('rdBaYearNum', fmt.baYearNum !== undefined ? fmt.baYearNum : '');
+    setVal('rdBaLocationText', fmt.baLocationText !== undefined ? fmt.baLocationText : '');
+    setVal('rdBaExamDesc', fmt.baExamDesc !== undefined ? fmt.baExamDesc : '');
+    setVal('rdBaTimeStart', fmt.baTimeStart !== undefined ? fmt.baTimeStart : '07:30');
+    setVal('rdBaTimeEnd', fmt.baTimeEnd !== undefined ? fmt.baTimeEnd : '09:30');
+    setVal('rdBaUsername', fmt.baUsername !== undefined ? fmt.baUsername : '');
+    setVal('rdBaSchoolName', fmt.baSchoolName !== undefined ? fmt.baSchoolName : '');
+    setVal('rdBaIdServer', fmt.baIdServer !== undefined ? fmt.baIdServer : '');
+    setVal('rdBaSession', fmt.baSession !== undefined ? fmt.baSession : '1');
+    setVal('rdBaRoomOverride', fmt.baRoomOverride !== undefined ? fmt.baRoomOverride : '');
+    setVal('rdBaTotalExpected', fmt.baTotalExpected !== undefined ? fmt.baTotalExpected : '');
+    setVal('rdBaPresentCount', fmt.baPresentCount !== undefined ? fmt.baPresentCount : '');
+    setVal('rdBaAbsentCount', fmt.baAbsentCount !== undefined ? fmt.baAbsentCount : '0');
+    setVal('rdBaAbsentUsernames', fmt.baAbsentUsernames !== undefined ? fmt.baAbsentUsernames : '');
+    setChk('rdBaAutoCounts', fmt.baAutoCounts !== false);
+    setChk('rdBaAutoSyncPengawas', fmt.baAutoSyncPengawas !== false);
+    setVal('rdBaRole2Label', fmt.baRole2Label !== undefined ? fmt.baRole2Label : 'Pengawas');
+    setVal('rdBaRole2Name', fmt.baRole2Name !== undefined ? fmt.baRole2Name : '');
+    setVal('rdBaRole2Nip', fmt.baRole2Nip !== undefined ? fmt.baRole2Nip : '-');
+    setVal('rdBaRole3Label', fmt.baRole3Label !== undefined ? fmt.baRole3Label : 'Kepala Sekolah');
+    setVal('rdBaRole3Name', fmt.baRole3Name !== undefined ? fmt.baRole3Name : '');
+    setVal('rdBaRole3Nip', fmt.baRole3Nip !== undefined ? fmt.baRole3Nip : '-');
+    setVal('rdBaTestNotes', fmt.baTestNotes !== undefined ? fmt.baTestNotes : '');
+    setVal('rdBaBottomNotes', fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : '');
+    setVal('rdBaIntroSignLabel', fmt.baIntroSignLabel !== undefined ? fmt.baIntroSignLabel : 'Yang membuat berita acara :');
+    setVal('rdBaFooterText', fmt.baFooterText !== undefined ? fmt.baFooterText : '');
+    syncBeritaAcaraAutoCountInputState();
   }
 
   function readRoomDocsFormatInputs() {
@@ -11618,7 +11692,41 @@ document.addEventListener('DOMContentLoaded', () => {
       seatingNumberMode: getVal('rdSeatingNumberMode', 'nisn'),
       seatingBottomMode: getVal('rdSeatingBottomMode', 'seat_class'),
       seatingAccentColor: getVal('rdSeatingAccentColor', '#b2a1c7') || '#b2a1c7',
-      seatingShowLegend: getChk('rdSeatingShowLegend', true)
+      seatingShowLegend: getChk('rdSeatingShowLegend', true),
+
+      baLogoMode: getVal('rdBaLogoMode', base.baLogoMode || 'tutwuri') || 'tutwuri',
+      baTitle1: String(getVal('rdBaTitle1', base.baTitle1) ?? '').trim(),
+      baTitle2: String(getVal('rdBaTitle2', base.baTitle2) ?? '').trim(),
+      baTitle3: String(getVal('rdBaTitle3', base.baTitle3) ?? '').trim(),
+      baDayName: String(getVal('rdBaDayName', base.baDayName) ?? '').trim(),
+      baDateNum: String(getVal('rdBaDateNum', base.baDateNum) ?? '').trim(),
+      baMonthName: String(getVal('rdBaMonthName', base.baMonthName) ?? '').trim(),
+      baYearNum: String(getVal('rdBaYearNum', base.baYearNum) ?? '').trim(),
+      baLocationText: String(getVal('rdBaLocationText', base.baLocationText) ?? '').trim(),
+      baExamDesc: String(getVal('rdBaExamDesc', base.baExamDesc) ?? '').trim(),
+      baTimeStart: String(getVal('rdBaTimeStart', base.baTimeStart) ?? '').trim(),
+      baTimeEnd: String(getVal('rdBaTimeEnd', base.baTimeEnd) ?? '').trim(),
+      baUsername: String(getVal('rdBaUsername', base.baUsername) ?? '').trim(),
+      baSchoolName: String(getVal('rdBaSchoolName', base.baSchoolName) ?? '').trim(),
+      baIdServer: String(getVal('rdBaIdServer', base.baIdServer) ?? '').trim(),
+      baSession: String(getVal('rdBaSession', base.baSession) ?? '').trim(),
+      baRoomOverride: String(getVal('rdBaRoomOverride', '') ?? '').trim(),
+      baTotalExpected: String(getVal('rdBaTotalExpected', '') ?? '').trim(),
+      baPresentCount: String(getVal('rdBaPresentCount', '') ?? '').trim(),
+      baAbsentCount: String(getVal('rdBaAbsentCount', '0') ?? '').trim(),
+      baAbsentUsernames: String(getVal('rdBaAbsentUsernames', '') ?? '').trim(),
+      baAutoCounts: getChk('rdBaAutoCounts', true),
+      baAutoSyncPengawas: getChk('rdBaAutoSyncPengawas', true),
+      baRole2Label: String(getVal('rdBaRole2Label', base.baRole2Label) ?? '').trim(),
+      baRole2Name: String(getVal('rdBaRole2Name', '') ?? '').trim(),
+      baRole2Nip: String(getVal('rdBaRole2Nip', '-') ?? '').trim(),
+      baRole3Label: String(getVal('rdBaRole3Label', base.baRole3Label) ?? '').trim(),
+      baRole3Name: String(getVal('rdBaRole3Name', base.baRole3Name) ?? '').trim(),
+      baRole3Nip: String(getVal('rdBaRole3Nip', base.baRole3Nip) ?? '').trim(),
+      baTestNotes: String(getVal('rdBaTestNotes', '') ?? ''),
+      baBottomNotes: String(getVal('rdBaBottomNotes', base.baBottomNotes) ?? ''),
+      baIntroSignLabel: String(getVal('rdBaIntroSignLabel', base.baIntroSignLabel) ?? '').trim(),
+      baFooterText: String(getVal('rdBaFooterText', base.baFooterText) ?? '').trim()
     };
   }
 
@@ -11676,9 +11784,14 @@ document.addEventListener('DOMContentLoaded', () => {
       scopeLabel = 'Semua_Peserta';
     }
 
-    const sheetsHtml = activeRoomDocMode === 'seating'
-      ? window.cbtAdmin.buildRoomSeatingPlanHtml(groups, fmt)
-      : window.cbtAdmin.buildRoomRosterSheetHtml(groups, fmt);
+    let sheetsHtml = '';
+    if (activeRoomDocMode === 'seating') {
+      sheetsHtml = window.cbtAdmin.buildRoomSeatingPlanHtml(groups, fmt);
+    } else if (activeRoomDocMode === 'berita_acara') {
+      sheetsHtml = window.cbtAdmin.buildRoomBeritaAcaraHtml(groups, fmt);
+    } else {
+      sheetsHtml = window.cbtAdmin.buildRoomRosterSheetHtml(groups, fmt);
+    }
 
     const totalStudents = groups.reduce((acc, g) => acc + (Array.isArray(g.students) ? g.students.length : 0), 0);
     return {
@@ -11711,7 +11824,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function openRoomDocsModal(preferredFilter = null, preferredMode = 'roster') {
+  function openRoomDocsModal(preferredFilter = null, preferredMode = 'roster', expandEditor = false) {
     if (!modalRoomDocsStudio || !window.cbtAdmin || !window.studentManager) return;
     const allStudents = window.studentManager.getAllStudents();
     if (!allStudents || allStudents.length === 0) {
@@ -11720,7 +11833,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const cfg = window.cbtAdmin.getSchoolConfig();
-    const fmt = cfg.roomDocsFormat || window.cbtAdmin.getDefaultRoomDocsFormat(cfg);
+    const defFmt = window.cbtAdmin.getDefaultRoomDocsFormat(cfg);
+    const fmt = { ...defFmt, ...(cfg.roomDocsFormat || {}) };
     populateRoomDocsFormatInputs(fmt);
 
     const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
@@ -11754,7 +11868,9 @@ document.addEventListener('DOMContentLoaded', () => {
       roomDocClassFilter.innerHTML = optHtml;
 
       if (preferredFilter && preferredFilter !== 'ALL') {
-        if (String(preferredFilter).startsWith('ROOM:')) {
+        if (preferredFilter === 'ALL_ROOMS' && rooms.length > 0) {
+          roomDocClassFilter.value = 'ALL_ROOMS';
+        } else if (String(preferredFilter).startsWith('ROOM:')) {
           const rmName = String(preferredFilter).slice(5);
           const matchedRoom = rooms.find(r => window.studentManager.matchesRoom(r, rmName));
           roomDocClassFilter.value = matchedRoom ? `ROOM:${matchedRoom}` : (rooms.length > 0 ? `ROOM:${rooms[0]}` : roomDocClassFilter.options[0]?.value);
@@ -11772,6 +11888,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    if (roomDocFormatEditorPanel && btnToggleRoomDocFormatEditor) {
+      if (expandEditor) {
+        roomDocFormatEditorPanel.classList.remove('hidden');
+        btnToggleRoomDocFormatEditor.innerHTML = '<span>🔼 Tutup Editor Format</span>';
+      } else {
+        roomDocFormatEditorPanel.classList.add('hidden');
+        btnToggleRoomDocFormatEditor.innerHTML = '<span>✏️ Edit Format Sendiri</span>';
+      }
+    }
+
     syncRoomDocsKopUi();
     setRoomDocMode(preferredMode);
     modalRoomDocsStudio.classList.remove('hidden');
@@ -11782,12 +11908,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (btnOpenRoomDocsModal) {
-    btnOpenRoomDocsModal.addEventListener('click', () => openRoomDocsModal(null, 'roster'));
+    btnOpenRoomDocsModal.addEventListener('click', () => openRoomDocsModal(null, 'roster', false));
   }
   if (btnOpenRoomDocsFromMonitoring) {
     btnOpenRoomDocsFromMonitoring.addEventListener('click', () => {
       const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
-      openRoomDocsModal(monCls, 'roster');
+      openRoomDocsModal(monCls, 'roster', false);
+    });
+  }
+  if (btnOpenBeritaAcaraModal) {
+    btnOpenBeritaAcaraModal.addEventListener('click', () => openRoomDocsModal(null, 'berita_acara', true));
+  }
+  if (btnOpenBeritaAcaraFromMonitoring) {
+    btnOpenBeritaAcaraFromMonitoring.addEventListener('click', () => {
+      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
+      openRoomDocsModal(monCls, 'berita_acara', true);
     });
   }
   if (btnOpenAssignRoomsFromDocs) {
@@ -11816,6 +11951,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (btnRoomDocModeSeating) {
     btnRoomDocModeSeating.addEventListener('click', () => setRoomDocMode('seating'));
+  }
+  if (btnRoomDocModeBeritaAcara) {
+    btnRoomDocModeBeritaAcara.addEventListener('click', () => setRoomDocMode('berita_acara'));
   }
 
   if (btnToggleRoomDocFormatEditor && roomDocFormatEditorPanel) {
@@ -11871,13 +12009,30 @@ document.addEventListener('DOMContentLoaded', () => {
     roomDocClassFilter.addEventListener('change', refreshRoomDocsPreview);
   }
 
+  const rdBaAutoCountsChk = document.getElementById('rdBaAutoCounts');
+  if (rdBaAutoCountsChk) {
+    rdBaAutoCountsChk.addEventListener('change', () => {
+      syncBeritaAcaraAutoCountInputState();
+      refreshRoomDocsPreview();
+    });
+  }
+
   [
     'roomDocPaperSize', 'rdProvinceName', 'rdCityRegency', 'rdSchoolName', 'rdExamSubtitle',
     'rdAcademicYear', 'rdSignCity', 'rdSignDate', 'rdSignerRole', 'rdHeadmasterName',
     'rdHeadmasterNip', 'rdRosterTitle', 'rdRosterKetMode', 'rdRosterMinRows',
     'rdRosterShowClassInName', 'rdSeatingTitle', 'rdSeatingCols', 'rdSeatingFlow',
     'rdProctorPos', 'rdSeatingNumberMode', 'rdSeatingBottomMode',
-    'rdSeatingAccentColor', 'rdSeatingShowLegend'
+    'rdSeatingAccentColor', 'rdSeatingShowLegend',
+    'rdBaLogoMode', 'rdBaTitle1', 'rdBaTitle2', 'rdBaTitle3',
+    'rdBaDayName', 'rdBaDateNum', 'rdBaMonthName', 'rdBaYearNum',
+    'rdBaLocationText', 'rdBaExamDesc', 'rdBaTimeStart', 'rdBaTimeEnd',
+    'rdBaUsername', 'rdBaSchoolName', 'rdBaIdServer', 'rdBaSession',
+    'rdBaRoomOverride', 'rdBaTotalExpected', 'rdBaPresentCount', 'rdBaAbsentCount',
+    'rdBaAbsentUsernames', 'rdBaAutoSyncPengawas',
+    'rdBaRole2Label', 'rdBaRole2Name', 'rdBaRole2Nip',
+    'rdBaRole3Label', 'rdBaRole3Name', 'rdBaRole3Nip',
+    'rdBaTestNotes', 'rdBaBottomNotes', 'rdBaIntroSignLabel', 'rdBaFooterText'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -11889,7 +12044,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnResetRoomDocFormat) {
     btnResetRoomDocFormat.addEventListener('click', () => {
       if (!window.cbtAdmin) return;
-      if (!confirm('Kembalikan pengaturan format Daftar Peserta & Denah Duduk ke bawaan sekolah?')) return;
+      if (!confirm('Kembalikan pengaturan format Daftar Peserta, Denah Duduk & Berita Acara ke bawaan sekolah?')) return;
       const cfg = window.cbtAdmin.getSchoolConfig();
       const defFmt = window.cbtAdmin.getDefaultRoomDocsFormat(cfg);
       populateRoomDocsFormatInputs(defFmt);
@@ -11923,7 +12078,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSchoolConfigForm();
         renderConfigInfoOnLogin();
         refreshRoomDocsPreview();
-        alert(`Format Daftar Peserta & Denah Duduk berhasil disimpan permanen!${cloudNote}`);
+        alert(`Format Dokumen Ruang & Berita Acara berhasil disimpan permanen!${cloudNote}`);
       } finally {
         btnSaveRoomDocFormat.disabled = false;
         btnSaveRoomDocFormat.innerHTML = prevHtml;

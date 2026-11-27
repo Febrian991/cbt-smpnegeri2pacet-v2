@@ -494,6 +494,115 @@ class CBTAdmin {
     return todayDay;
   }
 
+  _normalizeIndoWeekdayName(rawDay) {
+    const lower = String(rawDay || '').toLowerCase().replace(/['`’]/g, '').trim();
+    if (!lower) return '';
+    const map = [
+      ['senin', 'Senin'],
+      ['selasa', 'Selasa'],
+      ['rabu', 'Rabu'],
+      ['kamis', 'Kamis'],
+      ['jumat', 'Jumat'],
+      ['sabtu', 'Sabtu']
+    ];
+    for (const [needle, canonical] of map) {
+      if (lower === needle || new RegExp(`\\b${needle}\\b`, 'i').test(lower)) {
+        return canonical;
+      }
+    }
+    return '';
+  }
+
+  resolvePengawasForRoomAndDay(targetFilterOrRoom, dayName = '') {
+    const allTeachers = this.getAllTeachers() || [];
+    const pengawasList = allTeachers.filter(t => t && this.isPengawasUser(t));
+    if (pengawasList.length === 0) return null;
+
+    const rawTarget = String(targetFilterOrRoom || '').trim();
+    if (!rawTarget || rawTarget === 'ALL' || rawTarget === 'ALL_ROOMS') {
+      return null;
+    }
+
+    const isExplicitRoom = rawTarget.startsWith('ROOM:');
+    const cleanTarget = isExplicitRoom ? rawTarget.slice(5).trim() : rawTarget;
+    if (!cleanTarget || cleanTarget === 'ALL') return null;
+
+    const isRoomLike = isExplicitRoom || /^(ruang|ruangan|lab|aula|r\.?\s*\d)/i.test(cleanTarget);
+    const normTargetRoomKey = this.normalizeRoomKey(cleanTarget);
+    const extractRoomNumber = (val) => {
+      const m = String(val || '').trim().match(/^(?:ruangan?|ruang\s*ujian|r\.?)?\s*0*(\d+)$/i);
+      return m ? m[1] : null;
+    };
+    const targetRoomNum = isRoomLike ? extractRoomNumber(cleanTarget) : null;
+
+    const matchesTargetStr = (rawAssigned) => {
+      if (!rawAssigned) return false;
+      const rawStr = String(rawAssigned).trim();
+      if (!rawStr) return false;
+      if (/^(semua|all|semua\s*ruang|semua\s*kelas)$/i.test(rawStr)) return true;
+
+      if (isRoomLike && normTargetRoomKey) {
+        const tokens = rawStr.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        for (const tok of tokens) {
+          const tokKey = this.normalizeRoomKey(tok);
+          if (tokKey && tokKey === normTargetRoomKey) return true;
+          if (targetRoomNum !== null) {
+            const tokNum = extractRoomNumber(tok);
+            if (tokNum !== null && tokNum === targetRoomNum) return true;
+          }
+        }
+        return false;
+      }
+
+      if (typeof window !== 'undefined' && window.examEngine && typeof window.examEngine.matchesClassLevel === 'function') {
+        return window.examEngine.matchesClassLevel(rawStr, cleanTarget);
+      }
+      return rawStr.toUpperCase() === cleanTarget.toUpperCase();
+    };
+
+    const canonicalDay = this._normalizeIndoWeekdayName(dayName);
+
+    // 1) Jika hari diketahui (misal dari jadwal ujian / input Hari), cocokkan jadwal mingguan hari tersebut dulu
+    if (canonicalDay) {
+      const exactDayMatch = pengawasList.find(t => {
+        const normSched = this.normalizePengawasRoomSchedule(t.roomSchedule);
+        return Boolean(normSched[canonicalDay] && matchesTargetStr(normSched[canonicalDay]));
+      });
+      if (exactDayMatch) return exactDayMatch;
+    }
+
+    // 2) Cocokkan Ruang Tetap (kolom classes / ruang tetap pada akun Pengawas)
+    const fixedMatch = pengawasList.find(t => t.classes && matchesTargetStr(t.classes));
+    if (fixedMatch) return fixedMatch;
+
+    // 3) Jika hari belum diisi sama sekali, cek hari aktif (hari ini) dulu, baru fallback ke hari mana saja
+    if (!canonicalDay) {
+      const activeDay = this._normalizeIndoWeekdayName(this.getPengawasActiveDayName(null));
+      if (activeDay) {
+        const todayMatch = pengawasList.find(t => {
+          const normSched = this.normalizePengawasRoomSchedule(t.roomSchedule);
+          return Boolean(normSched[activeDay] && matchesTargetStr(normSched[activeDay]));
+        });
+        if (todayMatch) return todayMatch;
+      }
+      const anyDayMatch = pengawasList.find(t => {
+        const normSched = this.normalizePengawasRoomSchedule(t.roomSchedule);
+        return Object.values(normSched).some(rm => rm && matchesTargetStr(rm));
+      });
+      if (anyDayMatch) return anyDayMatch;
+    }
+
+    // 4) Hanya fallback jika hanya ada 1 pengawas yang benar-benar fleksibel (tanpa ruang/jadwal khusus)
+    if (pengawasList.length === 1) {
+      const onlyP = pengawasList[0];
+      const hasStatic = Boolean(String(onlyP.classes || '').trim());
+      const hasWeekly = Object.keys(this.normalizePengawasRoomSchedule(onlyP.roomSchedule)).length > 0;
+      if (!hasStatic && !hasWeekly) return onlyP;
+    }
+
+    return null;
+  }
+
   searchTeachers(query = "", roleFilter = "ALL") {
     const q = String(query || "").trim().toLowerCase();
     const rf = String(roleFilter || "ALL").trim().toLowerCase();
@@ -2749,6 +2858,7 @@ class CBTAdmin {
         { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
         { key: 'admin_btn_print_attendance', group: 'Data Siswa Admin', label: 'Tombol: 📋 Daftar Hadir Peserta', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
         { key: 'admin_btn_print_room_docs', group: 'Data Siswa Admin', label: 'Tombol: 🗺️ Daftar Peserta & Denah Ruang', selector: '#btnOpenRoomDocsModal, #btnOpenRoomDocsFromMonitoring' },
+        { key: 'admin_btn_print_berita_acara', group: 'Data Siswa Admin', label: 'Tombol: 📝 Berita Acara Ujian', selector: '#btnOpenBeritaAcaraModal, #btnOpenBeritaAcaraFromMonitoring' },
         { key: 'admin_btn_reset_student_passwords', group: 'Data Siswa Admin', label: 'Tombol: 🔄 Reset Password Siswa (123)', selector: '#btnResetAllStudentPasswords' },
         { key: 'admin_btn_demo_students', group: 'Data Siswa Admin', label: 'Tombol: 🎲 Isi 250 Siswa Demo', selector: '#btnGenerate250Demo' },
         { key: 'admin_btn_clear_students', group: 'Data Siswa Admin', label: 'Tombol: 🗑️ Hapus Semua Siswa', selector: '#btnClearStudents' },
@@ -2861,7 +2971,41 @@ class CBTAdmin {
       seatingBottomMode: 'seat_class',
       seatingAccentColor: '#b2a1c7',
       seatingProctorColor: '#c5be97',
-      seatingShowLegend: true
+      seatingShowLegend: true,
+
+      baLogoMode: 'tutwuri',
+      baTitle1: 'BERITA ACARA PELAKSANAAN',
+      baTitle2: 'ASESMEN NASIONAL SMP/MTS',
+      baTitle3: `TAHUN ${new Date().getFullYear()}`,
+      baDayName: att.dayText || new Date().toLocaleDateString('id-ID', { weekday: 'long' }),
+      baDateNum: String(new Date().getDate()),
+      baMonthName: new Date().toLocaleDateString('id-ID', { month: 'long' }),
+      baYearNum: String(new Date().getFullYear()),
+      baLocationText: `${String(cfg.schoolName || 'SMP NEGERI 2 PACET').toUpperCase()} ${inferredCity}`.trim(),
+      baExamDesc: 'ASESMEN NASIONAL SMP/MTS',
+      baTimeStart: '07:30',
+      baTimeEnd: '09:30',
+      baUsername: 'P02151031',
+      baSchoolName: String(cfg.schoolName || 'SMP NEGERI 2 PACET').trim().toUpperCase(),
+      baIdServer: 'P02151031-AM8P',
+      baRoomOverride: '',
+      baSession: att.session || '1',
+      baAutoCounts: true,
+      baTotalExpected: '',
+      baPresentCount: '',
+      baAbsentCount: '0',
+      baAbsentUsernames: '',
+      baTestNotes: '',
+      baIntroSignLabel: 'Yang membuat berita acara :',
+      baAutoSyncPengawas: true,
+      baRole2Label: 'Pengawas',
+      baRole2Name: att.pengawasName || '',
+      baRole2Nip: att.pengawasNip || '-',
+      baRole3Label: 'Kepala Sekolah',
+      baRole3Name: cfg.headmasterName || 'Drs. H. Mulyono, M.Pd.',
+      baRole3Nip: cfg.headmasterNip || '19680512 199403 1 004',
+      baBottomNotes: '- Dibuat rangkap 3 (tiga), masing-masing untuk Sekolah, Kota/Kabupaten dan Provinsi\n- Untuk pusat di upload melalui web ANBK',
+      baFooterText: 'PUSMENDIK - BSKAP - KEMENDIKBUDRISTEK'
     };
   }
 
@@ -6146,6 +6290,26 @@ class CBTAdmin {
 
   // ===================== CETAK & DOWNLOAD DAFTAR HADIR PESERTA RESMI =====================
   buildAttendanceSheetHtml(studentsList = [], options = {}) {
+    if (Array.isArray(options.roomGroups) && options.roomGroups.length > 0) {
+      const chunksHtml = options.roomGroups.map((grp, idx) => {
+        const subHtml = this.buildAttendanceSheetHtml(grp.students || [], {
+          ...options,
+          roomGroups: null,
+          roomLabel: grp.roomLabel || '',
+          serverRoom: grp.serverRoom || grp.roomLabel || options.serverRoom,
+          isMixedRoom: grp.isMixedRoom !== undefined ? grp.isMixedRoom : true,
+          pengawasName: grp.pengawasName !== undefined ? grp.pengawasName : options.pengawasName,
+          pengawasNip: grp.pengawasNip !== undefined ? grp.pengawasNip : options.pengawasNip
+        });
+        if (idx === 0) return subHtml;
+        return subHtml.replace(
+          'class="attendance-paper-sheet"',
+          'class="attendance-paper-sheet attendance-page-break"'
+        );
+      });
+      return chunksHtml.join('');
+    }
+
     const cfg = this.getSchoolConfig();
     const savedAtt = cfg.attendanceIdentity || this.getDefaultAttendanceIdentity(cfg);
     const examCfg = (typeof window !== 'undefined' && window.examEngine && window.examEngine.config) ? window.examEngine.config : {};
@@ -7106,6 +7270,312 @@ class CBTAdmin {
     return allPages.join('');
   }
 
+  _getTutWuriSvgDataUrl() {
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <path id="twTopArc" d="M 22,50 A 40,40 0 0,1 98,50" />
+  </defs>
+  <polygon points="60,5 112,42 92,108 28,108 8,42" fill="#ffffff" stroke="#000000" stroke-width="3.2" stroke-linejoin="round"/>
+  <polygon points="60,11 106,44 88,102 32,102 14,44" fill="none" stroke="#000000" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M 19,45 A 43,43 0 0,1 101,45" fill="none" stroke="#000000" stroke-width="1"/>
+  <text font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="700" fill="#000000" letter-spacing="0.4">
+    <textPath href="#twTopArc" startOffset="50%" text-anchor="middle">TUT WURI HANDAYANI</textPath>
+  </text>
+  <path d="M 60,28 C 56,34 55,40 60,46 C 65,40 64,34 60,28 Z" fill="#000000"/>
+  <path d="M 60,47 L 60,84" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 32,54 C 40,51 49,54 57,62 C 47,63 38,61 32,54 Z" fill="none" stroke="#000000" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 88,54 C 80,51 71,54 63,62 C 73,63 82,61 88,54 Z" fill="none" stroke="#000000" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 28,63 C 38,63 48,66 57,72 C 46,74 36,71 28,63 Z" fill="none" stroke="#000000" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M 92,63 C 82,63 72,66 63,72 C 74,74 84,71 92,63 Z" fill="none" stroke="#000000" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M 41,79 L 60,84 L 79,79 L 79,92 L 60,96 L 41,92 Z" fill="#ffffff" stroke="#000000" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 46,84 L 57,87 M 46,88 L 57,91 M 74,84 L 63,87 M 74,88 L 63,91" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/>
+</svg>`.trim();
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  buildRoomBeritaAcaraHtml(roomGroups = [], formatOverride = {}) {
+    const cfg = this.getSchoolConfig();
+    const fmt = { ...(cfg.roomDocsFormat || this.getDefaultRoomDocsFormat(cfg)), ...(formatOverride || {}) };
+    const groups = Array.isArray(roomGroups) && roomGroups.length > 0
+      ? roomGroups
+      : [{ roomLabel: 'Ruang Ujian 1', students: [] }];
+
+    const paperSize = String(fmt.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
+
+    const logoMode = String(fmt.baLogoMode || 'tutwuri');
+    let logoImgSrc = '';
+    let logoAlt = 'Logo Tut Wuri Handayani';
+    if (logoMode === 'tutwuri') {
+      logoImgSrc = this._getTutWuriSvgDataUrl();
+      logoAlt = 'Logo Tut Wuri Handayani';
+    } else if (logoMode === 'logoLeft' && cfg.logoLeft) {
+      logoImgSrc = cfg.logoLeft;
+      logoAlt = 'Logo Dinas';
+    } else if (logoMode === 'logoRight' && cfg.logoRight) {
+      logoImgSrc = cfg.logoRight;
+      logoAlt = 'Logo Sekolah';
+    } else if (logoMode === 'logoLeft' || logoMode === 'logoRight') {
+      logoImgSrc = this._getTutWuriSvgDataUrl();
+      logoAlt = 'Logo Tut Wuri Handayani';
+    }
+
+    const logoCellHtml = logoImgSrc
+      ? `<img src="${logoImgSrc}" alt="${this.escapePrintHtml(logoAlt)}" style="width:64px; height:64px; object-fit:contain; display:block;">`
+      : '<div style="width:64px; height:64px;"></div>';
+
+    const title1 = String(fmt.baTitle1 || 'BERITA ACARA PELAKSANAAN').trim();
+    const title2 = String(fmt.baTitle2 || 'ASESMEN NASIONAL SMP/MTS').trim();
+    const title3 = String(fmt.baTitle3 || `TAHUN ${new Date().getFullYear()}`).trim();
+
+    const dayName = String(fmt.baDayName || '').trim() || '..........';
+    const dateNum = String(fmt.baDateNum || '').trim() || '....';
+    const monthName = String(fmt.baMonthName || '').trim() || '..........';
+    const yearNum = String(fmt.baYearNum || '').trim() || '......';
+    const locationText = String(fmt.baLocationText || fmt.baSchoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    const examDesc = String(fmt.baExamDesc || title2 || 'ASESMEN NASIONAL SMP/MTS').trim();
+    const timeStart = String(fmt.baTimeStart || '07:30').trim();
+    const timeEnd = String(fmt.baTimeEnd || '09:30').trim();
+
+    const usernameVal = String(fmt.baUsername || '').trim();
+    const schoolVal = String(fmt.baSchoolName || fmt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    const idServerVal = String(fmt.baIdServer || '').trim();
+    const roomOverride = String(fmt.baRoomOverride || '').trim();
+    const sessionVal = String(fmt.baSession !== undefined ? fmt.baSession : '1').trim();
+
+    const autoCounts = fmt.baAutoCounts !== false;
+    const rawExpectedManual = String(fmt.baTotalExpected || '').trim();
+    const rawPresentManual = String(fmt.baPresentCount || '').trim();
+    const rawAbsent = String(fmt.baAbsentCount !== undefined ? fmt.baAbsentCount : '0').trim();
+    const absentUsernames = String(fmt.baAbsentUsernames || '').trim();
+    const testNotes = String(fmt.baTestNotes || '').trim();
+
+    const introSignLabel = String(fmt.baIntroSignLabel || 'Yang membuat berita acara :').trim();
+    const autoSyncPengawas = fmt.baAutoSyncPengawas !== false;
+    const role2Label = String(fmt.baRole2Label || 'Pengawas').trim();
+    const role2NameManual = String(fmt.baRole2Name || '').trim();
+    const role2NipManual = String(fmt.baRole2Nip !== undefined ? fmt.baRole2Nip : '-').trim();
+    const role3Label = String(fmt.baRole3Label || 'Kepala Sekolah').trim();
+    const role3Name = String(fmt.baRole3Name || cfg.headmasterName || '').trim();
+    const role3Nip = String(fmt.baRole3Nip !== undefined ? fmt.baRole3Nip : (cfg.headmasterNip || '-')).trim();
+
+    const bottomNotesRaw = String(fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : '').trim();
+    const footerText = String(fmt.baFooterText !== undefined ? fmt.baFooterText : '').trim();
+
+    const pagesHtml = groups.map((grp, gIdx) => {
+      const students = Array.isArray(grp.students) ? grp.students : [];
+      const roomLabel = roomOverride || String(grp.roomLabel || 'Ruang Ujian 1').trim();
+
+      const expectedStr = autoCounts ? String(students.length) : (rawExpectedManual || String(students.length));
+      const expectedNum = parseInt(expectedStr, 10);
+      const absentNum = parseInt(rawAbsent, 10);
+      let presentStr = rawPresentManual;
+      if (!presentStr) {
+        if (Number.isFinite(expectedNum)) {
+          const absClean = Number.isFinite(absentNum) && absentNum >= 0 ? absentNum : 0;
+          presentStr = String(Math.max(0, expectedNum - absClean));
+        } else {
+          presentStr = '';
+        }
+      }
+
+      let resolvedRole2Name = role2NameManual;
+      let resolvedRole2Nip = role2NipManual;
+      if (autoSyncPengawas) {
+        const matchedP = this.resolvePengawasForRoomAndDay(grp.roomLabel || roomLabel, dayName);
+        if (matchedP) {
+          resolvedRole2Name = matchedP.name || '';
+          const cleanNip = String(matchedP.nip || '').trim();
+          resolvedRole2Nip = /^\d[\d\s.\-]{5,}$/.test(cleanNip) ? cleanNip : '-';
+        }
+      }
+
+      const valOrNbsp = (v) => (v && String(v).trim() !== '' ? this.escapePrintHtml(v) : '&nbsp;');
+      const pageBreakClass = gIdx > 0 ? ' room-doc-page-break' : '';
+
+      const signRows = [
+        { num: '1.', label: role2Label, name: resolvedRole2Name, nip: resolvedRole2Nip },
+        { num: '2.', label: role3Label, name: role3Name, nip: role3Nip }
+      ];
+
+      const signTableRowsHtml = signRows.map((sr, sIdx) => `
+        <tr>
+          <td style="width:22px; padding:12px 4px 2px 0; vertical-align:bottom;">${sr.num}</td>
+          <td style="width:140px; padding:12px 6px 2px 0; vertical-align:bottom;">${this.escapePrintHtml(sr.label)}</td>
+          <td style="width:18px;"></td>
+          <td style="width:205px; padding:12px 4px 2px 2px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(sr.name)}</td>
+          <td style="width:42px;"></td>
+          <td rowspan="2" style="width:210px; vertical-align:bottom; padding:${sIdx === 0 ? '6px' : '12px'} 0 2px 0;">
+            <table style="width:100%; border-collapse:collapse;">
+              <tbody>
+                <tr>
+                  <td style="width:22px; padding:0 4px 1px 0; vertical-align:bottom;">${sr.num}</td>
+                  <td style="border-bottom:1px solid #000000; height:24px;">&nbsp;</td>
+                </tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:5px 4px 3px 0; vertical-align:bottom;">&nbsp;</td>
+          <td style="padding:5px 6px 3px 0; vertical-align:bottom;">NIP</td>
+          <td></td>
+          <td style="padding:5px 4px 3px 2px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(sr.nip)}</td>
+          <td></td>
+        </tr>
+      `).join('');
+
+      const footerStripHtml = footerText
+        ? `
+          <table style="width:100%; border-collapse:collapse; margin-top:26px; break-inside:avoid; page-break-inside:avoid;">
+            <tbody>
+              <tr>
+                <td style="width:22px; height:22px; border:1px solid #000000;">&nbsp;</td>
+                <td style="width:16px;">&nbsp;</td>
+                <td style="border:1px solid #000000; text-align:center; font-size:10.5px; font-weight:700; letter-spacing:0.3px; padding:3px 8px;">${this.escapePrintHtml(footerText)}</td>
+                <td style="width:16px;">&nbsp;</td>
+                <td style="width:22px; height:22px; border:1px solid #000000;">&nbsp;</td>
+              </tr>
+            </tbody>
+          </table>
+        `
+        : '';
+
+      return `
+        <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:12mm 15mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+          <table style="width:100%; border-collapse:collapse; margin-bottom:14px;">
+            <tbody>
+              <tr>
+                <td style="width:78px; vertical-align:top; text-align:left;">${logoCellHtml}</td>
+                <td style="vertical-align:middle; text-align:center; line-height:1.32;">
+                  ${title1 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title1)}</div>` : ''}
+                  ${title2 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title2)}</div>` : ''}
+                  ${title3 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title3)}</div>` : ''}
+                </td>
+                <td style="width:78px;">&nbsp;</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p style="font-size:11px; line-height:1.5; margin:0 0 12px 0; text-align:justify;">
+            Pada hari ini ${this.escapePrintHtml(dayName)} tanggal ${this.escapePrintHtml(dateNum)} bulan ${this.escapePrintHtml(monthName)} tahun ${this.escapePrintHtml(yearNum)}, di ${this.escapePrintHtml(locationText)} telah diselenggarakan ${this.escapePrintHtml(examDesc)}, dari pukul ${this.escapePrintHtml(timeStart)} sampai dengan pukul ${this.escapePrintHtml(timeEnd)}
+          </p>
+
+          <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:10px;">
+            <tbody>
+              <tr>
+                <td style="width:24px; padding:4px 0 3px 0; vertical-align:bottom;">1.</td>
+                <td style="width:170px; padding:4px 6px 3px 0; vertical-align:bottom;">Username</td>
+                <td style="width:12px; padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(usernameVal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Sekolah/Madrasah</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(schoolVal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">ID Server</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:0; vertical-align:bottom;">
+                  <table style="width:100%; border-collapse:collapse;">
+                    <tbody>
+                      <tr>
+                        <td style="width:36%; padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(idServerVal)}</td>
+                        <td style="width:52px; padding:4px 6px 3px 8px; vertical-align:bottom; white-space:nowrap;">Ruang :</td>
+                        <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(roomLabel)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Sesi</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(sessionVal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Jumlah Peserta Seharusnya</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(expectedStr)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Jumlah Hadir (Ikut Ujian)</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(presentStr)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Jumlah Tidak Hadir</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(rawAbsent)}</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 0 3px 0;">&nbsp;</td>
+                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Username Tidak Hadir</td>
+                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(absentUsernames)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="font-size:11px; margin-bottom:16px;">
+            <table style="width:100%; border-collapse:collapse; margin-bottom:5px;">
+              <tbody>
+                <tr>
+                  <td style="width:24px; padding:2px 0;">2.</td>
+                  <td style="padding:2px 0;">Catatan selama Tes :</td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="margin-left:24px; border:1px solid #000000; min-height:76px; padding:8px 10px; font-size:11px; line-height:1.45; white-space:pre-line;">${testNotes ? this.escapePrintHtml(testNotes) : '&nbsp;'}</div>
+          </div>
+
+          <div style="font-size:11px; margin-bottom:10px;">${this.escapePrintHtml(introSignLabel)}</div>
+
+          <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:22px; break-inside:avoid; page-break-inside:avoid;">
+            <thead>
+              <tr>
+                <th colspan="5" style="text-align:left; font-weight:normal;">&nbsp;</th>
+                <th style="width:210px; text-align:center; font-weight:700; font-size:11px; padding-bottom:2px;">TTD</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${signTableRowsHtml}
+            </tbody>
+          </table>
+
+          ${bottomNotesRaw
+            ? `
+              <table style="width:62%; border-collapse:collapse; border:1px solid #000000; margin-bottom:24px; break-inside:avoid; page-break-inside:avoid;">
+                <tbody>
+                  <tr>
+                    <td style="padding:6px 8px; font-size:10px; line-height:1.4;">
+                      <div style="font-weight:700; font-style:italic; margin-bottom:2px;">Catatan:</div>
+                      <div style="white-space:pre-line;">${this.escapePrintHtml(bottomNotesRaw)}</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            `
+            : ''
+          }
+
+          ${footerStripHtml}
+          ${this.getPrintFooterNoteHtml('margin-top:8px; font-size:8px;')}
+        </div>
+      `;
+    }).join('');
+
+    return pagesHtml;
+  }
+
   async downloadRoomDocsPDF(sheetsHtml, options = {}) {
     if (!sheetsHtml || !String(sheetsHtml).trim()) {
       alert("Tidak ada dokumen untuk di-download.");
@@ -7127,7 +7597,9 @@ class CBTAdmin {
     const pdfHeightMm = paperSize === 'A4' ? 297 : 330;
     const prevScrollY = window.scrollY || window.pageYOffset || 0;
     const prevScrollX = window.scrollX || window.pageXOffset || 0;
-    const docSlug = options.docType === 'seating' ? 'Denah_Peserta' : 'Daftar_Peserta';
+    const docSlug = options.docType === 'seating'
+      ? 'Denah_Peserta'
+      : (options.docType === 'berita_acara' ? 'Berita_Acara' : 'Daftar_Peserta');
     const scopeSlug = String(options.scopeLabel || 'Ruang').replace(/[^a-z0-9]+/gi, '_');
     const filename = `${docSlug}_${scopeSlug}_${Date.now()}.pdf`;
 
@@ -7260,7 +7732,9 @@ class CBTAdmin {
 
       const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
       const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
-      const docTitle = options.docType === 'seating' ? 'Denah Posisi Duduk Peserta Ujian' : 'Daftar Nama Peserta Ujian';
+      const docTitle = options.docType === 'seating'
+        ? 'Denah Posisi Duduk Peserta Ujian'
+        : (options.docType === 'berita_acara' ? 'Berita Acara Pelaksanaan Ujian' : 'Daftar Nama Peserta Ujian');
       const buildRoomWordHtml = (innerHtml) => `
         <html xmlns:o="urn:schemas-microsoft-com:office:office"
               xmlns:w="urn:schemas-microsoft-com:office:word"
@@ -7284,7 +7758,9 @@ class CBTAdmin {
         </html>
       `;
 
-      const docSlug = options.docType === 'seating' ? 'Denah_Peserta' : 'Daftar_Peserta';
+      const docSlug = options.docType === 'seating'
+        ? 'Denah_Peserta'
+        : (options.docType === 'berita_acara' ? 'Berita_Acara' : 'Daftar_Peserta');
       const scopeSlug = String(options.scopeLabel || 'Ruang').replace(/[^a-z0-9]+/gi, '_');
       const blob = await this._prepareWordImagesAndBuildBlob(tempDiv, buildRoomWordHtml, (img, dims) => {
         const alt = String(img.getAttribute('alt') || '');
