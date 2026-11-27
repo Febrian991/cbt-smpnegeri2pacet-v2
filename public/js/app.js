@@ -152,7 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
       window.cbtAdmin.saveSchedules(schedPayload, true);
       changed = true;
     }
-    if (!isPengawas && Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || stateMap.cbt_questions_migrated === true) && window.examEngine) {
+    const localQCount = (window.examEngine && Array.isArray(window.examEngine.questions)) ? window.examEngine.questions.length : 0;
+    if (!isPengawas && Array.isArray(stateMap.cbt_questions) && (stateMap.cbt_questions.length > 0 || (stateMap.cbt_questions_migrated === true && localQCount === 0)) && window.examEngine) {
       if (typeof window.examEngine.applyRemoteQuestions === 'function') {
         window.examEngine.applyRemoteQuestions(stateMap.cbt_questions);
       } else {
@@ -275,7 +276,19 @@ document.addEventListener('DOMContentLoaded', () => {
           : await window.supabaseSync.fetchAllQuestionRows();
 
         if (qRes && qRes.success && Array.isArray(qRes.rows)) {
+          // PERLINDUNGAN ANTI-HAPUS: Jika Cloud cbt_questions kosong (0 baris) sementara perangkat ini punya soal (> 0),
+          // JANGAN timpa/hapus soal lokal dengan array kosong []!
+          if (qRes.rows.length === 0 && !qRes.partialSubject && localList.length > 0) {
+            const isLocalAuth = typeof window.supabaseSync.isLocalQuestionsAuthoritative === 'function' && window.supabaseSync.isLocalQuestionsAuthoritative();
+            const hasPendingUp = typeof window.supabaseSync.hasPendingQuestionUpserts === 'function' && window.supabaseSync.hasPendingQuestionUpserts();
+            if (curStaff && (isLocalAuth || hasPendingUp)) {
+              await window.supabaseSync.upsertQuestionRows(localList, { skipMigrationCheck: true, skipPendingMark: true });
+            }
+            return false;
+          }
+
           const canApply = qRes.rows.length > 0 || (
+            localList.length === 0 &&
             typeof window.supabaseSync.isQuestionsMigrationCompleted === 'function' &&
             await window.supabaseSync.isQuestionsMigrationCompleted()
           );
@@ -9327,12 +9340,20 @@ document.addEventListener('DOMContentLoaded', () => {
             tCtx.fillStyle = '#ffffff';
             tCtx.fillRect(0, 0, cw, ch);
             tCtx.drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
-            callback(trimmedCanvas.toDataURL('image/png'), cw !== w || ch !== h);
+            callback(trimmedCanvas.toDataURL('image/png'), cw !== w || ch !== h, {
+              width: cw,
+              height: ch,
+              isBanner: cw >= ch * 2.2
+            });
             return;
           }
         } catch (e) {}
 
-        callback(canvas.toDataURL('image/png'), false);
+        callback(canvas.toDataURL('image/png'), false, {
+          width: w,
+          height: h,
+          isBanner: w >= h * 2.2
+        });
       };
       img.src = src;
     };
@@ -11521,10 +11542,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let activeRoomDocMode = 'roster';
 
+  const cbtKopAspectCache = new Map();
+
   function syncRoomDocsKopUi() {
     const statusEl = document.getElementById('roomDocKopImageStatus');
     const cfg = window.cbtAdmin ? window.cbtAdmin.getSchoolConfig() : {};
-    const hasKop = Boolean(cfg.kopSuratImage && String(cfg.kopSuratImage).trim() !== '');
+    const kopSrc = cfg.kopSuratImage ? String(cfg.kopSuratImage).trim() : '';
+    const hasKop = kopSrc !== '';
     if (statusEl) {
       statusEl.innerText = hasKop ? 'Kop Surat Upload Aktif' : 'Kop Otomatis Sekolah';
       statusEl.className = hasKop
@@ -11534,6 +11558,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnRemoveRoomDocKopImage) {
       if (hasKop) btnRemoveRoomDocKopImage.classList.remove('hidden');
       else btnRemoveRoomDocKopImage.classList.add('hidden');
+    }
+    if (hasKop && !cbtKopAspectCache.has(kopSrc)) {
+      const probe = new Image();
+      probe.onload = () => {
+        const w = probe.naturalWidth || probe.width || 1;
+        const h = probe.naturalHeight || probe.height || 1;
+        const isBanner = w >= h * 2.2;
+        cbtKopAspectCache.set(kopSrc, isBanner);
+        if (window.cbtAdmin && Boolean(cfg.kopSuratIsBanner) !== isBanner) {
+          const latest = window.cbtAdmin.getSchoolConfig();
+          if (latest.kopSuratImage === kopSrc) {
+            latest.kopSuratIsBanner = isBanner;
+            window.cbtAdmin.saveSchoolConfig(latest, true);
+          }
+        }
+        if (activeRoomDocMode === 'berita_acara') {
+          refreshRoomDocsPreview();
+        }
+      };
+      probe.src = kopSrc;
     }
   }
 
@@ -11617,7 +11661,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setChk('rdSeatingShowLegend', fmt.seatingShowLegend !== false);
 
     // Berita Acara (Full Edit)
-    setVal('rdBaLogoMode', fmt.baLogoMode || 'tutwuri');
+    setVal('rdBaLogoMode', fmt.baLogoMode || 'auto');
     setVal('rdBaTitle1', fmt.baTitle1 !== undefined ? fmt.baTitle1 : 'BERITA ACARA PELAKSANAAN');
     setVal('rdBaTitle2', fmt.baTitle2 !== undefined ? fmt.baTitle2 : 'ASESMEN NASIONAL SMP/MTS');
     setVal('rdBaTitle3', fmt.baTitle3 !== undefined ? fmt.baTitle3 : `TAHUN ${new Date().getFullYear()}`);
@@ -11694,7 +11738,7 @@ document.addEventListener('DOMContentLoaded', () => {
       seatingAccentColor: getVal('rdSeatingAccentColor', '#b2a1c7') || '#b2a1c7',
       seatingShowLegend: getChk('rdSeatingShowLegend', true),
 
-      baLogoMode: getVal('rdBaLogoMode', base.baLogoMode || 'tutwuri') || 'tutwuri',
+      baLogoMode: getVal('rdBaLogoMode', base.baLogoMode || 'auto') || 'auto',
       baTitle1: String(getVal('rdBaTitle1', base.baTitle1) ?? '').trim(),
       baTitle2: String(getVal('rdBaTitle2', base.baTitle2) ?? '').trim(),
       baTitle3: String(getVal('rdBaTitle3', base.baTitle3) ?? '').trim(),
@@ -11782,6 +11826,12 @@ document.addEventListener('DOMContentLoaded', () => {
         : [...allStudents];
       groups = [{ roomLabel: 'RUANG 1 (SEMUA)', students: sorted }];
       scopeLabel = 'Semua_Peserta';
+    }
+
+    const cfgNow = window.cbtAdmin.getSchoolConfig();
+    const kopSrcNow = String(cfgNow.kopSuratImage || '').trim();
+    if (kopSrcNow && cbtKopAspectCache.has(kopSrcNow)) {
+      fmt._kopIsBanner = cbtKopAspectCache.get(kopSrcNow);
     }
 
     let sheetsHtml = '';
@@ -11900,6 +11950,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     syncRoomDocsKopUi();
     setRoomDocMode(preferredMode);
+    if (roomDocFormatEditorPanel) roomDocFormatEditorPanel.scrollTop = 0;
+    const previewContainerEl = document.getElementById('roomDocsPreviewContainer');
+    if (previewContainerEl) previewContainerEl.scrollTop = 0;
     modalRoomDocsStudio.classList.remove('hidden');
   }
 
@@ -11977,11 +12030,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (file) alert("Harap pilih file gambar (PNG, JPG, atau WEBP) untuk Kop Surat.");
         return;
       }
-      trimKopSuratWhitespace(file, 1600, (dataUrl) => {
+      trimKopSuratWhitespace(file, 1600, (dataUrl, _changed, dims) => {
+        const isBanner = Boolean(dims && dims.isBanner);
+        cbtKopAspectCache.set(dataUrl, isBanner);
         if (window.cbtAdmin) {
           const cfg = window.cbtAdmin.getSchoolConfig();
           cfg.kopSuratImage = dataUrl;
+          cfg.kopSuratIsBanner = isBanner;
           window.cbtAdmin.saveSchoolConfig(cfg);
+        }
+        const baLogoSel = document.getElementById('rdBaLogoMode');
+        if (baLogoSel && activeRoomDocMode === 'berita_acara') {
+          baLogoSel.value = 'auto';
         }
         syncRoomDocsKopUi();
         syncAttKopUi();
@@ -11996,6 +12056,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.cbtAdmin) {
         const cfg = window.cbtAdmin.getSchoolConfig();
         cfg.kopSuratImage = '';
+        cfg.kopSuratIsBanner = false;
         window.cbtAdmin.saveSchoolConfig(cfg);
       }
       if (roomDocKopImageFile) roomDocKopImageFile.value = '';
@@ -13721,16 +13782,48 @@ document.addEventListener('DOMContentLoaded', () => {
     fileImportFullBackup.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      const origBtnHtml = btnTriggerImportFullBackup.innerHTML;
       const reader = new FileReader();
-      reader.onload = (evt) => {
-        const res = window.cbtAdmin.importAllAppData(evt.target.result);
-        if (res.success) {
-          alert(`Pemulihan Sukses!\n• Guru: ${res.teachersCount}\n• Siswa: ${res.studentsCount}\n• Jadwal: ${res.schedulesCount}\n• Soal: ${res.questionsCount}`);
+      reader.onload = async (evt) => {
+        btnTriggerImportFullBackup.disabled = true;
+        btnTriggerImportFullBackup.innerText = '⏳ Memulihkan & Sinkron ke Cloud...';
+        try {
+          const res = window.cbtAdmin.importAllAppData(evt.target.result, { deferCloudSync: true });
+          if (!res.success) {
+            alert(res.message);
+            return;
+          }
+
           renderAdminDashboard();
           renderConfigInfoOnLogin();
           updateCloudBadge();
-        } else {
-          alert(res.message);
+
+          let cloudNote = '';
+          if (typeof window.cbtAdmin.syncRestoredBackupToCloud === 'function') {
+            const cloudRes = await window.cbtAdmin.syncRestoredBackupToCloud(window.examEngine ? window.examEngine.questions : null);
+            if (cloudRes && cloudRes.cloudConnected) {
+              if (cloudRes.questionsSynced) {
+                cloudNote = `\n• Cloud Database: ✅ Tersinkron (${cloudRes.syncedQuestionsCount} soal masuk ke cbt_questions)`;
+              } else {
+                cloudNote = `\n• Cloud Database: ⚠️ Soal baru tersimpan lokal (${cloudRes.syncedQuestionsCount}/${res.questionsCount} terunggah: ${cloudRes.message || 'cek koneksi'}). Klik "☁️ Kirim Semua Data ke Cloud" setelah koneksi stabil.`;
+              }
+            } else {
+              cloudNote = '\n• Cloud Database: Belum terhubung (data aman di perangkat ini).';
+            }
+          }
+
+          if (typeof refreshSupabaseTablesHealthUI === 'function') {
+            refreshSupabaseTablesHealthUI();
+          }
+
+          const localWarn = res.localQuestionsPersisted === false
+            ? '\n⚠️ Peringatan: Ukuran soal terlalu besar untuk cache browser lokal, pastikan Cloud tersinkron hijau!'
+            : '';
+
+          alert(`Pemulihan Sukses!\n• Guru: ${res.teachersCount}\n• Siswa: ${res.studentsCount}\n• Jadwal: ${res.schedulesCount}\n• Soal: ${res.questionsCount}${cloudNote}${localWarn}`);
+        } finally {
+          btnTriggerImportFullBackup.disabled = false;
+          btnTriggerImportFullBackup.innerHTML = origBtnHtml;
         }
       };
       reader.readAsText(file);

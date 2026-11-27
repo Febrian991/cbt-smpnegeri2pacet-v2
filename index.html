@@ -3952,24 +3952,24 @@
   </div>
 
   <!-- MODAL STUDIO DAFTAR PESERTA PER RUANGAN & DENAH POSISI DUDUK (EDIT FORMAT SENDIRI) -->
-  <div id="modalRoomDocsStudio" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 no-print">
-    <div class="bg-white w-full max-w-6xl rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[95vh]">
+  <div id="modalRoomDocsStudio" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-1 sm:p-2 no-print">
+    <div class="bg-white w-full max-w-[97vw] xl:max-w-[1440px] rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden h-[97vh] max-h-[97vh]">
 
       <!-- Modal Header -->
-      <div class="shrink-0 p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div class="shrink-0 px-4 py-2 sm:py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2.5">
-          <div class="w-10 h-10 rounded-xl bg-violet-100 text-violet-800 flex items-center justify-center text-xl">🗺️</div>
+          <div class="w-8 h-8 rounded-xl bg-violet-100 text-violet-800 flex items-center justify-center text-base">🗺️</div>
           <div>
-            <h3 class="font-bold text-sm sm:text-base text-slate-900">Dokumen Ruang: Daftar Peserta, Denah Duduk &amp; Berita Acara</h3>
-            <p class="text-[11px] sm:text-xs text-slate-500">Nomor Peserta dari NISN &bull; Pengawas Otomatis Sesuai Jadwal Ruang &bull; Full Edit &amp; Simpan Format (PDF / Word / Cetak)</p>
+            <h3 class="font-bold text-sm text-slate-900 leading-tight">Dokumen Ruang: Daftar Peserta, Denah Duduk &amp; Berita Acara</h3>
+            <p class="text-[11px] text-slate-500 leading-tight">Nomor Peserta dari NISN &bull; Pengawas Otomatis Sesuai Jadwal Ruang &bull; Full Edit &amp; Simpan Format (PDF / Word / Cetak)</p>
           </div>
         </div>
-        <button id="btnCloseRoomDocsModal" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+        <button id="btnCloseRoomDocsModal" type="button" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
       </div>
 
       <!-- Bar Mode Dokumen, Filter Ruang, Kertas, Kop Surat, & Tombol Edit Format Sendiri -->
-      <div class="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50/90 flex flex-wrap items-end justify-between gap-2.5 text-xs">
-        <div class="flex flex-wrap items-end gap-2.5">
+      <div class="shrink-0 px-4 py-2 border-b border-slate-200 bg-slate-50/90 flex flex-wrap items-end justify-between gap-2 text-xs">
+        <div class="flex flex-wrap items-end gap-2">
           <div>
             <span class="block font-bold text-slate-600 mb-1">Jenis Dokumen</span>
             <div class="inline-flex flex-wrap rounded-xl border border-slate-300 bg-white p-0.5 shadow-xs gap-0.5">
@@ -3999,7 +3999,7 @@
           </div>
 
           <div>
-            <span class="block font-bold text-slate-600 mb-1">Kop Surat (Daftar Peserta)</span>
+            <span class="block font-bold text-slate-600 mb-1">Kop Surat / Logo</span>
             <input type="file" id="roomDocKopImageFile" accept="image/*" class="hidden">
             <div class="flex flex-wrap items-center gap-1.5">
               <button type="button" id="btnUploadRoomDocKopImage" class="px-2.5 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs cursor-pointer transition flex items-center gap-1 shadow-xs">
@@ -4014,24 +4014,27 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <button id="btnOpenAssignRoomsFromDocs" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+          <button id="btnOpenAssignRoomsFromDocs" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
             <span>🏫 Atur Kuota / Acak Ruang</span>
           </button>
-          <button id="btnAddStudentFromRoomDocs" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+          <button id="btnAddStudentFromRoomDocs" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
             <span>➕ Tambah Peserta</span>
           </button>
-          <button id="btnToggleRoomDocFormatEditor" type="button" class="px-3.5 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+          <button id="btnToggleRoomDocFormatEditor" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-300 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
             <span>✏️ Edit Format Sendiri</span>
           </button>
         </div>
       </div>
 
+      <!-- Area Split Editor Format (Kiri pada Layar Lebar) + Pratinjau Dokumen (Kanan / Utama) -->
+      <div class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+
       <!-- Panel Editor Format Mandiri (Simpan Permanen Local + Cloud) -->
-      <div id="roomDocFormatEditorPanel" class="hidden shrink-0 border-b border-violet-200 bg-violet-50/45 px-4 py-3.5 overflow-y-auto max-h-[44vh] text-xs">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-violet-200/70">
+      <div id="roomDocFormatEditorPanel" class="hidden shrink-0 lg:w-[43%] xl:w-[41%] max-h-[38vh] lg:max-h-none lg:h-full border-b lg:border-b-0 lg:border-r border-violet-200 bg-violet-50/45 px-3.5 py-2.5 overflow-y-auto text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-violet-200/70">
           <div>
-            <h4 class="font-extrabold text-violet-950 text-xs sm:text-sm">✏️ Studio Format Mandiri (Daftar Peserta &amp; Denah Duduk)</h4>
-            <p class="text-[11px] text-violet-700">Atur judul, wilayah, kolom denah, alur zig-zag, warna aksen, hingga tanda tangan sendiri. Perubahan langsung terlihat di pratinjau bawah.</p>
+            <h4 class="font-extrabold text-violet-950 text-xs sm:text-sm">✏️ Studio Format Mandiri</h4>
+            <p class="text-[11px] text-violet-700">Perubahan langsung tampil di pratinjau sebelah kanan.</p>
           </div>
           <div class="flex items-center gap-2">
             <button id="btnResetRoomDocFormat" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 transition cursor-pointer shadow-xs">
@@ -4044,7 +4047,7 @@
         </div>
 
         <!-- Pengaturan Umum Sekolah & Wilayah -->
-        <div id="rdCommonSchoolFormatGroup" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 mb-3">
+        <div id="rdCommonSchoolFormatGroup" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
           <div>
             <label class="block font-bold text-slate-700 mb-1" for="rdProvinceName">Propinsi</label>
             <input type="text" id="rdProvinceName" placeholder="JAWA TIMUR" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-violet-500">
@@ -4058,20 +4061,20 @@
             <input type="text" id="rdSchoolName" placeholder="SMP NEGERI 2 PACET" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
           </div>
           <div>
-            <label class="block font-bold text-slate-700 mb-1" for="rdExamSubtitle">Nama Ujian (Subjudul Denah)</label>
-            <input type="text" id="rdExamSubtitle" placeholder="UJIAN SEKOLAH / ASAS" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
-          </div>
-          <div>
             <label class="block font-bold text-slate-700 mb-1" for="rdAcademicYear">Tahun Pelajaran</label>
             <input type="text" id="rdAcademicYear" placeholder="TAHUN PELAJARAN 2026 – 2027" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-violet-500">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block font-bold text-slate-700 mb-1" for="rdExamSubtitle">Nama Ujian (Subjudul Denah)</label>
+            <input type="text" id="rdExamSubtitle" placeholder="UJIAN SEKOLAH / ASAS" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
           </div>
         </div>
 
         <!-- Pengaturan Khusus Daftar Nama Peserta -->
         <div id="rdRosterFormatGroup" class="p-3 rounded-2xl border border-indigo-200 bg-white/90 mb-3">
-          <div class="text-[11px] font-extrabold text-indigo-800 uppercase tracking-wider mb-2">📄 Format Daftar Nama Peserta per Ruangan (NO | NISN | NAMA PESERTA | L/P | KETERANGAN)</div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div class="lg:col-span-2">
+          <div class="text-[11px] font-extrabold text-indigo-800 uppercase tracking-wider mb-2">📄 Format Daftar Nama Peserta per Ruangan</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="sm:col-span-2">
               <label class="block font-bold text-slate-700 mb-1" for="rdRosterTitle">Judul Dokumen Daftar Peserta</label>
               <input type="text" id="rdRosterTitle" value="DAFTAR NAMA PESERTA UJIAN SEKOLAH" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
             </div>
@@ -4093,15 +4096,15 @@
                 <option value="36">Minimal 36 Baris (Sisa Kosong)</option>
               </select>
             </div>
-            <div class="sm:col-span-2 lg:col-span-4 pt-0.5">
+            <div class="sm:col-span-2 pt-0.5">
               <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
                 <input type="checkbox" id="rdRosterShowClassInName" checked class="w-4 h-4 rounded border-slate-300 text-violet-600 cursor-pointer">
-                <span>Tampilkan label kelas asal di samping nama jika ruang berisi siswa campur kelas 7–8–9</span>
+                <span>Tampilkan label kelas asal di samping nama jika campur kelas</span>
               </label>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 mt-2.5 pt-2.5 border-t border-slate-100">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-slate-100">
             <div>
               <label class="block font-bold text-slate-700 mb-1" for="rdSignCity">Kota Tanda Tangan</label>
               <input type="text" id="rdSignCity" placeholder="Pacet" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-violet-500">
@@ -4118,7 +4121,7 @@
               <label class="block font-bold text-slate-700 mb-1" for="rdHeadmasterName">Nama Kepala Sekolah</label>
               <input type="text" id="rdHeadmasterName" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
             </div>
-            <div>
+            <div class="sm:col-span-2">
               <label class="block font-bold text-slate-700 mb-1" for="rdHeadmasterNip">NIP Kepala Sekolah</label>
               <input type="text" id="rdHeadmasterNip" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-violet-500">
             </div>
@@ -4128,8 +4131,8 @@
         <!-- Pengaturan Khusus Denah Posisi Duduk -->
         <div id="rdSeatingFormatGroup" class="p-3 rounded-2xl border border-purple-200 bg-white/90">
           <div class="text-[11px] font-extrabold text-purple-800 uppercase tracking-wider mb-2">🪑 Format Denah Posisi Duduk Peserta Ujian</div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div class="lg:col-span-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="sm:col-span-2">
               <label class="block font-bold text-slate-700 mb-1" for="rdSeatingTitle">Judul Kotak Atas Denah</label>
               <input type="text" id="rdSeatingTitle" value="DENAH POSISI DUDUK PESERTA UJIAN SEKOLAH" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-violet-500">
             </div>
@@ -4186,7 +4189,7 @@
               </select>
             </div>
 
-            <div class="sm:col-span-2 lg:col-span-4 pt-0.5">
+            <div class="sm:col-span-2 pt-0.5">
               <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
                 <input type="checkbox" id="rdSeatingShowLegend" checked class="w-4 h-4 rounded border-slate-300 text-violet-600 cursor-pointer">
                 <span>Tampilkan ringkasan jumlah peserta per jenjang di bagian bawah denah</span>
@@ -4196,14 +4199,17 @@
         </div>
 
         <!-- Pengaturan Khusus Berita Acara Pelaksanaan (Full Edit) -->
-        <div id="rdBeritaAcaraFormatGroup" class="hidden space-y-3">
-          <div class="p-3 rounded-2xl border border-sky-200 bg-white/95">
+        <div id="rdBeritaAcaraFormatGroup" class="hidden space-y-2.5">
+          <div class="p-2.5 rounded-2xl border border-sky-200 bg-white/95">
             <div class="text-[11px] font-extrabold text-sky-900 uppercase tracking-wider mb-2">📝 Header Judul &amp; Narasi Pelaksanaan Ujian</div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaLogoMode">Logo Kiri Atas</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaLogoMode">Logo / Kop Atas</label>
                 <select id="rdBaLogoMode" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                  <option value="tutwuri">Logo Tut Wuri Handayani</option>
+                  <option value="auto">Otomatis (Ikuti Upload Kop / Tut Wuri)</option>
+                  <option value="kopFull">Kop Surat Upload (Lebar Penuh)</option>
+                  <option value="kopLogo">Logo dari Upload Kop (Kiri Atas)</option>
+                  <option value="tutwuri">Logo Tut Wuri Handayani (Bawaan)</option>
                   <option value="logoLeft">Logo Dinas Sekolah</option>
                   <option value="logoRight">Logo Sekolah</option>
                   <option value="none">Tanpa Logo</option>
@@ -4239,7 +4245,7 @@
                 <input type="text" id="rdBaYearNum" placeholder="2026" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
 
-              <div class="lg:col-span-2">
+              <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaLocationText">Lokasi Pelaksanaan ("di ...")</label>
                 <input type="text" id="rdBaLocationText" placeholder="SMP NEGERI 2 PACET KABUPATEN CIANJUR" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
@@ -4260,29 +4266,28 @@
             </div>
           </div>
 
-          <div class="p-3 rounded-2xl border border-indigo-200 bg-white/95">
+          <div class="p-2.5 rounded-2xl border border-indigo-200 bg-white/95">
             <div class="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider mb-2">🏫 Bagian 1: Identitas Server, Ruang, Sesi &amp; Jumlah Peserta</div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaUsername">Username</label>
                 <input type="text" id="rdBaUsername" placeholder="P02151031" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div class="lg:col-span-2">
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaSchoolName">Sekolah / Madrasah</label>
-                <input type="text" id="rdBaSchoolName" placeholder="SMP NEGERI 2 PACET" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaIdServer">ID Server</label>
                 <input type="text" id="rdBaIdServer" placeholder="P02151031-AM8P" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaSchoolName">Sekolah / Madrasah</label>
+                <input type="text" id="rdBaSchoolName" placeholder="SMP NEGERI 2 PACET" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
+              </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaSession">Sesi</label>
                 <input type="text" id="rdBaSession" placeholder="1" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
-
-              <div class="lg:col-span-2">
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaRoomOverride">Nama Ruang (Kosongkan = Otomatis per Ruang)</label>
-                <input type="text" id="rdBaRoomOverride" placeholder="Otomatis mengikuti dropdown Ruang" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaRoomOverride">Nama Ruang (Kosong = Per Ruang)</label>
+                <input type="text" id="rdBaRoomOverride" placeholder="Otomatis mengikuti Ruang" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaTotalExpected">Peserta Seharusnya</label>
@@ -4296,12 +4301,11 @@
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaAbsentCount">Jumlah Tidak Hadir</label>
                 <input type="text" id="rdBaAbsentCount" placeholder="0" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
-
-              <div class="lg:col-span-3">
+              <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaAbsentUsernames">Username Tidak Hadir</label>
-                <input type="text" id="rdBaAbsentUsernames" placeholder="Kosongkan atau isi username/NISN peserta yang tidak hadir" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
+                <input type="text" id="rdBaAbsentUsernames" placeholder="Kosongkan atau isi username..." class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
-              <div class="lg:col-span-2 flex items-end pb-1">
+              <div class="sm:col-span-2 pt-0.5">
                 <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
                   <input type="checkbox" id="rdBaAutoCounts" checked class="w-4 h-4 rounded border-slate-300 text-sky-600 cursor-pointer">
                   <span>Hitung otomatis "Peserta Seharusnya" sesuai isi ruangan</span>
@@ -4310,26 +4314,26 @@
             </div>
           </div>
 
-          <div class="p-3 rounded-2xl border border-emerald-200 bg-white/95">
+          <div class="p-2.5 rounded-2xl border border-emerald-200 bg-white/95">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <div class="text-[11px] font-extrabold text-emerald-900 uppercase tracking-wider">✍️ Bagian 2 &amp; Tanda Tangan Pembuat Berita Acara (Pengawas &amp; Kepala Sekolah)</div>
+              <div class="text-[11px] font-extrabold text-emerald-900 uppercase tracking-wider">✍️ Bagian 2 &amp; Tanda Tangan (Pengawas &amp; Kepala Sekolah)</div>
               <label class="inline-flex items-center gap-1.5 font-bold text-emerald-800 cursor-pointer">
                 <input type="checkbox" id="rdBaAutoSyncPengawas" checked class="w-4 h-4 rounded border-slate-300 text-emerald-600 cursor-pointer">
                 <span>Sinkronkan Pengawas Ruang otomatis sesuai Jadwal Ruang &amp; Hari</span>
               </label>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mb-2.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaRole2Label">1. Jabatan Atas</label>
                 <input type="text" id="rdBaRole2Label" value="Pengawas" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
               <div>
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaRole2Nip">1. NIP Pengawas (Cadangan)</label>
+                <input type="text" id="rdBaRole2Nip" placeholder="-" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-sky-500">
+              </div>
+              <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaRole2Name">1. Nama Pengawas (Cadangan/Manual)</label>
                 <input type="text" id="rdBaRole2Name" placeholder="Otomatis dari Jadwal Ruang jika sinkron aktif" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaRole2Nip">1. NIP Pengawas (Cadangan/Manual)</label>
-                <input type="text" id="rdBaRole2Nip" placeholder="-" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-sky-500">
               </div>
 
               <div>
@@ -4337,33 +4341,31 @@
                 <input type="text" id="rdBaRole3Label" value="Kepala Sekolah" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
               <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaRole3Name">2. Nama Kepala Sekolah</label>
-                <input type="text" id="rdBaRole3Name" placeholder="Nama Kepala Sekolah" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaRole3Nip">2. NIP Kepala Sekolah</label>
                 <input type="text" id="rdBaRole3Nip" placeholder="NIP Kepala Sekolah" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono outline-none focus:ring-2 focus:ring-sky-500">
               </div>
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaRole3Name">2. Nama Kepala Sekolah</label>
+                <input type="text" id="rdBaRole3Name" placeholder="Nama Kepala Sekolah" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
+              </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-100">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100">
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaTestNotes">2. Catatan selama Tes</label>
-                <textarea id="rdBaTestNotes" rows="2" placeholder="Kosongkan jika berjalan lancar atau isi kejadian khusus..." class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-normal outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+                <textarea id="rdBaTestNotes" rows="2" placeholder="Kosongkan jika lancar atau isi kejadian khusus..." class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-normal outline-none focus:ring-2 focus:ring-sky-500"></textarea>
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaBottomNotes">Kotak Catatan Bawah</label>
                 <textarea id="rdBaBottomNotes" rows="2" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-normal outline-none focus:ring-2 focus:ring-sky-500"></textarea>
               </div>
-              <div class="space-y-2">
-                <div>
-                  <label class="block font-bold text-slate-700 mb-1" for="rdBaIntroSignLabel">Kalimat Pengantar TTD</label>
-                  <input type="text" id="rdBaIntroSignLabel" value="Yang membuat berita acara :" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                </div>
-                <div>
-                  <label class="block font-bold text-slate-700 mb-1" for="rdBaFooterText">Teks Kotak Footer Bawah</label>
-                  <input type="text" id="rdBaFooterText" placeholder="PUSMENDIK - BSKAP - KEMENDIKBUDRISTEK" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
-                </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaIntroSignLabel">Kalimat Pengantar TTD</label>
+                <input type="text" id="rdBaIntroSignLabel" value="Yang membuat berita acara :" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1" for="rdBaFooterText">Teks Kotak Footer Bawah</label>
+                <input type="text" id="rdBaFooterText" placeholder="PUSMENDIK - BSKAP - KEMENDIKBUDRISTEK" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
             </div>
           </div>
@@ -4371,10 +4373,12 @@
       </div>
 
       <!-- Area Pratinjau Dokumen Ruang (Kertas Putih Tajam) -->
-      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 bg-slate-200/80" id="roomDocsPreviewContainer"></div>
+      <div class="flex-1 min-h-0 h-full overflow-auto p-2 sm:p-4 bg-slate-200/80" id="roomDocsPreviewContainer"></div>
+
+      </div>
 
       <!-- Modal Footer -->
-      <div class="shrink-0 p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+      <div class="shrink-0 px-4 py-2.5 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-2 rounded-b-2xl sm:rounded-b-3xl">
         <div class="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap">
           <span>Cakupan: <span id="roomDocPreviewCountBadge" class="font-bold text-violet-800">0 Ruang</span></span>
           <span id="roomDocPaperBadge" class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold text-[11px]">Kertas F4 (21 &times; 33 cm)</span>
@@ -4419,10 +4423,10 @@
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=3.39"></script>
   <script src="js/default-students.js?v=3.97"></script>
-  <script src="js/supabase-config.js?v=3.97"></script>
-  <script src="js/exam-engine.js?v=3.96"></script>
-  <script src="js/admin.js?v=3.98"></script>
-  <script src="js/app.js?v=3.98"></script>
+  <script src="js/supabase-config.js?v=4.00"></script>
+  <script src="js/exam-engine.js?v=4.00"></script>
+  <script src="js/admin.js?v=4.00"></script>
+  <script src="js/app.js?v=4.00"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

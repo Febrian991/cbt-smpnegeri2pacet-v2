@@ -520,8 +520,30 @@ class ExamEngine {
     const arr = Array.isArray(list) ? list : [];
     try {
       localStorage.setItem('cbt_questions', JSON.stringify(arr));
+      this.lastQuestionsPersistOk = true;
       return true;
     } catch (e) {
+      // Bebaskan duplikat cache antrean soal terlebih dahulu (daftar ID tetap aman di cbt_pending_question_ids_v1)
+      try {
+        const rawPending = localStorage.getItem('cbt_pending_question_sync');
+        if (rawPending) {
+          const parsed = JSON.parse(rawPending);
+          const upKeys = parsed && parsed.upserts ? Object.keys(parsed.upserts) : [];
+          if (upKeys.length > 0 && !localStorage.getItem('cbt_pending_question_ids_v1')) {
+            localStorage.setItem('cbt_pending_question_ids_v1', JSON.stringify(upKeys));
+          }
+          const dels = parsed && parsed.deletes ? parsed.deletes : {};
+          if (Object.keys(dels).length > 0) {
+            localStorage.setItem('cbt_pending_question_sync', JSON.stringify({ upserts: {}, deletes: dels }));
+          } else {
+            localStorage.removeItem('cbt_pending_question_sync');
+          }
+          localStorage.setItem('cbt_questions', JSON.stringify(arr));
+          this.lastQuestionsPersistOk = true;
+          return true;
+        }
+      } catch (eFree) {}
+
       try {
         const cleanPri = String(prioritySubject || '').trim();
         if (cleanPri) {
@@ -536,16 +558,19 @@ class ExamEngine {
           });
           try {
             localStorage.setItem('cbt_questions', JSON.stringify(compactOthers));
+            this.lastQuestionsPersistOk = true;
             return true;
           } catch (e2) {
             const priOnly = arr.filter(q => q && this.matchesSubject(q.subject, cleanPri));
             if (priOnly.length > 0) {
               localStorage.setItem('cbt_questions', JSON.stringify(priOnly));
+              this.lastQuestionsPersistOk = true;
               return true;
             }
           }
         }
       } catch (e3) {}
+      this.lastQuestionsPersistOk = false;
       return false;
     }
   }

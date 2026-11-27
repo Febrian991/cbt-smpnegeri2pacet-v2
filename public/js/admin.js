@@ -2973,7 +2973,7 @@ class CBTAdmin {
       seatingProctorColor: '#c5be97',
       seatingShowLegend: true,
 
-      baLogoMode: 'tutwuri',
+      baLogoMode: 'auto',
       baTitle1: 'BERITA ACARA PELAKSANAAN',
       baTitle2: 'ASESMEN NASIONAL SMP/MTS',
       baTitle3: `TAHUN ${new Date().getFullYear()}`,
@@ -3026,6 +3026,7 @@ class CBTAdmin {
           logoRight: parsed.logoRight || "",
           logoCbt: parsed.logoCbt || "",
           kopSuratImage: parsed.kopSuratImage || "",
+          kopSuratIsBanner: Boolean(parsed.kopSuratIsBanner),
           buttonPermissions: this.normalizeButtonPermissions(parsed.buttonPermissions)
         };
         const defAtt = this.getDefaultAttendanceIdentity(baseCfg);
@@ -3051,6 +3052,7 @@ class CBTAdmin {
       logoRight: "",
       logoCbt: "",
       kopSuratImage: "",
+      kopSuratIsBanner: false,
       buttonPermissions: this.getDefaultButtonPermissions()
     };
     fallback.attendanceIdentity = this.getDefaultAttendanceIdentity(fallback);
@@ -3068,6 +3070,7 @@ class CBTAdmin {
         logoRight: incoming.logoRight !== undefined ? incoming.logoRight : existing.logoRight,
         logoCbt: incoming.logoCbt !== undefined ? incoming.logoCbt : existing.logoCbt,
         kopSuratImage: incoming.kopSuratImage !== undefined ? incoming.kopSuratImage : existing.kopSuratImage,
+        kopSuratIsBanner: incoming.kopSuratIsBanner !== undefined ? Boolean(incoming.kopSuratIsBanner) : Boolean(existing.kopSuratIsBanner),
         buttonPermissions: this.normalizeButtonPermissions(incoming.buttonPermissions || existing.buttonPermissions),
         attendanceIdentity: (incoming.attendanceIdentity && typeof incoming.attendanceIdentity === 'object')
           ? { ...this.getDefaultAttendanceIdentity(incoming), ...incoming.attendanceIdentity }
@@ -3725,7 +3728,7 @@ class CBTAdmin {
     return { success: true };
   }
 
-  importAllAppData(jsonString) {
+  importAllAppData(jsonString, options = {}) {
     if (!this.isSuperAdminUser()) {
       return { success: false, message: "Hanya Proktor / Admin yang dapat memulihkan backup penuh!" };
     }
@@ -3737,32 +3740,56 @@ class CBTAdmin {
         return { success: false, message: "Format file backup tidak valid." };
       }
 
-      if (Array.isArray(d.cbt_teachers_list) && d.cbt_teachers_list.length > 0) {
-        this.saveTeachers(d.cbt_teachers_list);
-      }
-      if (Array.isArray(d.cbt_students_list) && window.studentManager) {
-        window.studentManager.saveStudents(d.cbt_students_list);
-      }
-      if (Array.isArray(d.cbt_exam_schedules)) {
-        this.saveSchedules(d.cbt_exam_schedules);
-      }
-      if (Array.isArray(d.cbt_questions) && d.cbt_questions.length > 0 && window.examEngine) {
-        window.examEngine.saveQuestions(d.cbt_questions, true);
-        if (typeof window !== 'undefined' && window.supabaseSync && typeof window.supabaseSync.replaceAllQuestionRows === 'function') {
-          window.supabaseSync.replaceAllQuestionRows(d.cbt_questions);
+      if (d.cbt_supabase_config && typeof d.cbt_supabase_config === 'object' && window.supabaseSync) {
+        const curSyncCfg = typeof window.supabaseSync.getConfig === 'function' ? window.supabaseSync.getConfig() : null;
+        const incomingUrl = String(d.cbt_supabase_config.supabaseUrl || '').trim();
+        const isLegacyIncoming = incomingUrl.includes('ibmsfedjcathditbedpt.supabase.co');
+        if (curSyncCfg && typeof window.supabaseSync.isProxyUrl === 'function' && window.supabaseSync.isProxyUrl(curSyncCfg.supabaseUrl) && isLegacyIncoming) {
+          // Pertahankan koneksi Cloudflare Worker aktif agar tidak kembali ke Supabase lama yang melebihi kuota
+          window.supabaseSync.saveConfig({ ...d.cbt_supabase_config, supabaseUrl: curSyncCfg.supabaseUrl, supabaseKey: curSyncCfg.supabaseKey });
+        } else {
+          window.supabaseSync.saveConfig(d.cbt_supabase_config);
         }
       }
+
+      if (Array.isArray(d.cbt_teachers_list) && d.cbt_teachers_list.length > 0) {
+        this.saveTeachers(d.cbt_teachers_list, true);
+      }
+      if (Array.isArray(d.cbt_students_list) && window.studentManager) {
+        window.studentManager.saveStudents(d.cbt_students_list, true);
+      }
+      if (Array.isArray(d.cbt_exam_schedules)) {
+        this.saveSchedules(d.cbt_exam_schedules, true);
+      }
       if (d.cbt_config && typeof d.cbt_config === 'object' && window.examEngine) {
-        window.examEngine.saveConfig(d.cbt_config);
+        window.examEngine.saveConfig(d.cbt_config, true);
       }
       if (d.cbt_school_config && typeof d.cbt_school_config === 'object') {
-        this.saveSchoolConfig(d.cbt_school_config);
-      }
-      if (d.cbt_supabase_config && typeof d.cbt_supabase_config === 'object' && window.supabaseSync) {
-        window.supabaseSync.saveConfig(d.cbt_supabase_config);
+        this.saveSchoolConfig(d.cbt_school_config, true);
       }
       if (Array.isArray(d.cbt_exam_results)) {
-        localStorage.setItem('cbt_exam_results', JSON.stringify(d.cbt_exam_results));
+        try {
+          localStorage.setItem('cbt_exam_results', JSON.stringify(d.cbt_exam_results));
+        } catch (eRes) {}
+      }
+
+      const restoredQuestions = Array.isArray(d.cbt_questions) ? d.cbt_questions : [];
+      let localQuestionsPersisted = true;
+      if (restoredQuestions.length > 0 && window.examEngine) {
+        window.examEngine.saveQuestions(restoredQuestions, true);
+        localQuestionsPersisted = window.examEngine.lastQuestionsPersistOk !== false;
+        if (typeof window !== 'undefined' && window.supabaseSync) {
+          if (typeof window.supabaseSync.setLocalQuestionsAuthoritative === 'function') {
+            window.supabaseSync.setLocalQuestionsAuthoritative(true);
+          }
+          if (typeof window.supabaseSync.markQuestionsPendingUpsert === 'function') {
+            window.supabaseSync.markQuestionsPendingUpsert(window.examEngine.questions);
+          }
+        }
+      }
+
+      if (!options || !options.deferCloudSync) {
+        this.syncRestoredBackupToCloud(window.examEngine ? window.examEngine.questions : restoredQuestions);
       }
 
       return {
@@ -3770,11 +3797,67 @@ class CBTAdmin {
         teachersCount: this.teachers.length,
         studentsCount: window.studentManager ? window.studentManager.getStudentCount() : 0,
         schedulesCount: this.schedules.length,
-        questionsCount: window.examEngine ? window.examEngine.questions.length : 0
+        questionsCount: window.examEngine ? window.examEngine.questions.length : 0,
+        restoredQuestionsCount: restoredQuestions.length,
+        localQuestionsPersisted
       };
     } catch (err) {
       return { success: false, message: "Gagal membaca file backup: " + err.message };
     }
+  }
+
+  async syncRestoredBackupToCloud(questionsOverride = null) {
+    if (typeof window === 'undefined' || !window.supabaseSync || !window.supabaseSync.isCloudConfigured()) {
+      return {
+        cloudConnected: false,
+        schoolDataSyncedCount: 0,
+        questionsSynced: false,
+        syncedQuestionsCount: 0,
+        message: 'Cloud belum terhubung saat pemulihan.'
+      };
+    }
+
+    const sync = window.supabaseSync;
+    const orderedEntries = [
+      ['cbt_teachers_list', this.teachers],
+      ['cbt_students_list', window.studentManager ? window.studentManager.getAllStudents() : null],
+      ['cbt_school_config', this.getSchoolConfig()],
+      ['cbt_config', window.examEngine ? window.examEngine.config : null],
+      ['cbt_exam_schedules', this.schedules]
+    ].filter(([, val]) => val !== null && val !== undefined);
+
+    let schoolDataSyncedCount = 0;
+    for (const [k, v] of orderedEntries) {
+      try {
+        const res = await sync.pushStateKey(k, v);
+        if (res && res.success) schoolDataSyncedCount++;
+      } catch (e) {}
+    }
+
+    const qs = Array.isArray(questionsOverride)
+      ? questionsOverride
+      : (window.examEngine && Array.isArray(window.examEngine.questions) ? window.examEngine.questions : []);
+
+    let questionsSynced = qs.length === 0;
+    let syncedQuestionsCount = 0;
+    let errMsg = '';
+
+    if (qs.length > 0 && typeof sync.replaceAllQuestionRows === 'function') {
+      const qRes = await sync.replaceAllQuestionRows(qs);
+      questionsSynced = Boolean(qRes && qRes.success && qRes.count === qs.length);
+      syncedQuestionsCount = qRes && typeof qRes.count === 'number' ? qRes.count : 0;
+      if (!questionsSynced && qRes && qRes.message) {
+        errMsg = qRes.message;
+      }
+    }
+
+    return {
+      cloudConnected: true,
+      schoolDataSyncedCount,
+      questionsSynced,
+      syncedQuestionsCount,
+      message: errMsg
+    };
   }
 
   // ===================== EKSPOR NASKAH SOAL (SESUAI TEMPLATE PDF + SOAL BERGAMBAR) =====================
@@ -7304,10 +7387,32 @@ class CBTAdmin {
     const paperSize = String(fmt.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
     const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
 
-    const logoMode = String(fmt.baLogoMode || 'tutwuri');
+    const logoMode = String(fmt.baLogoMode || 'auto').trim();
+    const customKopImg = String(cfg.kopSuratImage || '').trim();
+    const kopIsBanner = Boolean(fmt._kopIsBanner !== undefined ? fmt._kopIsBanner : cfg.kopSuratIsBanner);
+
+    let useBannerKop = false;
     let logoImgSrc = '';
     let logoAlt = 'Logo Tut Wuri Handayani';
-    if (logoMode === 'tutwuri') {
+
+    if (logoMode === 'kopFull' && customKopImg) {
+      useBannerKop = true;
+    } else if (logoMode === 'kopLogo' && customKopImg) {
+      logoImgSrc = customKopImg;
+      logoAlt = 'Logo Berita Acara';
+    } else if (logoMode === 'auto') {
+      if (customKopImg) {
+        if (kopIsBanner) {
+          useBannerKop = true;
+        } else {
+          logoImgSrc = customKopImg;
+          logoAlt = 'Logo Berita Acara';
+        }
+      } else {
+        logoImgSrc = this._getTutWuriSvgDataUrl();
+        logoAlt = 'Logo Tut Wuri Handayani';
+      }
+    } else if (logoMode === 'tutwuri') {
       logoImgSrc = this._getTutWuriSvgDataUrl();
       logoAlt = 'Logo Tut Wuri Handayani';
     } else if (logoMode === 'logoLeft' && cfg.logoLeft) {
@@ -7316,7 +7421,9 @@ class CBTAdmin {
     } else if (logoMode === 'logoRight' && cfg.logoRight) {
       logoImgSrc = cfg.logoRight;
       logoAlt = 'Logo Sekolah';
-    } else if (logoMode === 'logoLeft' || logoMode === 'logoRight') {
+    } else if (logoMode === 'none') {
+      logoImgSrc = '';
+    } else {
       logoImgSrc = this._getTutWuriSvgDataUrl();
       logoAlt = 'Logo Tut Wuri Handayani';
     }
@@ -7442,9 +7549,19 @@ class CBTAdmin {
         `
         : '';
 
-      return `
-        <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 16px auto; padding:12mm 15mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
-          <table style="width:100%; border-collapse:collapse; margin-bottom:14px;">
+      const headerHtml = useBannerKop
+        ? `
+          <div style="width:100%; margin:0 0 8px 0; padding:0; text-align:center;">
+            <img src="${customKopImg}" alt="Kop Surat Sekolah" style="width:100%; max-height:105px; height:auto; object-fit:contain; display:block; margin:0 auto;">
+          </div>
+          <div style="text-align:center; line-height:1.32; margin-bottom:11px;">
+            ${title1 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title1)}</div>` : ''}
+            ${title2 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title2)}</div>` : ''}
+            ${title3 ? `<div style="font-size:13px; font-weight:700; text-transform:uppercase;">${this.escapePrintHtml(title3)}</div>` : ''}
+          </div>
+        `
+        : `
+          <table style="width:100%; border-collapse:collapse; margin-bottom:11px;">
             <tbody>
               <tr>
                 <td style="width:78px; vertical-align:top; text-align:left;">${logoCellHtml}</td>
@@ -7457,6 +7574,11 @@ class CBTAdmin {
               </tr>
             </tbody>
           </table>
+        `;
+
+      return `
+        <div class="room-doc-paper-sheet${pageBreakClass}" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 14px auto; padding:8mm 14mm; background:#ffffff; color:#000000; font-family:Arial, Helvetica, sans-serif; box-shadow:0 4px 16px rgba(15,23,42,0.12); box-sizing:border-box;">
+          ${headerHtml}
 
           <p style="font-size:11px; line-height:1.5; margin:0 0 12px 0; text-align:justify;">
             Pada hari ini ${this.escapePrintHtml(dayName)} tanggal ${this.escapePrintHtml(dateNum)} bulan ${this.escapePrintHtml(monthName)} tahun ${this.escapePrintHtml(yearNum)}, di ${this.escapePrintHtml(locationText)} telah diselenggarakan ${this.escapePrintHtml(examDesc)}, dari pukul ${this.escapePrintHtml(timeStart)} sampai dengan pukul ${this.escapePrintHtml(timeEnd)}

@@ -20,6 +20,8 @@ class SupabaseSyncManager {
     this.tokenRpcMissing = false;
     this.PUBLIC_STATE_KEYS = ['cbt_config', 'cbt_school_config', 'cbt_exam_schedules', 'cbt_questions_migrated_v1'];
     this.pendingQuestionsStorageKey = 'cbt_pending_question_sync';
+    this.pendingQuestionIdsStorageKey = 'cbt_pending_question_ids_v1';
+    this.localAuthoritativeQuestionsKey = 'cbt_questions_local_authoritative';
     this.questionsMigrationStorageKey = 'cbt_questions_migrated_v1';
     this._migrationPromise = null;
     this._flushPromise = null;
@@ -75,8 +77,11 @@ class SupabaseSyncManager {
 
   saveConfig(urlOrConfig, key) {
     if (typeof urlOrConfig === 'string') {
-      const cleanUrl = urlOrConfig.trim().replace(/\/+$/, '');
+      let cleanUrl = urlOrConfig.trim().replace(/\/+$/, '');
       const cleanKey = (key || '').trim();
+      if (cleanUrl === LEGACY_DIRECT_SUPABASE_URL && cleanKey === DEFAULT_SUPABASE_CONFIG.supabaseKey) {
+        cleanUrl = DEFAULT_SUPABASE_CONFIG.supabaseUrl;
+      }
       this.config = {
         ...this.config,
         supabaseUrl: cleanUrl,
@@ -84,10 +89,16 @@ class SupabaseSyncManager {
         enabled: Boolean(cleanUrl && cleanKey)
       };
     } else if (typeof urlOrConfig === 'object' && urlOrConfig !== null) {
-      const nextUrl = urlOrConfig.supabaseUrl !== undefined
+      let nextUrl = urlOrConfig.supabaseUrl !== undefined
         ? String(urlOrConfig.supabaseUrl || '').trim().replace(/\/+$/, '')
         : this.config?.supabaseUrl;
-      this.config = { ...this.config, ...urlOrConfig, supabaseUrl: nextUrl };
+      const nextKey = urlOrConfig.supabaseKey !== undefined
+        ? String(urlOrConfig.supabaseKey || '').trim()
+        : this.config?.supabaseKey;
+      if (nextUrl === LEGACY_DIRECT_SUPABASE_URL && nextKey === DEFAULT_SUPABASE_CONFIG.supabaseKey) {
+        nextUrl = DEFAULT_SUPABASE_CONFIG.supabaseUrl;
+      }
+      this.config = { ...this.config, ...urlOrConfig, supabaseUrl: nextUrl, supabaseKey: nextKey };
     }
     this.stateTableMissing = false;
     this.sessionTableMissing = false;
@@ -698,29 +709,90 @@ class SupabaseSyncManager {
     );
   }
 
-  // ================= ANTIAN OFFLINE & PENYIMPANAN SOAL PER-BARIS =================
-  loadPendingQuestionOps() {
+  // ================= ANTREAN OFFLINE & PENYIMPANAN SOAL PER-BARIS =================
+  isLocalQuestionsAuthoritative() {
     try {
-      const raw = JSON.parse(localStorage.getItem(this.pendingQuestionsStorageKey) || '{}');
-      return {
-        upserts: raw && typeof raw.upserts === 'object' && raw.upserts ? raw.upserts : {},
-        deletes: raw && typeof raw.deletes === 'object' && raw.deletes ? raw.deletes : {}
-      };
+      return localStorage.getItem(this.localAuthoritativeQuestionsKey) === '1';
     } catch (e) {
-      return { upserts: {}, deletes: {} };
+      return false;
     }
   }
 
-  savePendingQuestionOps(ops) {
+  setLocalQuestionsAuthoritative(flag) {
     try {
-      const upCount = Object.keys(ops.upserts || {}).length;
-      const delCount = Object.keys(ops.deletes || {}).length;
-      if (upCount === 0 && delCount === 0) {
-        localStorage.removeItem(this.pendingQuestionsStorageKey);
+      if (flag) {
+        localStorage.setItem(this.localAuthoritativeQuestionsKey, '1');
       } else {
-        localStorage.setItem(this.pendingQuestionsStorageKey, JSON.stringify(ops));
+        localStorage.removeItem(this.localAuthoritativeQuestionsKey);
       }
     } catch (e) {}
+  }
+
+  hasPendingQuestionUpserts() {
+    if (this.inflightUpserts && this.inflightUpserts.size > 0) return true;
+    const ops = this.loadPendingQuestionOps();
+    return Object.keys(ops.upserts || {}).length > 0;
+  }
+
+  loadPendingQuestionOps() {
+    let upserts = {};
+    let deletes = {};
+    try {
+      const raw = JSON.parse(localStorage.getItem(this.pendingQuestionsStorageKey) || '{}');
+      if (raw && typeof raw.upserts === 'object' && raw.upserts) upserts = raw.upserts;
+      if (raw && typeof raw.deletes === 'object' && raw.deletes) deletes = raw.deletes;
+    } catch (e) {}
+
+    // Pulihkan juga daftar ID antrean ringan (tahan kuota localStorage) dari window.examEngine.questions
+    try {
+      const idsRaw = JSON.parse(localStorage.getItem(this.pendingQuestionIdsStorageKey) || '[]');
+      if (Array.isArray(idsRaw) && idsRaw.length > 0 && typeof window !== 'undefined' && window.examEngine && Array.isArray(window.examEngine.questions)) {
+        const localById = new Map();
+        window.examEngine.questions.forEach(q => {
+          if (q && q.id !== undefined && q.id !== null) localById.set(String(q.id), q);
+        });
+        idsRaw.forEach(id => {
+          const sk = String(id);
+          if (!deletes[sk] && !upserts[sk] && localById.has(sk)) {
+            upserts[sk] = localById.get(sk);
+          }
+        });
+      }
+    } catch (e) {}
+
+    return { upserts, deletes };
+  }
+
+  savePendingQuestionOps(ops) {
+    const upserts = ops && typeof ops.upserts === 'object' && ops.upserts ? ops.upserts : {};
+    const deletes = ops && typeof ops.deletes === 'object' && ops.deletes ? ops.deletes : {};
+    const upKeys = Object.keys(upserts);
+    const delCount = Object.keys(deletes).length;
+
+    try {
+      if (upKeys.length === 0) {
+        localStorage.removeItem(this.pendingQuestionIdsStorageKey);
+      } else {
+        localStorage.setItem(this.pendingQuestionIdsStorageKey, JSON.stringify(upKeys));
+      }
+    } catch (e) {}
+
+    try {
+      if (upKeys.length === 0 && delCount === 0) {
+        localStorage.removeItem(this.pendingQuestionsStorageKey);
+      } else {
+        localStorage.setItem(this.pendingQuestionsStorageKey, JSON.stringify({ upserts, deletes }));
+      }
+    } catch (e) {
+      // Jika kuota localStorage penuh karena gambar soal besar, simpan deletes & IDs saja (isi soal sudah ada di cbt_questions)
+      try {
+        if (delCount === 0) {
+          localStorage.removeItem(this.pendingQuestionsStorageKey);
+        } else {
+          localStorage.setItem(this.pendingQuestionsStorageKey, JSON.stringify({ upserts: {}, deletes }));
+        }
+      } catch (e2) {}
+    }
   }
 
   markQuestionsPendingUpsert(questionsArray) {
@@ -1006,9 +1078,12 @@ class SupabaseSyncManager {
         await this.ensureQuestionsMigratedToRows(options.seedFallback || []);
       }
 
-      const CHUNK_SIZE = 50;
+      const CHUNK_SIZE = 20;
       let syncedCount = 0;
-      const creds = this.getPrivilegedCredentials();
+      let failedChunks = 0;
+      let lastErrorMsg = '';
+      let creds = this.getPrivilegedCredentials();
+      let teachersSeedAttempted = false;
 
       for (let i = 0; i < validList.length; i += CHUNK_SIZE) {
         const chunk = validList.slice(i, i + CHUNK_SIZE);
@@ -1017,9 +1092,25 @@ class SupabaseSyncManager {
         let chunkSaved = false;
 
         if (creds && !this.securityRpcMissing) {
-          const rpcRes = await this.upsertTeacherQuestionsRpc(creds.identifier, creds.pin, payloads, false);
+          let rpcRes = await this.upsertTeacherQuestionsRpc(creds.identifier, creds.pin, payloads, false);
+          if (
+            rpcRes &&
+            !rpcRes.success &&
+            rpcRes.not_seeded &&
+            !teachersSeedAttempted &&
+            typeof window !== 'undefined' &&
+            window.cbtAdmin &&
+            typeof window.cbtAdmin.isSuperAdminUser === 'function' &&
+            window.cbtAdmin.isSuperAdminUser()
+          ) {
+            teachersSeedAttempted = true;
+            await this.pushStateKey('cbt_teachers_list', window.cbtAdmin.getAllTeachers());
+            rpcRes = await this.upsertTeacherQuestionsRpc(creds.identifier, creds.pin, payloads, false);
+          }
           if (rpcRes && rpcRes.success) {
             chunkSaved = true;
+          } else if (rpcRes && rpcRes.message) {
+            lastErrorMsg = rpcRes.message;
           }
         }
 
@@ -1033,6 +1124,7 @@ class SupabaseSyncManager {
           } else if (this.isMissingQuestionsTableError(error)) {
             this.questionTableMissing = true;
           } else {
+            lastErrorMsg = error.message || lastErrorMsg;
             console.warn('Gagal upsert cbt_questions:', error.message);
           }
         }
@@ -1066,8 +1158,10 @@ class SupabaseSyncManager {
             .insert(fbRows);
 
           if (fbErr) {
-            this.markQuestionsPendingUpsert(validList.slice(i));
-            return { success: false, queued: true, message: fbErr.message, count: syncedCount };
+            failedChunks++;
+            lastErrorMsg = fbErr.message || lastErrorMsg;
+            this.markQuestionsPendingUpsert(chunk);
+            continue;
           }
           chunkSaved = true;
         }
@@ -1081,8 +1175,19 @@ class SupabaseSyncManager {
       if (syncedCount > 0) {
         this.markQuestionsMigrationDoneLocal();
       }
+      if (failedChunks === 0 && syncedCount === validList.length) {
+        if (!this.hasPendingQuestionUpserts()) {
+          this.setLocalQuestionsAuthoritative(false);
+        }
+        return { success: true, count: syncedCount };
+      }
 
-      return { success: true, count: syncedCount };
+      return {
+        success: false,
+        queued: true,
+        count: syncedCount,
+        message: lastErrorMsg || `Sebagian soal (${syncedCount}/${validList.length}) baru tersimpan di Cloud.`
+      };
     } catch (err) {
       this.markQuestionsPendingUpsert(validList);
       return { success: false, queued: true, message: err.message };
@@ -1247,52 +1352,82 @@ class SupabaseSyncManager {
 
     this.savePendingQuestionOps({ upserts: {}, deletes: {} });
     if (validList.length > 0) {
+      this.setLocalQuestionsAuthoritative(true);
       this.markQuestionsPendingUpsert(validList);
     }
 
     if (!this.client || !this.isConnected) {
-      return { success: false, queued: true };
+      return { success: false, queued: true, count: 0 };
     }
 
     try {
-      const creds = this.getPrivilegedCredentials();
-      let res = null;
-      if (creds && !this.securityRpcMissing) {
-        const payloads = validList.map(q => this.buildQuestionRowPayload(q));
-        const rpcRes = await this.upsertTeacherQuestionsRpc(creds.identifier, creds.pin, payloads, true);
-        if (rpcRes && rpcRes.success) {
-          this.savePendingQuestionOps({ upserts: {}, deletes: {} });
-          res = { success: true, count: validList.length };
+      if (validList.length === 0) {
+        const creds = this.getPrivilegedCredentials();
+        if (creds && !this.securityRpcMissing) {
+          await this.upsertTeacherQuestionsRpc(creds.identifier, creds.pin, [], true);
+        } else if (!this.questionTableMissing) {
+          await this.client.from('cbt_questions').delete().neq('question_key', '__NEVER_MATCH__');
         }
+        await this.client.from('cbt_exam_results').delete().eq('student_nisn', '__CBT_QUESTION_ROW__');
+        await this.pushStateKey('cbt_questions', []);
+        await this.markQuestionsMigrationDoneRemote();
+        this.setLocalQuestionsAuthoritative(false);
+        return { success: true, count: 0 };
       }
 
-      if (!res) {
+      // LANGKAH AMAN: Unggah per-batch (20 soal) TERLEBIH DAHULU tanpa menghapus data lama di Cloud sebelum selesai!
+      const upsertRes = await this.upsertQuestionRows(validList, { skipMigrationCheck: true, skipPendingMark: true });
+      if (!upsertRes || !upsertRes.success || upsertRes.count !== validList.length) {
+        return {
+          success: false,
+          queued: true,
+          count: upsertRes ? upsertRes.count : 0,
+          message: (upsertRes && upsertRes.message) || 'Sebagian soal gagal diunggah ke Cloud.'
+        };
+      }
+
+      // Setelah SEMUA soal baru dipastikan aman di Cloud, bersihkan hanya kunci soal usang yang tidak ada di validList
+      const keepKeySet = new Set(validList.map(q => String(q.id)));
+      try {
+        const remoteKeys = new Set();
         if (!this.questionTableMissing) {
-          const { error } = await this.client
-            .from('cbt_questions')
-            .delete()
-            .neq('question_key', '__NEVER_MATCH__');
-          if (error && this.isMissingQuestionsTableError(error)) {
-            this.questionTableMissing = true;
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await this.client
+              .from('cbt_questions')
+              .select('question_key')
+              .range(from, from + PAGE - 1);
+            if (error || !Array.isArray(data)) break;
+            data.forEach(r => { if (r && r.question_key) remoteKeys.add(String(r.question_key)); });
+            if (data.length < PAGE) break;
+            from += PAGE;
           }
         }
-
-        await this.client
-          .from('cbt_exam_results')
-          .delete()
-          .eq('student_nisn', '__CBT_QUESTION_ROW__');
-
-        res = await this.upsertQuestionRows(validList, { skipMigrationCheck: true, skipPendingMark: true });
+        const obsoleteKeys = Array.from(remoteKeys).filter(k => !keepKeySet.has(k));
+        if (obsoleteKeys.length > 0) {
+          await this.deleteQuestionRows(obsoleteKeys, validList);
+        }
+      } catch (cleanupErr) {
+        console.warn('Lewati pembersihan kunci usang:', cleanupErr);
       }
 
-      const legacyMirror = !this.securityRpcMissing
-        ? validList.map(q => this.stripQuestionKeys(q))
-        : validList;
-      await this.pushStateKey('cbt_questions', legacyMirror);
+      this.savePendingQuestionOps({ upserts: {}, deletes: {} });
+      this.setLocalQuestionsAuthoritative(false);
+
+      // Cerminan legacy di cbt_school_state (opsional, jangan gagalkan jika payload gambar besar)
+      try {
+        const legacyMirror = !this.securityRpcMissing
+          ? validList.map(q => this.stripQuestionKeys(q))
+          : validList;
+        await this.pushStateKey('cbt_questions', legacyMirror);
+      } catch (mirrorErr) {}
+
       await this.markQuestionsMigrationDoneRemote();
-      return res;
+      this._lastQuestionsRemoteStamp = '';
+      return { success: true, count: validList.length };
     } catch (err) {
-      return { success: false, message: err.message };
+      return { success: false, queued: true, message: err.message };
     }
   }
 
@@ -1691,24 +1826,6 @@ class SupabaseSyncManager {
       return { success: false, message: "Supabase Cloud belum terhubung." };
     }
 
-    await this.flushPendingQuestionOps();
-
-    let mergedQuestions = window.examEngine ? [...window.examEngine.questions] : [];
-    const remoteQ = await this.fetchAllQuestionRows();
-    const alreadyMigrated = remoteQ && remoteQ.success && (remoteQ.rows.length > 0 || await this.isQuestionsMigrationCompleted());
-
-    if (alreadyMigrated) {
-      // Gunakan bank soal Cloud sebagai sumber kebenaran + overlay antrean lokal yang belum terkirim
-      mergedQuestions = this.applyPendingQuestionOverlay(remoteQ.rows);
-      if (window.examEngine) {
-        const prevSig = JSON.stringify((window.examEngine.questions || []).map(q => [q.id, q.updatedAt || '']));
-        const nextSig = JSON.stringify(mergedQuestions.map(q => [q.id, q.updatedAt || '']));
-        if (prevSig !== nextSig) {
-          window.examEngine.saveQuestions(mergedQuestions, true);
-        }
-      }
-    }
-
     const isSuperAdmin = Boolean(
       typeof window !== 'undefined' &&
       window.cbtAdmin &&
@@ -1716,8 +1833,8 @@ class SupabaseSyncManager {
       window.cbtAdmin.isSuperAdminUser()
     );
 
-    // Pastikan cbt_teachers_list dikirim PALING PERTAMA agar RPC cbt_sync_token_vault & cbt_sync_question_vault
-    // langsung mengenali kredensial Proktor/Admin saat migrasi ke project Supabase baru yang masih kosong!
+    // Pastikan cbt_teachers_list & identitas dikirim PALING PERTAMA agar RPC cbt_sync_token_vault & cbt_sync_question_vault
+    // langsung mengenali kredensial Proktor/Admin saat migrasi ke database Cloud baru yang masih kosong!
     const entries = [];
     if (isSuperAdmin) {
       if (window.cbtAdmin) {
@@ -1741,16 +1858,44 @@ class SupabaseSyncManager {
       if (res && res.success) pushed++;
     }
 
-    const legacyMirror = !this.securityRpcMissing
-      ? mergedQuestions.map(q => this.stripQuestionKeys(q))
-      : mergedQuestions;
+    await this.flushPendingQuestionOps();
+
+    const localQuestions = window.examEngine && Array.isArray(window.examEngine.questions)
+      ? [...window.examEngine.questions]
+      : [];
+    let mergedQuestions = [...localQuestions];
+    const remoteQ = await this.fetchAllQuestionRows();
+    const remoteRows = (remoteQ && remoteQ.success && Array.isArray(remoteQ.rows)) ? remoteQ.rows : [];
+    const alreadyMigrated = remoteQ && remoteQ.success && (remoteRows.length > 0 || await this.isQuestionsMigrationCompleted());
+
+    // Hanya gabungkan dari Cloud jika Cloud MEMILIKI soal (> 0) dan bukan mode otoritatif lokal (mis. baru pulihkan backup)
+    if (alreadyMigrated && remoteRows.length > 0 && !this.isLocalQuestionsAuthoritative()) {
+      mergedQuestions = this.applyPendingQuestionOverlay(remoteRows);
+      if (window.examEngine) {
+        const prevSig = JSON.stringify(localQuestions.map(q => [q.id, q.updatedAt || '']));
+        const nextSig = JSON.stringify(mergedQuestions.map(q => [q.id, q.updatedAt || '']));
+        if (prevSig !== nextSig) {
+          window.examEngine.saveQuestions(mergedQuestions, true);
+        }
+      }
+    } else if (remoteRows.length > 0 && this.isLocalQuestionsAuthoritative()) {
+      mergedQuestions = this.mergeQuestionListsById(remoteRows, localQuestions);
+    }
 
     if (mergedQuestions.length > 0) {
       const qPush = await this.upsertQuestionRows(mergedQuestions, { skipMigrationCheck: true, skipPendingMark: true });
-      await this.pushStateKey('cbt_questions', legacyMirror);
+      try {
+        const legacyMirror = !this.securityRpcMissing
+          ? mergedQuestions.map(q => this.stripQuestionKeys(q))
+          : mergedQuestions;
+        await this.pushStateKey('cbt_questions', legacyMirror);
+      } catch (mirrorErr) {}
       await this.markQuestionsMigrationDoneRemote();
-      if (qPush && qPush.success) pushed++;
-    } else if (alreadyMigrated) {
+      if (qPush && qPush.success) {
+        this.setLocalQuestionsAuthoritative(false);
+        pushed++;
+      }
+    } else if (alreadyMigrated && remoteRows.length === 0 && localQuestions.length === 0) {
       await this.pushStateKey('cbt_questions', []);
       await this.markQuestionsMigrationDoneRemote();
       pushed++;
@@ -1897,18 +2042,31 @@ class SupabaseSyncManager {
         const creds = this.getPrivilegedCredentials();
         const scopeKey = creds && creds.identifier ? `staff:${creds.identifier}` : 'public';
         const qRes = await this.fetchAllQuestionRows();
-        const hasMigrated = qRes && qRes.success && (qRes.rows.length > 0 || await this.isQuestionsMigrationCompleted());
+        const remoteRows = (qRes && qRes.success && Array.isArray(qRes.rows)) ? qRes.rows : [];
+        const localQuestions = (typeof window !== 'undefined' && window.examEngine && Array.isArray(window.examEngine.questions))
+          ? window.examEngine.questions
+          : [];
 
-        if (hasMigrated) {
-          stateMap.cbt_questions = qRes.rows;
+        if (remoteRows.length > 0) {
+          stateMap.cbt_questions = remoteRows;
           stateMap.cbt_questions_migrated = true;
           const stamp = await this.getQuestionsRemoteStamp(scopeKey);
           if (stamp) this._lastQuestionsRemoteStamp = stamp;
-        } else if (!publicOnly && Array.isArray(stateMap.cbt_questions) && stateMap.cbt_questions.length > 0) {
-          // Auto-migrasi dari penyimpanan lama 1-JSON ke per-baris (hanya oleh staf terautentikasi)
-          await this.upsertQuestionRows(stateMap.cbt_questions, { skipMigrationCheck: true, skipPendingMark: true });
-          await this.markQuestionsMigrationDoneRemote();
+        } else if (Array.isArray(stateMap.cbt_questions) && stateMap.cbt_questions.length > 0) {
+          // Pulihkan dari cerminan legacy cbt_school_state bila tabel cbt_questions masih 0 baris
+          if (!publicOnly) {
+            await this.upsertQuestionRows(stateMap.cbt_questions, { skipMigrationCheck: true, skipPendingMark: true });
+            await this.markQuestionsMigrationDoneRemote();
+          }
           stateMap.cbt_questions_migrated = true;
+        } else if (qRes && qRes.success && remoteRows.length === 0 && localQuestions.length === 0 && await this.isQuestionsMigrationCompleted()) {
+          stateMap.cbt_questions = [];
+          stateMap.cbt_questions_migrated = true;
+        } else if (qRes && qRes.success && remoteRows.length === 0 && localQuestions.length > 0) {
+          // PERLINDUNGAN ANTI-HAPUS: Cloud cbt_questions kosong (0 baris), JANGAN timpa soal lokal yang masih ada!
+          if (!publicOnly && (this.isLocalQuestionsAuthoritative() || this.hasPendingQuestionUpserts())) {
+            await this.upsertQuestionRows(localQuestions, { skipMigrationCheck: true, skipPendingMark: true });
+          }
         }
       }
 
