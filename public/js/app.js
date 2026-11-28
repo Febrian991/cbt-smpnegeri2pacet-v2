@@ -2847,21 +2847,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (warnBanner) warnBanner.classList.add('hidden');
       }
     }
-    const btnOpenAttMon = document.getElementById('btnOpenAttendanceFromMonitoring');
-    if (btnOpenAttMon) {
-      if (isAdmin) btnOpenAttMon.classList.remove('hidden');
-      else btnOpenAttMon.classList.add('hidden');
-    }
-    const btnOpenRoomDocsMon = document.getElementById('btnOpenRoomDocsFromMonitoring');
-    if (btnOpenRoomDocsMon) {
-      if (isAdmin) btnOpenRoomDocsMon.classList.remove('hidden');
-      else btnOpenRoomDocsMon.classList.add('hidden');
-    }
-    const btnOpenBeritaAcaraMon = document.getElementById('btnOpenBeritaAcaraFromMonitoring');
-    if (btnOpenBeritaAcaraMon) {
-      if (isAdmin) btnOpenBeritaAcaraMon.classList.remove('hidden');
-      else btnOpenBeritaAcaraMon.classList.add('hidden');
-    }
     const btnResetQs = document.getElementById('btnResetDefaultQuestions');
     if (btnResetQs) {
       if (isAdmin) btnResetQs.classList.remove('hidden');
@@ -10964,7 +10949,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===================== MODAL DAFTAR HADIR PESERTA RESMI (ADMIN + EDIT IDENTITAS) =====================
   const modalAttendanceSheet = document.getElementById('modalAttendanceSheet');
   const btnOpenAttendanceSheet = document.getElementById('btnOpenAttendanceSheet');
-  const btnOpenAttendanceFromMonitoring = document.getElementById('btnOpenAttendanceFromMonitoring');
   const btnCloseAttendanceSheet = document.getElementById('btnCloseAttendanceSheet');
   const btnCancelAttendanceSheet = document.getElementById('btnCancelAttendanceSheet');
   const btnToggleAttIdentityEditor = document.getElementById('btnToggleAttIdentityEditor');
@@ -11424,13 +11408,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOpenAttendanceSheet) {
     btnOpenAttendanceSheet.addEventListener('click', () => openAttendanceSheetModal());
   }
-  if (btnOpenAttendanceFromMonitoring) {
-    btnOpenAttendanceFromMonitoring.addEventListener('click', () => {
-      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
-      const monSubj = document.getElementById('filterMonitoringSubject')?.value || 'ALL';
-      openAttendanceSheetModal(monCls, monSubj);
-    });
-  }
   if (btnCloseAttendanceSheet) btnCloseAttendanceSheet.addEventListener('click', closeAttendanceSheetModal);
   if (btnCancelAttendanceSheet) btnCancelAttendanceSheet.addEventListener('click', closeAttendanceSheetModal);
 
@@ -11641,9 +11618,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalRoomDocsStudio = document.getElementById('modalRoomDocsStudio');
   const btnOpenRoomDocsModal = document.getElementById('btnOpenRoomDocsModal');
   const btnOpenDenahModal = document.getElementById('btnOpenDenahModal');
-  const btnOpenRoomDocsFromMonitoring = document.getElementById('btnOpenRoomDocsFromMonitoring');
   const btnOpenBeritaAcaraModal = document.getElementById('btnOpenBeritaAcaraModal');
-  const btnOpenBeritaAcaraFromMonitoring = document.getElementById('btnOpenBeritaAcaraFromMonitoring');
   const btnAdminDocAssignRooms = document.getElementById('btnAdminDocAssignRooms');
   const btnAdminDocPengawasMatrix = document.getElementById('btnAdminDocPengawasMatrix');
 
@@ -12119,20 +12094,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOpenDenahModal) {
     btnOpenDenahModal.addEventListener('click', () => openRoomDocsModal(null, 'seating', false));
   }
-  if (btnOpenRoomDocsFromMonitoring) {
-    btnOpenRoomDocsFromMonitoring.addEventListener('click', () => {
-      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
-      openRoomDocsModal(monCls, 'roster', false);
-    });
-  }
   if (btnOpenBeritaAcaraModal) {
     btnOpenBeritaAcaraModal.addEventListener('click', () => openRoomDocsModal(null, 'berita_acara', true));
-  }
-  if (btnOpenBeritaAcaraFromMonitoring) {
-    btnOpenBeritaAcaraFromMonitoring.addEventListener('click', () => {
-      const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
-      openRoomDocsModal(monCls, 'berita_acara', true);
-    });
   }
   if (btnAdminDocAssignRooms) {
     btnAdminDocAssignRooms.addEventListener('click', () => {
