@@ -1102,44 +1102,77 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
   @keyframes cbtTabEnter {
     from {
       opacity: 0;
-      transform: translateY(10px) scale(0.996);
+      transform: translate3d(0, 12px, 0) scale(0.994);
     }
     to {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes cbtTabEnterUp {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -10px, 0) scale(0.994);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes cbtTabEnterRight {
+    from {
+      opacity: 0;
+      transform: translate3d(16px, 0, 0) scale(0.994);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes cbtTabEnterLeft {
+    from {
+      opacity: 0;
+      transform: translate3d(-16px, 0, 0) scale(0.994);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
     }
   }
 
   @keyframes cbtCardStagger {
     from {
       opacity: 0;
-      transform: translateY(10px);
+      transform: translate3d(0, 10px, 0) scale(0.995);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0) scale(1);
     }
   }
 
   @keyframes cbtResultRowIn {
     from {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translate3d(0, 6px, 0);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0);
     }
   }
 
   @keyframes cbtKpiPop {
     0% {
       opacity: 0.35;
-      transform: translateY(4px) scale(0.95);
+      transform: translate3d(0, 4px, 0) scale(0.95);
     }
     100% {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translate3d(0, 0, 0) scale(1);
     }
   }
 
@@ -1152,49 +1185,127 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
     }
   }
 
+  #adminTabsBar {
+    scroll-behavior: smooth;
+  }
+
   #adminTabsBar .admin-tab-btn {
+    position: relative;
+    overflow: hidden;
     transition:
-      background 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      color 180ms ease,
-      border-color 200ms ease,
-      box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+      background-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      background 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 200ms ease,
+      border-color 220ms ease,
+      box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+
+  #adminTabsBar .admin-tab-btn::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 22%;
+    bottom: 22%;
+    width: 3px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.92);
+    opacity: 0;
+    transform: scaleY(0.25);
+    transition:
+      opacity 220ms ease,
+      transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+  }
+
+  #adminTabsBar .admin-tab-btn.from-\[\#124196\]::after {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  @media (max-width: 1023px) {
+    #adminTabsBar .admin-tab-btn::after {
+      left: 22%;
+      right: 22%;
+      top: auto;
+      bottom: 4px;
+      width: auto;
+      height: 3px;
+      transform: scaleX(0.25);
+    }
+    #adminTabsBar .admin-tab-btn.from-\[\#124196\]::after {
+      transform: scaleX(1);
+    }
   }
 
   @media (min-width: 1024px) {
-    #adminTabsBar .admin-tab-btn:hover {
-      transform: translateX(3px);
+    #adminTabsBar .admin-tab-btn:not(.from-\[\#124196\]):hover {
+      transform: translate3d(4px, 0, 0);
     }
   }
 
   #adminTabsBar .admin-tab-btn:active {
-    transform: scale(0.985);
+    transform: scale(0.975) !important;
   }
 
   .admin-tab-pane.cbt-tab-entering {
-    animation: cbtTabEnter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: cbtTabEnter 310ms cubic-bezier(0.16, 1, 0.3, 1) both;
     will-change: opacity, transform;
   }
 
+  .admin-tab-pane.cbt-tab-entering.cbt-tab-dir-backward {
+    animation-name: cbtTabEnterUp;
+  }
+
+  @media (max-width: 1023px) {
+    .admin-tab-pane.cbt-tab-entering.cbt-tab-dir-forward {
+      animation-name: cbtTabEnterRight;
+    }
+    .admin-tab-pane.cbt-tab-entering.cbt-tab-dir-backward {
+      animation-name: cbtTabEnterLeft;
+    }
+  }
+
   .admin-tab-pane.cbt-tab-entering > *:nth-child(1) {
-    animation: cbtCardStagger 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: cbtCardStagger 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: 0ms;
   }
   .admin-tab-pane.cbt-tab-entering > *:nth-child(2) {
-    animation: cbtCardStagger 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: 40ms;
+    animation: cbtCardStagger 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 35ms;
   }
   .admin-tab-pane.cbt-tab-entering > *:nth-child(3) {
-    animation: cbtCardStagger 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: 80ms;
+    animation: cbtCardStagger 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 70ms;
   }
   .admin-tab-pane.cbt-tab-entering > *:nth-child(4) {
-    animation: cbtCardStagger 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: 115ms;
+    animation: cbtCardStagger 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 105ms;
   }
   .admin-tab-pane.cbt-tab-entering > *:nth-child(n+5) {
-    animation: cbtCardStagger 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: 145ms;
+    animation: cbtCardStagger 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 135ms;
+  }
+
+  .admin-tab-pane.cbt-tab-entering > .grid > *:nth-child(1) {
+    animation: cbtCardStagger 310ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 25ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > .grid > *:nth-child(2) {
+    animation: cbtCardStagger 330ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 60ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > .grid > *:nth-child(3) {
+    animation: cbtCardStagger 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 95ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > .grid > *:nth-child(4) {
+    animation: cbtCardStagger 370ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 130ms;
+  }
+  .admin-tab-pane.cbt-tab-entering > .grid > *:nth-child(n+5) {
+    animation: cbtCardStagger 390ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 165ms;
   }
 
   .cbt-skeleton-bar {
@@ -1233,9 +1344,12 @@ body.printing-questions #printableQuestionsArea .naskah-paper-sheet {
   }
 
   @media (prefers-reduced-motion: reduce) {
+    #adminTabsBar,
     #adminTabsBar .admin-tab-btn,
+    #adminTabsBar .admin-tab-btn::after,
     .admin-tab-pane.cbt-tab-entering,
     .admin-tab-pane.cbt-tab-entering > *,
+    .admin-tab-pane.cbt-tab-entering > .grid > *,
     .cbt-skeleton-bar,
     .cbt-kpi-pop,
     #adminResultsTbody tr.cbt-result-row-in,

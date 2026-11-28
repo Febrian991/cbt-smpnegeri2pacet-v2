@@ -1838,7 +1838,7 @@ class SupabaseSyncManager {
     );
 
     // Pastikan cbt_teachers_list & identitas dikirim PALING PERTAMA agar RPC cbt_sync_token_vault & cbt_sync_question_vault
-    // langsung mengenali kredensial Proktor/Admin saat migrasi ke database Cloud baru yang masih kosong!
+    // langsung mengenali kredensial Admin saat migrasi ke database Cloud baru yang masih kosong!
     const entries = [];
     if (isSuperAdmin) {
       if (window.cbtAdmin) {

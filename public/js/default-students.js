@@ -398,7 +398,7 @@ class StudentManager {
         if (rpcRes.cloudRestricted) {
           return {
             success: false,
-            message: "Server database ujian sedang dibatasi sementara (kuota habis). Segera hubungi Proktor / Admin sekolah."
+            message: "Server database ujian sedang dibatasi sementara (kuota habis). Segera hubungi Admin sekolah."
           };
         }
         return {

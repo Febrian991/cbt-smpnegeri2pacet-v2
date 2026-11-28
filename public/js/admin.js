@@ -123,12 +123,16 @@ class CBTAdmin {
       if (!t || typeof t !== 'object') return;
       const isAdm = t.id === 'admin' || String(t.role || '').toLowerCase() === 'admin';
       if (isAdm) {
+        const rawCandidateName = String(t.name || adminObj?.name || '').trim();
+        const normalizedAdmName = (!rawCandidateName || /^proktor(\s+utama)?(\s*\/\s*admin)?$/i.test(rawCandidateName))
+          ? "Admin Utama"
+          : rawCandidateName;
         adminObj = {
           ...(adminObj || {}),
           ...t,
           id: "admin",
           nip: t.nip ? String(t.nip).trim() : (adminObj?.nip || "198501012010011001"),
-          name: t.name || adminObj?.name || "Proktor Utama / Admin",
+          name: normalizedAdmName,
           subject: t.subject || adminObj?.subject || "Semua Mata Pelajaran (Super Admin)",
           role: "admin",
           pin: t.pin ? String(t.pin).trim() : (adminObj?.pin || "admin123")
@@ -174,7 +178,7 @@ class CBTAdmin {
       adminObj = {
         id: "admin",
         nip: "198501012010011001",
-        name: "Proktor Utama / Admin",
+        name: "Admin Utama",
         subject: "Semua Mata Pelajaran (Super Admin)",
         role: "admin",
         pin: "admin123"
@@ -199,6 +203,9 @@ class CBTAdmin {
       if (persistent) {
         const parsed = JSON.parse(persistent);
         if (parsed && parsed.id) {
+          if ((parsed.role === 'admin' || parsed.id === 'admin') && /^proktor(\s+utama)?(\s*\/\s*admin)?$/i.test(String(parsed.name || '').trim())) {
+            parsed.name = 'Admin Utama';
+          }
           return parsed;
         }
       }
@@ -686,7 +693,7 @@ class CBTAdmin {
       return { success: false, message: "Data guru tidak ditemukan!" };
     }
     if (teacher.role === 'admin' || teacher.id === 'admin') {
-      return { success: false, message: "Akun Proktor Utama / Admin tidak boleh dihapus!" };
+      return { success: false, message: "Akun Admin Utama tidak boleh dihapus!" };
     }
 
     this.teachers = this.teachers.filter(t => t.id !== teacherId);
@@ -905,7 +912,7 @@ class CBTAdmin {
     if (!teacher) {
       return {
         success: false,
-        message: "Username / NIP tidak terdaftar! Periksa kembali atau hubungi Proktor."
+        message: "Username / NIP tidak terdaftar! Periksa kembali atau hubungi Admin."
       };
     }
 
@@ -1272,7 +1279,7 @@ class CBTAdmin {
     const type = String(questionData.type || existingQuestion?.type || 'single').trim().toLowerCase() || 'single';
     const isPassage = type === 'passage';
     const richFields = this._normalizeRichQuestionFields(questionData);
-    const createdBy = existingQuestion?.createdBy || questionData.createdBy || (cur ? cur.name : "Proktor Utama / Admin");
+    const createdBy = existingQuestion?.createdBy || questionData.createdBy || (cur ? cur.name : "Admin Utama");
     const createdById = existingQuestion?.createdById || questionData.createdById || (cur ? cur.id : "admin");
     const createdByNip = existingQuestion?.createdByNip || questionData.createdByNip || (cur ? cur.nip : "");
 
@@ -1713,7 +1720,7 @@ class CBTAdmin {
           { key: 'A', text: 'Memastikan soal tampil rapi, waktu berjalan akurat, dan nilai terekam di Rekap Nilai & Peringkat' },
           { key: 'B', text: 'Menghapus seluruh data siswa peserta ujian secara otomatis' },
           { key: 'C', text: 'Menonaktifkan fitur pengawasan dan penyimpanan hasil ujian' },
-          { key: 'D', text: 'Mengubah token jadwal ujian tanpa persetujuan proktor' }
+          { key: 'D', text: 'Mengubah token jadwal ujian tanpa persetujuan admin' }
         ],
         correctAnswer: 'A',
         weight: 30
@@ -1726,7 +1733,7 @@ class CBTAdmin {
           { key: 'A', text: 'Kemampuan mencentang lebih dari satu pilihan jawaban pada perangkat siswa' },
           { key: 'B', text: 'Kesesuaian tampilan butir soal dan opsi jawaban di layar laptop maupun HP' },
           { key: 'C', text: 'Mengabaikan kunci jawaban agar nilai siswa selalu nol' },
-          { key: 'D', text: 'Ketepatan sinkronisasi hasil jawaban siswa ke panel guru dan proktor' }
+          { key: 'D', text: 'Ketepatan sinkronisasi hasil jawaban siswa ke panel guru dan admin' }
         ],
         correctAnswer: ['A', 'B', 'D'],
         weight: 35
@@ -1751,7 +1758,7 @@ class CBTAdmin {
       }
       const teacherClasses = t.classes ? this.parseTeacherClasses(t.classes) : [];
       const classLevel = teacherClasses.length > 0 ? teacherClasses.join(', ') : 'Semua Kelas';
-      const creatorName = t.name || 'Proktor Utama / Admin';
+      const creatorName = t.name || 'Admin Utama';
 
       subjects.forEach(subj => {
         const hasMatch = workingList.some(q => {
@@ -1911,7 +1918,7 @@ class CBTAdmin {
             weight: Math.max(1, parseInt(item.weight, 10) || fallbackWeight),
             subject: itemSub,
             classLevel: item.classLevel ? String(item.classLevel).trim() : fallbackCls,
-            createdBy: item.createdBy || (cur ? cur.name : "Proktor Utama / Admin"),
+            createdBy: item.createdBy || (cur ? cur.name : "Admin Utama"),
             createdById: item.createdById || (cur ? cur.id : "admin"),
             createdByNip: item.createdByNip || (cur ? cur.nip : ""),
             updatedAt: nowIso
@@ -2239,7 +2246,7 @@ class CBTAdmin {
 
       const aoaData = [
         [`LAPORAN REKAPITULASI RESMI HASIL UJIAN SEKOLAH (CBT) - ${cfg.schoolName}`],
-        ["Guru Pengampu / Proktor:", cur?.name || 'Panitia Ujian'],
+        ["Guru Pengampu / Admin:", cur?.name || 'Panitia Ujian'],
         ["Mata Pelajaran:", currentSub],
         ["Titi Mangsa:", `${cfg.city}, ${cfg.date}`],
         [""],
@@ -2801,6 +2808,7 @@ class CBTAdmin {
         { key: 'guru_tab_monitoring', group: 'Menu Sidebar Guru', label: 'Menu: Monitoring Login Siswa', selector: '#adminTabBtnMonitoring', tabId: 'tabMonitoring' },
         { key: 'guru_tab_questions', group: 'Menu Sidebar Guru', label: 'Menu: Bank Soal', selector: '#adminTabBtnQuestions', tabId: 'tabQuestions' },
         { key: 'guru_btn_refresh_dashboard', group: 'Dashboard Guru', label: 'Tombol: 🔄 Segarkan Data Dashboard', selector: '#btnRefreshDashboardOverview' },
+        { key: 'guru_btn_download_dashboard_pdf', group: 'Dashboard Guru', label: 'Tombol: 📄 Download PDF Dashboard', selector: '#btnDownloadDashboardPdf' },
         { key: 'guru_btn_dash_jumps', group: 'Dashboard Guru', label: 'Tombol Pintas Dashboard (Pantau / Rekap / Cek / Bank Soal)', selector: '.dash-jump-btn, #btnDashOpenPreExam' },
         { key: 'guru_btn_clear_results', group: 'Rekap Nilai Guru', label: 'Tombol: 🗑️ Hapus Rekap Nilai', selector: '#btnClearAllResults' },
         { key: 'guru_btn_export_excel', group: 'Rekap Nilai Guru', label: 'Tombol: Download Excel (.xlsx)', selector: '#btnExportExcel' },
@@ -2825,9 +2833,11 @@ class CBTAdmin {
         { key: 'admin_tab_questions', group: 'Menu Sidebar Admin', label: 'Menu: Bank Soal', selector: '#adminTabBtnQuestions', tabId: 'tabQuestions' },
         { key: 'admin_tab_students', group: 'Menu Sidebar Admin', label: 'Menu: Data Siswa', selector: '#adminTabBtnStudents', tabId: 'tabStudents' },
         { key: 'admin_tab_teachers', group: 'Menu Sidebar Admin', label: 'Menu: Data Guru', selector: '#adminTabBtnTeachers', tabId: 'tabTeachers' },
+        { key: 'admin_tab_administration', group: 'Menu Sidebar Admin', label: 'Menu: Administrasi', selector: '#adminTabBtnAdministration', tabId: 'tabAdministration' },
         { key: 'admin_tab_database', group: 'Menu Sidebar Admin', label: 'Menu: Manajemen Database', selector: '#adminTabBtnDatabase', tabId: 'tabDatabase' },
         { key: 'admin_tab_backup', group: 'Menu Sidebar Admin', label: 'Menu: Backup & Restore', selector: '#adminTabBtnBackup', tabId: 'tabBackup' },
         { key: 'admin_btn_refresh_dashboard', group: 'Dashboard & Rekap Admin', label: 'Tombol: 🔄 Segarkan Data Dashboard', selector: '#btnRefreshDashboardOverview' },
+        { key: 'admin_btn_download_dashboard_pdf', group: 'Dashboard & Rekap Admin', label: 'Tombol: 📄 Download PDF Dashboard', selector: '#btnDownloadDashboardPdf' },
         { key: 'admin_btn_clear_results', group: 'Dashboard & Rekap Admin', label: 'Tombol: 🗑️ Hapus Rekap Nilai', selector: '#btnClearAllResults' },
         { key: 'admin_btn_export_excel', group: 'Dashboard & Rekap Admin', label: 'Tombol: Download Excel (.xlsx)', selector: '#btnExportExcel' },
         { key: 'admin_btn_export_pdf', group: 'Dashboard & Rekap Admin', label: 'Tombol: Download PDF (.pdf)', selector: '#btnExportPDF' },
@@ -2853,12 +2863,12 @@ class CBTAdmin {
         { key: 'admin_btn_add_student', group: 'Data Siswa Admin', label: 'Tombol: + Tambah Siswa', selector: '#btnOpenAddStudent' },
         { key: 'admin_btn_edit_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: ✏️ Edit Siswa', selector: '.btn-edit-student' },
         { key: 'admin_btn_delete_student', group: 'Data Siswa Admin', label: 'Tombol Tabel: 🗑️ Hapus Siswa', selector: '.btn-delete-student' },
-        { key: 'admin_btn_assign_exam_rooms', group: 'Data Siswa Admin', label: 'Tombol: 🏫 Atur / Acak Ruang', selector: '#btnOpenAssignExamRooms' },
+        { key: 'admin_btn_assign_exam_rooms', group: 'Data Siswa Admin', label: 'Tombol: 🏫 Atur / Acak Ruang', selector: '#btnOpenAssignExamRooms, #btnAdminDocAssignRooms' },
         { key: 'admin_btn_import_export_students', group: 'Data Siswa Admin', label: 'Tombol: 📄 Template & 📥 Impor Excel Siswa', selector: '#btnDownloadStudentTemplate, #btnTriggerImportStudents' },
-        { key: 'admin_btn_print_student_cards', group: 'Data Siswa Admin', label: 'Tombol: 🪪 Kartu Peserta Ujian', selector: '#btnPrintStudentCards' },
-        { key: 'admin_btn_print_attendance', group: 'Data Siswa Admin', label: 'Tombol: 📋 Daftar Hadir Peserta', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
-        { key: 'admin_btn_print_room_docs', group: 'Data Siswa Admin', label: 'Tombol: 🗺️ Daftar Peserta & Denah Ruang', selector: '#btnOpenRoomDocsModal, #btnOpenRoomDocsFromMonitoring' },
-        { key: 'admin_btn_print_berita_acara', group: 'Data Siswa Admin', label: 'Tombol: 📝 Berita Acara Ujian', selector: '#btnOpenBeritaAcaraModal, #btnOpenBeritaAcaraFromMonitoring' },
+        { key: 'admin_btn_print_student_cards', group: 'Administrasi Ujian Admin', label: 'Tombol: 🪪 5. Kartu Peserta Siswa', selector: '#btnPrintStudentCards' },
+        { key: 'admin_btn_print_attendance', group: 'Administrasi Ujian Admin', label: 'Tombol: 📋 1. Daftar Hadir', selector: '#btnOpenAttendanceSheet, #btnOpenAttendanceFromMonitoring' },
+        { key: 'admin_btn_print_room_docs', group: 'Administrasi Ujian Admin', label: 'Tombol: 👥 2. Daftar Peserta & 🗺️ 3. Denah', selector: '#btnOpenRoomDocsModal, #btnOpenDenahModal, #btnOpenRoomDocsFromMonitoring' },
+        { key: 'admin_btn_print_berita_acara', group: 'Administrasi Ujian Admin', label: 'Tombol: 📝 4. Berita Acara', selector: '#btnOpenBeritaAcaraModal, #btnOpenBeritaAcaraFromMonitoring' },
         { key: 'admin_btn_reset_student_passwords', group: 'Data Siswa Admin', label: 'Tombol: 🔄 Reset Password Siswa (123)', selector: '#btnResetAllStudentPasswords' },
         { key: 'admin_btn_demo_students', group: 'Data Siswa Admin', label: 'Tombol: 🎲 Isi 250 Siswa Demo', selector: '#btnGenerate250Demo' },
         { key: 'admin_btn_clear_students', group: 'Data Siswa Admin', label: 'Tombol: 🗑️ Hapus Semua Siswa', selector: '#btnClearStudents' },
@@ -2866,7 +2876,7 @@ class CBTAdmin {
         { key: 'admin_btn_edit_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: ✏️ Edit Guru', selector: '.btn-edit-teacher' },
         { key: 'admin_btn_delete_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: 🗑️ Hapus Guru', selector: '.btn-delete-teacher' },
         { key: 'admin_btn_import_export_teachers', group: 'Data Guru Admin', label: 'Tombol: 📄 Template Guru/Pengawas & 📥 Impor Excel', selector: '#btnDownloadTeacherTemplate, #btnDownloadPengawasTemplate, #btnTriggerImportTeachers' },
-        { key: 'admin_btn_print_teacher_cards', group: 'Data Guru Admin', label: 'Tombol: 🪪 Kartu Login Guru', selector: '#btnPrintTeacherCards' },
+        { key: 'admin_btn_print_teacher_cards', group: 'Administrasi Ujian Admin', label: 'Tombol: 🪪 6. Kartu Login Guru & Pengawas', selector: '#btnPrintTeacherCards' },
         { key: 'admin_btn_reset_teacher_passwords', group: 'Data Guru Admin', label: 'Tombol: 🔄 Reset Password Guru (guru123)', selector: '#btnResetAllTeacherPasswords' },
         { key: 'admin_btn_pull_cloud', group: 'Database & Backup Admin', label: 'Tombol: ⬇️ Ambil Data dari Cloud', selector: '#btnPullFromCloud' },
         { key: 'admin_btn_push_cloud', group: 'Database & Backup Admin', label: 'Tombol: ☁️ Kirim Semua Data ke Cloud', selector: '#btnPushAllToCloud' },
@@ -3518,7 +3528,7 @@ class CBTAdmin {
 
   addSchedule({ day, dateIso, subject, classLevel, timeRange, durationMinutes, token, maxAttempts, questionCategory }) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Admin / Proktor yang dapat menambah jadwal ujian!" };
+      return { success: false, message: "Hanya Admin yang dapat menambah jadwal ujian!" };
     }
     const cleanSubject = String(subject || "").trim();
     const cleanDateIso = String(dateIso || "").trim();
@@ -3556,7 +3566,7 @@ class CBTAdmin {
 
   updateSchedule(id, payload) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Admin / Proktor yang dapat mengubah jadwal ujian!" };
+      return { success: false, message: "Hanya Admin yang dapat mengubah jadwal ujian!" };
     }
     let updatedItem = null;
     this.schedules = this.schedules.map(s => {
@@ -3597,7 +3607,7 @@ class CBTAdmin {
 
   deleteSchedule(id) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Admin / Proktor yang dapat menghapus jadwal ujian!" };
+      return { success: false, message: "Hanya Admin yang dapat menghapus jadwal ujian!" };
     }
     this.schedules = this.schedules.filter(s => s.id !== id);
     this.saveSchedules(this.schedules);
@@ -3615,7 +3625,7 @@ class CBTAdmin {
 
   activateSchedule(id) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Fitur Aktifkan Mapel hanya tersedia di Panel Proktor / Admin!" };
+      return { success: false, message: "Fitur Aktifkan Mapel hanya tersedia di Panel Admin!" };
     }
     let sched = null;
     this.schedules = this.schedules.map(s => {
@@ -3651,7 +3661,7 @@ class CBTAdmin {
 
   deactivateSchedule(id = null) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Admin / Proktor yang dapat menonaktifkan jadwal!" };
+      return { success: false, message: "Hanya Admin yang dapat menonaktifkan jadwal!" };
     }
     this.schedules = this.schedules.map(s => {
       if (id === null || s.id === id) {
@@ -3695,7 +3705,7 @@ class CBTAdmin {
   // ===================== BACKUP & PULIHKAN SELURUH DATA SEKOLAH =====================
   exportAllAppData() {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Proktor / Admin yang dapat mengekspor backup penuh!" };
+      return { success: false, message: "Hanya Admin yang dapat mengekspor backup penuh!" };
     }
 
     const backup = {
@@ -3730,7 +3740,7 @@ class CBTAdmin {
 
   importAllAppData(jsonString, options = {}) {
     if (!this.isSuperAdminUser()) {
-      return { success: false, message: "Hanya Proktor / Admin yang dapat memulihkan backup penuh!" };
+      return { success: false, message: "Hanya Admin yang dapat memulihkan backup penuh!" };
     }
 
     try {
@@ -6122,8 +6132,8 @@ class CBTAdmin {
     return teachersList.map((t, idx) => {
       const isAdmin = t && (t.role === 'admin' || t.id === 'admin');
       const isPengawas = Boolean(t && !isAdmin && String(t.role || '').toLowerCase() === 'pengawas');
-      const roleLabel = isAdmin ? 'PROKTOR / ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU MAPEL');
-      const roleDetail = isAdmin ? 'Proktor Utama / Admin' : (isPengawas ? 'Pengawas Ruang Ujian' : 'Guru Mata Pelajaran');
+      const roleLabel = isAdmin ? 'ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU MAPEL');
+      const roleDetail = isAdmin ? 'Admin Utama' : (isPengawas ? 'Pengawas Ruang Ujian' : 'Guru Mata Pelajaran');
       const badgeBg = isAdmin ? '#f3e8ff' : (isPengawas ? '#ccfbf1' : '#dbeafe');
       const badgeText = isAdmin ? '#6b21a8' : (isPengawas ? '#0f766e' : '#1d4ed8');
       const badgeBorder = isAdmin ? '#c084fc' : (isPengawas ? '#5eead4' : '#93c5fd');
@@ -6155,7 +6165,7 @@ class CBTAdmin {
           <div style="flex:1; text-align:center; min-width:0;">
             <div style="font-size:6.4px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeSubtitle}</div>
             <div style="font-size:8.8px; font-weight:900; color:#0f172a; text-transform:uppercase; letter-spacing:0.2px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${safeSchoolName}</div>
-            <div style="font-size:6.6px; font-weight:800; color:${isAdmin ? '#6b21a8' : (isPengawas ? '#0f766e' : '#2563eb')}; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">KARTU LOGIN ${isAdmin ? 'PROKTOR / ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU')} &bull; ${safeExamTitle}</div>
+            <div style="font-size:6.6px; font-weight:800; color:${isAdmin ? '#6b21a8' : (isPengawas ? '#0f766e' : '#2563eb')}; text-transform:uppercase; letter-spacing:0.2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">KARTU LOGIN ${isAdmin ? 'ADMIN' : (isPengawas ? 'PENGAWAS RUANG' : 'GURU')} &bull; ${safeExamTitle}</div>
           </div>
           ${logoRightHtml}
         </div>
@@ -7926,6 +7936,475 @@ class CBTAdmin {
         document.body.classList.remove('printing-attendance');
       }, 1000);
     }, 250);
+  }
+
+  buildDashboardDistributionData(results = []) {
+    const list = Array.isArray(results) ? results : [];
+    const brackets = [
+      { label: '< 50', desc: 'Perlu Bimbingan', min: -Infinity, max: 49.999, color: '#e11d48' },
+      { label: '50–64', desc: 'Cukup', min: 50, max: 64.999, color: '#f97316' },
+      { label: '65–74', desc: 'Hampir Tuntas', min: 65, max: 74.999, color: '#f59e0b' },
+      { label: '75–84', desc: 'Tuntas (Baik)', min: 75, max: 84.999, color: '#2563eb' },
+      { label: '85–100', desc: 'Sangat Baik', min: 85, max: Infinity, color: '#10b981' }
+    ];
+    const total = list.length;
+    return brackets.map(b => {
+      const count = list.filter(r => {
+        const s = Number(r && r.finalScore ? r.finalScore : 0);
+        return s >= b.min && s <= b.max;
+      }).length;
+      return {
+        ...b,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0
+      };
+    });
+  }
+
+  buildDashboardChartSvg(distData = []) {
+    const data = Array.isArray(distData) && distData.length > 0 ? distData : this.buildDashboardDistributionData([]);
+    const width = 640;
+    const height = 225;
+    const margin = { top: 26, right: 20, bottom: 40, left: 42 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+    const maxCount = Math.max(1, ...data.map(d => Number(d.count || 0)));
+    const yMax = Math.ceil(maxCount * 1.15);
+    const step = innerW / data.length;
+    const barW = Math.min(68, step * 0.58);
+
+    const gridLines = [];
+    const tickCount = 4;
+    for (let i = 0; i <= tickCount; i++) {
+      const val = Math.round((yMax / tickCount) * i);
+      const yPos = margin.top + innerH - (yMax > 0 ? (val / yMax) * innerH : 0);
+      gridLines.push(`
+        <line x1="${margin.left}" y1="${yPos.toFixed(1)}" x2="${width - margin.right}" y2="${yPos.toFixed(1)}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+        <text x="${margin.left - 8}" y="${(yPos + 3.5).toFixed(1)}" text-anchor="end" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="600">${val}</text>
+      `);
+    }
+
+    const kkmX = margin.left + step * 3;
+    const kkmLine = `
+      <line x1="${kkmX.toFixed(1)}" y1="${margin.top}" x2="${kkmX.toFixed(1)}" y2="${margin.top + innerH}" stroke="#10b981" stroke-width="1.6" stroke-dasharray="4,3" />
+      <text x="${(kkmX + 5).toFixed(1)}" y="${margin.top + 11}" fill="#059669" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700">Batas Tuntas ≥75 →</text>
+    `;
+
+    const barsSvg = data.map((d, idx) => {
+      const cx = margin.left + step * idx + step / 2;
+      const bx = cx - barW / 2;
+      const barH = yMax > 0 ? Math.max(0, (Number(d.count || 0) / yMax) * innerH) : 0;
+      const by = margin.top + innerH - barH;
+      const valLabel = d.count > 0 ? `${d.count} (${d.pct}%)` : '0';
+      return `
+        <rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="5" fill="${d.color}" />
+        <text x="${cx.toFixed(1)}" y="${Math.max(margin.top + 10, by - 6).toFixed(1)}" text-anchor="middle" fill="#1e293b" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700">${this.escapePrintHtml(valLabel)}</text>
+        <text x="${cx.toFixed(1)}" y="${margin.top + innerH + 17}" text-anchor="middle" fill="#334155" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700">${this.escapePrintHtml(d.label)}</text>
+        <text x="${cx.toFixed(1)}" y="${margin.top + innerH + 30}" text-anchor="middle" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="600">${this.escapePrintHtml(d.desc)}</text>
+      `;
+    }).join('');
+
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
+        ${gridLines.join('')}
+        <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + innerH}" stroke="#94a3b8" stroke-width="1.2" />
+        <line x1="${margin.left}" y1="${margin.top + innerH}" x2="${width - margin.right}" y2="${margin.top + innerH}" stroke="#94a3b8" stroke-width="1.2" />
+        ${kkmLine}
+        ${barsSvg}
+      </svg>
+    `.trim();
+  }
+
+  async svgToPngDataUrl(svgString, width = 1280, height = 450) {
+    const svgDataUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+    if (typeof document === 'undefined' || typeof Image === 'undefined') {
+      return svgDataUri;
+    }
+    return new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(svgDataUri);
+              return;
+            }
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) {
+            resolve(svgDataUri);
+          }
+        };
+        img.onerror = () => resolve(svgDataUri);
+        img.src = svgDataUri;
+      } catch (e) {
+        resolve(svgDataUri);
+      }
+    });
+  }
+
+  buildDashboardSummaryReportHtml(snapshot = {}, chartDataUrl = '') {
+    const cfg = this.getSchoolConfig();
+    const schoolName = String(cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    const logoSrc = cfg.logoBase64 && String(cfg.logoBase64).trim() ? cfg.logoBase64 : '';
+    const scopeLabel = String(snapshot.scopeSubtitle || 'Ringkasan Penyelenggaraan Ujian (CBT)').trim();
+    const printedBy = String(snapshot.printedBy || 'Administrator Sistem').trim();
+    const printedAt = this.formatIndonesianDateTime ? this.formatIndonesianDateTime(new Date()) : new Date().toLocaleString('id-ID');
+
+    const qSum = snapshot.questionSummary || { totalQuestions: 0, readyCount: 0, warningCount: 0, errorCount: 0, readyPercent: 0 };
+    const studentCount = Number(snapshot.studentCount || 0);
+    const classCount = Number(snapshot.classCount || 0);
+    const resultsCount = Number(snapshot.resultsCount || 0);
+    const activeLiveCount = Number(snapshot.activeLiveCount || 0);
+    const analytics = snapshot.analytics || { averageScore: 0, highestScore: 0, lowestScore: 0, passRatePercentage: 0 };
+    const passedTotal = Number(snapshot.passedTotal || 0);
+    const distData = Array.isArray(snapshot.distData) ? snapshot.distData : this.buildDashboardDistributionData([]);
+    const activeSchedules = Array.isArray(snapshot.activeSchedules) ? snapshot.activeSchedules : [];
+    const manualConfig = snapshot.manualConfig || null;
+    const recentResults = Array.isArray(snapshot.recentResults) ? snapshot.recentResults.slice(0, 5) : [];
+
+    const totalQ = Math.max(1, Number(qSum.totalQuestions || 0));
+    const readyPct = qSum.totalQuestions > 0 ? Math.round((Number(qSum.readyCount || 0) / totalQ) * 100) : 0;
+    const warnPct = qSum.totalQuestions > 0 ? Math.round((Number(qSum.warningCount || 0) / totalQ) * 100) : 0;
+    const errPct = qSum.totalQuestions > 0 ? Math.max(0, 100 - readyPct - warnPct) : 0;
+
+    const chartBlockHtml = resultsCount > 0 && chartDataUrl
+      ? `
+        <div style="text-align:center; padding:4px 0 6px 0;">
+          <img src="${chartDataUrl}" alt="Grafik Distribusi Nilai" style="width:100%; max-width:100%; height:auto; display:block; margin:0 auto;">
+        </div>
+      `
+      : `
+        <div style="padding:22px 12px; text-align:center; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; color:#64748b; font-size:10.5px;">
+          Belum ada data nilai ujian masuk untuk ditampilkan pada grafik distribusi nilai.
+        </div>
+      `;
+
+    const schedulesRowsHtml = activeSchedules.length > 0
+      ? activeSchedules.slice(0, 5).map(sch => `
+          <tr>
+            <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#0f172a;">${this.escapePrintHtml(sch.subject || '-')}</td>
+            <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; color:#475569;">${this.escapePrintHtml([sch.day, sch.date, sch.time].filter(Boolean).join(' • ') || '-')}</td>
+            <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-family:monospace; font-weight:700; color:#1d4ed8;">${this.escapePrintHtml(sch.token || '-')}</td>
+          </tr>
+        `).join('')
+      : `
+          <tr>
+            <td style="padding:5px 6px; font-weight:700; color:#0f172a;">${this.escapePrintHtml((manualConfig && manualConfig.subject) || 'Mode Manual')}</td>
+            <td style="padding:5px 6px; color:#475569;">${this.escapePrintHtml(((manualConfig && manualConfig.targetClass) || 'Semua Kelas') + ' • ' + ((manualConfig && manualConfig.durationMinutes) || 80) + ' mnt')}</td>
+            <td style="padding:5px 6px; text-align:center; font-family:monospace; font-weight:700; color:#1d4ed8;">${this.escapePrintHtml((manualConfig && manualConfig.examToken) || 'CBT80M')}</td>
+          </tr>
+        `;
+
+    const recentRowsHtml = recentResults.length > 0
+      ? recentResults.map((r, idx) => {
+          const score = Number(r && r.finalScore ? r.finalScore : 0);
+          const isRem = score < 75;
+          return `
+            <tr>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; color:#64748b;">${idx + 1}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#0f172a;">${this.escapePrintHtml((r && r.student && r.student.name) || '-')}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; color:#1d4ed8; font-weight:700;">${this.escapePrintHtml(r && r.student && r.student.class ? 'Kelas ' + r.student.class : '-')}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; color:#334155;">${this.escapePrintHtml((r && r.subject) || '-')}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; white-space:nowrap;">✓${r.correctCount || 0} / ✗${r.incorrectCount || 0} / ?${r.unattemptedCount || 0}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:800; color:${isRem ? '#b45309' : '#047857'};">${score}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; font-size:9px; color:${isRem ? '#be123c' : '#059669'};">${isRem ? 'Remedial' : 'Tidak Remedial'}</td>
+              <td style="padding:4.5px 6px; border-bottom:1px solid #e2e8f0; font-family:monospace; font-size:9px; color:#64748b; white-space:nowrap;">${this.escapePrintHtml((r && r.completedAt) || '-')}</td>
+            </tr>
+          `;
+        }).join('')
+      : `<tr><td colspan="8" style="padding:12px; text-align:center; color:#94a3b8; font-size:10px;">Belum ada peserta yang menyelesaikan ujian.</td></tr>`;
+
+    return `
+      <div class="dashboard-pdf-sheet" style="width:210mm; min-height:295mm; margin:0 auto; padding:10mm 13mm; background:#ffffff; color:#0f172a; font-family:Arial, Helvetica, sans-serif; box-sizing:border-box;">
+        <!-- Header Laporan -->
+        <table style="width:100%; border-collapse:collapse; border-bottom:2.5px solid #124196; padding-bottom:8px; margin-bottom:12px;">
+          <tbody>
+            <tr>
+              ${logoSrc ? `<td style="width:52px; vertical-align:middle; padding-bottom:8px;"><img src="${logoSrc}" alt="Logo" style="width:44px; height:44px; object-fit:contain; display:block;"></td>` : ''}
+              <td style="vertical-align:middle; padding-bottom:8px;">
+                <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#124196;">${this.escapePrintHtml(schoolName)} • CBT COMPUTER BASED TEST</div>
+                <div style="font-size:15px; font-weight:800; color:#0f172a; margin-top:2px;">LAPORAN RINGKASAN DASHBOARD UJIAN</div>
+                <div style="font-size:10px; color:#475569; margin-top:2px;">${this.escapePrintHtml(scopeLabel)}</div>
+              </td>
+              <td style="text-align:right; vertical-align:bottom; padding-bottom:8px; font-size:9.5px; color:#64748b; white-space:nowrap;">
+                <div>Dicetak oleh: <strong style="color:#0f172a;">${this.escapePrintHtml(printedBy)}</strong></div>
+                <div style="margin-top:2px;">${this.escapePrintHtml(printedAt)}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 4 Statistik Utama (KPI) -->
+        <table style="width:100%; border-collapse:separate; border-spacing:6px 0; margin:0 -6px 12px -6px; table-layout:fixed;">
+          <tbody>
+            <tr>
+              <td style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:9px 10px; vertical-align:top;">
+                <div style="font-size:8.5px; font-weight:800; text-transform:uppercase; color:#1d4ed8;">Bank Soal</div>
+                <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:3px;">${qSum.totalQuestions} Soal</div>
+                <div style="font-size:9px; color:#1e40af; margin-top:2px;">${qSum.readyCount} siap (${qSum.readyPercent}% lolos)</div>
+              </td>
+              <td style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:10px; padding:9px 10px; vertical-align:top;">
+                <div style="font-size:8.5px; font-weight:800; text-transform:uppercase; color:#6d28d9;">Peserta</div>
+                <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:3px;">${studentCount} Siswa</div>
+                <div style="font-size:9px; color:#5b21b6; margin-top:2px;">${classCount} kelas terdaftar</div>
+              </td>
+              <td style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:9px 10px; vertical-align:top;">
+                <div style="font-size:8.5px; font-weight:800; text-transform:uppercase; color:#047857;">Nilai Masuk</div>
+                <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:3px;">${resultsCount} Hasil</div>
+                <div style="font-size:9px; color:#065f46; margin-top:2px;">${activeLiveCount} siswa ujian live</div>
+              </td>
+              <td style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:9px 10px; vertical-align:top;">
+                <div style="font-size:8.5px; font-weight:800; text-transform:uppercase; color:#c2410c;">Rata-Rata Nilai</div>
+                <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:3px;">${analytics.averageScore ?? 0}</div>
+                <div style="font-size:9px; color:#9a3412; margin-top:2px;">Ketuntasan (≥75): ${analytics.passRatePercentage ?? 0}%</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Grafik Distribusi Nilai Siswa & Ringkasan Rentang -->
+        <div style="border:1px solid #cbd5e1; border-radius:10px; padding:10px 12px; margin-bottom:12px; background:#ffffff;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div>
+              <div style="font-size:11.5px; font-weight:800; color:#0f172a;">Distribusi Nilai Siswa</div>
+              <div style="font-size:9.5px; color:#64748b;">Sebaran nilai akhir per rentang skor dengan batas ketuntasan minimal (KKM) 75.</div>
+            </div>
+          </div>
+
+          ${chartBlockHtml}
+
+          <table style="width:100%; border-collapse:separate; border-spacing:6px 0; margin:6px -6px 8px -6px; table-layout:fixed; text-align:center;">
+            <tbody>
+              <tr>
+                <td style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px;">
+                  <div style="font-size:8.5px; font-weight:700; color:#64748b; text-transform:uppercase;">Nilai Tertinggi</div>
+                  <div style="font-size:13px; font-weight:800; color:#059669; margin-top:2px;">${resultsCount > 0 ? analytics.highestScore : '-'}</div>
+                </td>
+                <td style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px;">
+                  <div style="font-size:8.5px; font-weight:700; color:#64748b; text-transform:uppercase;">Nilai Terendah</div>
+                  <div style="font-size:13px; font-weight:800; color:#e11d48; margin-top:2px;">${resultsCount > 0 ? analytics.lowestScore : '-'}</div>
+                </td>
+                <td style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px;">
+                  <div style="font-size:8.5px; font-weight:700; color:#64748b; text-transform:uppercase;">Peserta Tuntas (≥75)</div>
+                  <div style="font-size:13px; font-weight:800; color:#1d4ed8; margin-top:2px;">${passedTotal} dari ${resultsCount}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table style="width:100%; border-collapse:collapse; font-size:9.5px; border:1px solid #e2e8f0;">
+            <thead>
+              <tr style="background:#f1f5f9; color:#334155;">
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Rentang Nilai</th>
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Kategori Capaian</th>
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">Jumlah Siswa</th>
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">Persentase</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${distData.map(d => `
+                <tr>
+                  <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; font-weight:700;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:${d.color}; margin-right:5px;"></span>${this.escapePrintHtml(d.label)}
+                  </td>
+                  <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; color:#475569;">${this.escapePrintHtml(d.desc)}</td>
+                  <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700;">${d.count} Siswa</td>
+                  <td style="padding:4px 6px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; color:#0f172a;">${d.pct}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Kesiapan Teknis Bank Soal & Jadwal Aktif -->
+        <table style="width:100%; border-collapse:separate; border-spacing:8px 0; margin:0 -8px 12px -8px; table-layout:fixed;">
+          <tbody>
+            <tr>
+              <td style="width:46%; vertical-align:top; border:1px solid #cbd5e1; border-radius:10px; padding:9px 10px; background:#ffffff;">
+                <div style="font-size:10.5px; font-weight:800; color:#0f172a; margin-bottom:6px;">Kesiapan Teknis Bank Soal</div>
+                <table style="width:100%; border-collapse:collapse; height:8px; margin-bottom:8px; border-radius:4px; overflow:hidden; background:#e2e8f0;">
+                  <tbody>
+                    <tr>
+                      ${readyPct > 0 ? `<td style="width:${readyPct}%; background:#10b981; height:8px;"></td>` : ''}
+                      ${warnPct > 0 ? `<td style="width:${warnPct}%; background:#fbbf24; height:8px;"></td>` : ''}
+                      ${errPct > 0 ? `<td style="width:${errPct}%; background:#f43f5e; height:8px;"></td>` : ''}
+                    </tr>
+                  </tbody>
+                </table>
+                <table style="width:100%; border-collapse:separate; border-spacing:4px 0; margin:0 -4px; table-layout:fixed; text-align:center; font-size:9px;">
+                  <tbody>
+                    <tr>
+                      <td style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:6px; padding:5px;">
+                        <div style="font-size:12px; font-weight:800; color:#047857;">${qSum.readyCount}</div>
+                        <div style="font-weight:700; color:#065f46;">Siap</div>
+                      </td>
+                      <td style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px;">
+                        <div style="font-size:12px; font-weight:800; color:#b45309;">${qSum.warningCount}</div>
+                        <div style="font-weight:700; color:#92400e;">Perlu Cek</div>
+                      </td>
+                      <td style="background:#fff1f2; border:1px solid #fecdd3; border-radius:6px; padding:5px;">
+                        <div style="font-size:12px; font-weight:800; color:#be123c;">${qSum.errorCount}</div>
+                        <div style="font-weight:700; color:#9f1239;">Perbaikan</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+              <td style="width:54%; vertical-align:top; border:1px solid #cbd5e1; border-radius:10px; padding:9px 10px; background:#ffffff;">
+                <div style="font-size:10.5px; font-weight:800; color:#0f172a; margin-bottom:6px;">Jadwal &amp; Token Ujian Aktif</div>
+                <table style="width:100%; border-collapse:collapse; font-size:9px;">
+                  <thead>
+                    <tr style="background:#f8fafc; color:#475569;">
+                      <th style="padding:3.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Mata Pelajaran</th>
+                      <th style="padding:3.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Waktu / Cakupan</th>
+                      <th style="padding:3.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">Token</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${schedulesRowsHtml}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Ringkasan 5 Nilai Teratas / Terbaru -->
+        <div style="border:1px solid #cbd5e1; border-radius:10px; padding:9px 10px; margin-bottom:10px; background:#ffffff;">
+          <div style="font-size:10.5px; font-weight:800; color:#0f172a; margin-bottom:6px;">5 Nilai Teratas / Terbaru Masuk</div>
+          <table style="width:100%; border-collapse:collapse; font-size:9.5px;">
+            <thead>
+              <tr style="background:#f1f5f9; color:#334155;">
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1; width:24px;">#</th>
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Nama Siswa</th>
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Kelas</th>
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Mata Pelajaran</th>
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">B / S / K</th>
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">Nilai</th>
+                <th style="padding:4.5px 6px; text-align:center; border-bottom:1px solid #cbd5e1;">Status</th>
+                <th style="padding:4.5px 6px; text-align:left; border-bottom:1px solid #cbd5e1;">Selesai</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentRowsHtml}
+            </tbody>
+          </table>
+        </div>
+
+        ${this.getPrintFooterNoteHtml('margin-top:6px; font-size:8px;')}
+      </div>
+    `;
+  }
+
+  async exportDashboardSummaryPDF(snapshot = {}) {
+    const distData = this.buildDashboardDistributionData(snapshot.scopedResults || []);
+    const svgString = this.buildDashboardChartSvg(distData);
+    const chartDataUrl = await this.svgToPngDataUrl(svgString, 1280, 450);
+    const reportHtml = this.buildDashboardSummaryReportHtml({
+      ...snapshot,
+      distData
+    }, chartDataUrl);
+
+    if (typeof html2pdf === 'undefined') {
+      const printArea = document.getElementById('printableAttendanceArea');
+      if (printArea) {
+        printArea.innerHTML = reportHtml;
+        printArea.classList.remove('hidden');
+        document.body.classList.add('printing-attendance');
+        setTimeout(() => {
+          window.print();
+          setTimeout(() => {
+            printArea.classList.add('hidden');
+            document.body.classList.remove('printing-attendance');
+          }, 1000);
+        }, 200);
+      } else {
+        window.print();
+      }
+      return;
+    }
+
+    const btnPdf = document.getElementById('btnDownloadDashboardPdf');
+    const prevBtnHtml = btnPdf ? btnPdf.innerHTML : '';
+    if (btnPdf) {
+      btnPdf.disabled = true;
+      btnPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+    }
+
+    const prevScrollX = window.scrollX || window.pageXOffset || 0;
+    const prevScrollY = window.scrollY || window.pageYOffset || 0;
+    const filename = `Laporan_Ringkasan_Dashboard_CBT_${Date.now()}.pdf`;
+
+    try {
+      window.scrollTo(0, 0);
+      const sheetOpt = {
+        margin: [0, 0, 0, 0],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+              clonedDoc.body.style.color = '#0f172a';
+            }
+            const container = clonedDoc.querySelector('.html2pdf__container');
+            if (container) {
+              container.style.left = '0px';
+              container.style.right = 'auto';
+              container.style.top = '0px';
+              container.style.margin = '0px';
+              container.style.background = '#ffffff';
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const seedHtml = '<div style="width:10px;height:10px;background:#ffffff;"></div>';
+      const pdfDoc = await html2pdf().set(sheetOpt).from(seedHtml).toPdf().get('pdf');
+      const canvas = await html2pdf().set(sheetOpt).from(reportHtml).toCanvas().get('canvas');
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+      const pageW = 210;
+      const maxPageH = 295;
+      const naturalH = (canvas.height * pageW) / canvas.width;
+      if (naturalH > maxPageH) {
+        const ratio = maxPageH / naturalH;
+        const fitW = pageW * ratio;
+        const offsetX = (pageW - fitW) / 2;
+        pdfDoc.addImage(imgData, 'JPEG', offsetX, 0, fitW, maxPageH);
+      } else {
+        pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageW, naturalH);
+      }
+
+      pdfDoc.save(filename);
+    } catch (err) {
+      console.error('Gagal export PDF ringkasan dashboard:', err);
+      alert('Gagal membuat PDF ringkasan dashboard: ' + (err && err.message ? err.message : 'Terjadi kesalahan.'));
+    } finally {
+      window.scrollTo(prevScrollX, prevScrollY);
+      if (btnPdf) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = prevBtnHtml;
+      }
+    }
   }
 }
 

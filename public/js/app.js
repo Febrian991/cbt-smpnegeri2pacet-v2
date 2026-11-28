@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 2. Jika Proktor / Guru sedang login saat refresh, tetap pertahankan sesi & tab aktif
+    // 2. Jika Admin / Guru sedang login saat refresh, tetap pertahankan sesi & tab aktif
     if (window.cbtAdmin && window.cbtAdmin.isAuthenticated && window.cbtAdmin.getCurrentTeacher()) {
       showView('admin');
       const savedTab = localStorage.getItem('cbt_active_admin_tab');
@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => { window.examEngine.flushPendingSubmissions(); }, 1200);
     }
 
-    // Shortcut URL ?admin / #admin / #guru untuk Proktor & Guru
+    // Shortcut URL ?admin / #admin / #guru untuk Admin & Guru
     const hashLower = (window.location.hash || '').toLowerCase();
     const searchLower = (window.location.search || '').toLowerCase();
     if (hashLower.includes('admin') || hashLower.includes('guru') || searchLower.includes('admin') || searchLower.includes('guru')) {
@@ -818,7 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabStudent) tabStudent.className = inactiveCls;
       if (formStudent) formStudent.classList.add('hidden');
       if (formAdmin) formAdmin.classList.remove('hidden');
-      if (roleSubtitle) roleSubtitle.innerText = 'Masuk ke panel Proktor & Guru Mata Pelajaran';
+      if (roleSubtitle) roleSubtitle.innerText = 'Masuk ke panel Admin & Guru Mata Pelajaran';
     } else {
       if (tabStudent) tabStudent.className = activeCls;
       if (tabAdmin) tabAdmin.className = inactiveCls;
@@ -884,14 +884,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnForgotStudent = document.getElementById('btnForgotStudentPass');
     if (btnForgotStudent) {
       btnForgotStudent.addEventListener('click', () => {
-        showLoginRejection('Hubungi Proktor atau Panitia Ujian sekolah untuk mengecek atau mereset kata sandi akun siswa Anda.', true);
+        showLoginRejection('Hubungi Admin atau Panitia Ujian sekolah untuk mengecek atau mereset kata sandi akun siswa Anda.', true);
       });
     }
 
     const btnForgotAdmin = document.getElementById('btnForgotAdminPass');
     if (btnForgotAdmin) {
       btnForgotAdmin.addEventListener('click', () => {
-        showInlineAdminBanner('Guru Mapel dapat meminta reset PIN ke Proktor Utama melalui tab Data Guru. Proktor Utama dapat melihat/mengubah PIN di tab Pengaturan.', true);
+        showInlineAdminBanner('Guru Mapel dapat meminta reset PIN ke Admin Utama melalui tab Data Guru. Admin Utama dapat melihat/mengubah PIN di tab Pengaturan.', true);
       });
     }
 
@@ -970,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (tokenHintEl) {
       const span = tokenHintEl.querySelector('span');
-      const hintText = 'Token Ujian dibagikan oleh Pengawas Ruang / Proktor';
+      const hintText = 'Token Ujian dibagikan oleh Pengawas Ruang / Admin';
       if (span) span.innerText = hintText;
       else tokenHintEl.innerText = hintText;
     }
@@ -1234,7 +1234,7 @@ document.addEventListener('DOMContentLoaded', () => {
               inlinePin.value = password;
               inlinePin.focus();
             }
-            showInlineAdminBanner('Silakan login melalui tab Admin / Guru di atas dengan PIN Proktor Anda.', true);
+            showInlineAdminBanner('Silakan login melalui tab Admin / Guru di atas dengan PIN Admin Anda.', true);
             return;
           }
         }
@@ -1367,7 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
               const validToken = String(serverCfg?.examToken || 'CBT80M').trim().toUpperCase();
               if (token !== validToken) {
-                showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
+                showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Admin.');
                 return;
               }
               if (serverCfg?.targetClass && !window.examEngine.matchesClassLevel(serverCfg.targetClass, authenticatedStudent.class)) {
@@ -1404,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             const validToken = String(window.examEngine.config.examToken || 'CBT80M').toUpperCase();
             if (token !== validToken) {
-              showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Proktor.');
+              showLoginRejection('Token ujian salah! Periksa kembali atau tanyakan kepada Pengawas Ruang / Admin.');
               return;
             }
             if (window.examEngine.config.targetClass && !window.examEngine.matchesClassLevel(window.examEngine.config.targetClass, authenticatedStudent.class)) {
@@ -1446,13 +1446,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ]);
 
         if (devConflict && devConflict.conflict) {
-          showLoginRejection(`⛔ Login Ditolak: Akun NISN ${authenticatedStudent.nisn} (${authenticatedStudent.name}) sedang aktif mengerjakan ujian "${targetExamConfig.subject}" di perangkat lain. Hubungi Proktor untuk reset sesi jika perangkat sebelumnya bermasalah.`);
+          showLoginRejection(`⛔ Login Ditolak: Akun NISN ${authenticatedStudent.nisn} (${authenticatedStudent.name}) sedang aktif mengerjakan ujian "${targetExamConfig.subject}" di perangkat lain. Hubungi Admin untuk reset sesi jika perangkat sebelumnya bermasalah.`);
           return;
         }
 
         const maxAttempts = window.examEngine.getMaxAttemptsForSubject(targetExamConfig.subject, matchedSchedule);
         if (attemptStats.count >= maxAttempts) {
-          const rejectMsg = `⛔ Ujian Ditolak: Anda (${authenticatedStudent.name}) sudah menyelesaikan ujian mata pelajaran "${targetExamConfig.subject}" sebanyak ${attemptStats.count} kali (batas maksimal: ${maxAttempts} kali). Hubungi Proktor atau Guru Mapel jika memerlukan izin mengulang.`;
+          const rejectMsg = `⛔ Ujian Ditolak: Anda (${authenticatedStudent.name}) sudah menyelesaikan ujian mata pelajaran "${targetExamConfig.subject}" sebanyak ${attemptStats.count} kali (batas maksimal: ${maxAttempts} kali). Hubungi Admin atau Guru Mapel jika memerlukan izin mengulang.`;
           showLoginRejection(rejectMsg);
           return;
         }
@@ -1513,7 +1513,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!examQsCheck.questions || examQsCheck.questions.length === 0) {
           const catLabel = targetCat === 'trial' ? 'Soal Simulasi' : (targetCat === 'exam' ? 'Soal Ujian Asli' : 'Soal Ujian');
-          showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Proktor / Guru Mapel.`);
+          showLoginRejection(`⛔ Ujian Belum Siap: Belum ada butir ${catLabel} untuk mata pelajaran "${targetExamConfig.subject}" (${authenticatedStudent.class || targetExamConfig.targetClass}). Hubungi Admin / Guru Mapel.`);
           tempStudent = null;
           try { localStorage.removeItem('cbt_confirm_student'); } catch (e) {}
           return;
@@ -2150,7 +2150,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ===================== PANEL PROKTOR & GURU: LOGIN SECURE =====================
+  // ===================== PANEL ADMIN & GURU: LOGIN SECURE =====================
   function setupAdminLoginHelpers() {
     const btnTogglePin = document.getElementById('btnTogglePinVisibility');
     const pinInput = document.getElementById('adminPinInput');
@@ -2266,7 +2266,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (subtitleEl) subtitleEl.innerText = 'Konfirmasi Keluar Peserta Ujian';
       if (titleEl) titleEl.innerText = 'Keluar dari halaman bukti selesai ujian?';
-      if (descEl) descEl.innerText = 'Pastikan Anda sudah mencetak/menyimpan bukti ujian atau melapor ke pengawas. Anda tidak dapat mengulang ujian tanpa reset token dari proktor.';
+      if (descEl) descEl.innerText = 'Pastikan Anda sudah mencetak/menyimpan bukti ujian atau melapor ke pengawas. Anda tidak dapat mengulang ujian tanpa reset token dari admin.';
       if (btnCancelLogoutConfirm) btnCancelLogoutConfirm.innerText = 'Tetap di Sini';
       if (btnConfirmLogoutFinal) {
         btnConfirmLogoutFinal.innerText = 'Ya, Kembali ke Login';
@@ -2331,24 +2331,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===================== ADMIN TABS SWITCHER & RBAC =====================
   const adminTabButtons = document.querySelectorAll('.admin-tab-btn');
+  const ADMIN_TAB_ORDER = [
+    'tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions',
+    'tabStudents', 'tabTeachers', 'tabAdministration', 'tabSettings', 'tabDatabase', 'tabBackup'
+  ];
+  let lastAnimatedAdminTab = '';
   let cbtTabEnterTimer = null;
   let cbtResultsLoadSeq = 0;
 
-  function animateAdminTabPane(targetPane) {
+  function animateAdminTabPane(targetPane, direction = 'forward') {
     if (!targetPane) return;
     document.querySelectorAll('.admin-tab-pane.cbt-tab-entering').forEach(p => {
-      p.classList.remove('cbt-tab-entering');
+      p.classList.remove('cbt-tab-entering', 'cbt-tab-dir-forward', 'cbt-tab-dir-backward');
     });
     if (cbtTabEnterTimer) {
       clearTimeout(cbtTabEnterTimer);
       cbtTabEnterTimer = null;
     }
     void targetPane.offsetWidth;
-    targetPane.classList.add('cbt-tab-entering');
-    cbtTabEnterTimer = setTimeout(() => {
-      targetPane.classList.remove('cbt-tab-entering');
-      cbtTabEnterTimer = null;
-    }, 480);
+    targetPane.classList.add(
+      'cbt-tab-entering',
+      direction === 'backward' ? 'cbt-tab-dir-backward' : 'cbt-tab-dir-forward'
+    );
+    const cleanup = () => {
+      targetPane.classList.remove('cbt-tab-entering', 'cbt-tab-dir-forward', 'cbt-tab-dir-backward');
+      if (cbtTabEnterTimer) {
+        clearTimeout(cbtTabEnterTimer);
+        cbtTabEnterTimer = null;
+      }
+    };
+    cbtTabEnterTimer = setTimeout(cleanup, 520);
   }
 
   function clearResultsLoadingState() {
@@ -2443,7 +2455,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (isPengawas) {
       targetTab = 'tabMonitoring';
-    } else if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
+    } else if (!isAdmin && (targetTab === 'tabSchedules' || targetTab === 'tabStudents' || targetTab === 'tabTeachers' || targetTab === 'tabAdministration' || targetTab === 'tabSettings' || targetTab === 'tabDatabase' || targetTab === 'tabBackup')) {
       targetTab = 'tabDashboard';
     }
 
@@ -2459,34 +2471,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const allTabBtns = document.querySelectorAll('.admin-tab-btn');
     const allTabPanes = document.querySelectorAll('.admin-tab-pane');
 
-    const idleTabClass = 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800/75 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700';
-    const activeTabClass = 'bg-gradient-to-r from-[#124196] to-[#1a56c4] text-white border-transparent shadow-md shadow-blue-900/20';
+    const idleClasses = [
+      'bg-slate-50/80', 'hover:bg-slate-100', 'text-slate-700', 'border-slate-200/80',
+      'dark:bg-slate-800/75', 'dark:hover:bg-slate-800', 'dark:text-slate-200', 'dark:border-slate-700'
+    ];
+    const activeClasses = [
+      'bg-gradient-to-r', 'from-[#124196]', 'to-[#1a56c4]', 'text-white',
+      'border-transparent', 'shadow-md', 'shadow-blue-900/20'
+    ];
 
+    let activeBtnEl = null;
     allTabBtns.forEach(b => {
       const tabKey = b.getAttribute('data-tab');
-      const isHidden = b.classList.contains('hidden');
-      const isPermHidden = b.classList.contains('cbt-perm-hidden');
-      const isPermDisabled = b.classList.contains('cbt-perm-disabled');
       const isActive = tabKey === targetTab;
-      b.className = `admin-tab-btn lg:w-full justify-start text-left px-3.5 py-2.5 lg:py-3 rounded-xl text-xs sm:text-[13px] font-bold border flex items-center gap-2 cursor-pointer transition whitespace-nowrap lg:whitespace-normal lg:leading-snug ${
-        isActive ? activeTabClass : idleTabClass
-      }${isHidden ? ' hidden' : ''}${isPermHidden ? ' cbt-perm-hidden' : ''}${isPermDisabled ? ' cbt-perm-disabled' : ''}`;
+      if (isActive) {
+        b.classList.remove(...idleClasses);
+        b.classList.add(...activeClasses);
+        activeBtnEl = b;
+      } else {
+        b.classList.remove(...activeClasses);
+        b.classList.add(...idleClasses);
+      }
     });
 
+    if (activeBtnEl && typeof window !== 'undefined' && window.innerWidth < 1024 && typeof activeBtnEl.scrollIntoView === 'function') {
+      try {
+        activeBtnEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      } catch (e) {}
+    }
+
+    const prevIdx = ADMIN_TAB_ORDER.indexOf(lastAnimatedAdminTab);
+    const nextIdx = ADMIN_TAB_ORDER.indexOf(targetTab);
+    const direction = (prevIdx >= 0 && nextIdx >= 0 && nextIdx < prevIdx) ? 'backward' : 'forward';
+
     let activePane = null;
+    let paneWasHidden = false;
     allTabPanes.forEach(pane => {
       if (pane.id === targetTab) {
+        paneWasHidden = pane.classList.contains('hidden');
         pane.classList.remove('hidden');
         activePane = pane;
       } else {
         pane.classList.add('hidden');
-        pane.classList.remove('cbt-tab-entering');
+        pane.classList.remove('cbt-tab-entering', 'cbt-tab-dir-forward', 'cbt-tab-dir-backward');
       }
     });
 
-    if (activePane) {
-      animateAdminTabPane(activePane);
+    if (activePane && (paneWasHidden || lastAnimatedAdminTab !== targetTab)) {
+      animateAdminTabPane(activePane, direction);
     }
+    lastAnimatedAdminTab = targetTab;
 
     if (targetTab !== 'tabMonitoring') {
       stopMonitoringAutoRefresh();
@@ -2524,6 +2558,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAdminStudentsList(document.getElementById('searchStudentInput')?.value || '');
       } else if (targetTab === 'tabTeachers' && isAdmin) {
         renderAdminTeachersList(document.getElementById('searchTeacherInput')?.value || '');
+      } else if (targetTab === 'tabAdministration' && isAdmin) {
+        renderAdministrationSummary();
       } else if (targetTab === 'tabSettings' && isAdmin) {
         renderAdminConfigForm();
         renderSchoolConfigForm();
@@ -2647,7 +2683,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (pengawasScope.mode === 'flexible') {
         pengawasBannerDesc.innerHTML = `Akun Pengawas ini bersifat <strong>fleksibel</strong> (tidak dikunci di 1 ruang/kelas). Silakan pilih <strong>Ruang / Kelas</strong> yang sedang Anda awasi hari ini pada pilihan di bawah agar token ujian &amp; daftar siswa ruangan tersebut tampil.`;
       } else {
-        pengawasBannerDesc.innerHTML = `Pada jadwal mingguan Anda, hari <strong>${escapeHtmlSafe(pengawasScope.activeDay || 'ini')}</strong> belum memiliki ruang pengawasan. Hubungi Proktor / Admin jika terjadi perubahan jadwal ruang.`;
+        pengawasBannerDesc.innerHTML = `Pada jadwal mingguan Anda, hari <strong>${escapeHtmlSafe(pengawasScope.activeDay || 'ini')}</strong> belum memiliki ruang pengawasan. Hubungi Admin jika terjadi perubahan jadwal ruang.`;
       }
     }
 
@@ -2692,6 +2728,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabQuestionsBtn = document.getElementById('adminTabBtnQuestions');
     const tabStudentsBtn = document.getElementById('adminTabBtnStudents');
     const tabTeachersBtn = document.getElementById('adminTabBtnTeachers');
+    const tabAdminDocsBtn = document.getElementById('adminTabBtnAdministration');
     const tabSettingsBtn = document.getElementById('adminTabBtnSettings');
     const tabDatabaseBtn = document.getElementById('adminTabBtnDatabase');
     const tabBackupBtn = document.getElementById('adminTabBtnBackup');
@@ -2702,6 +2739,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabQuestionsPane = document.getElementById('tabQuestions');
     const tabStudentsPane = document.getElementById('tabStudents');
     const tabTeachersPane = document.getElementById('tabTeachers');
+    const tabAdminDocsPane = document.getElementById('tabAdministration');
     const tabSettingsPane = document.getElementById('tabSettings');
     const tabDatabasePane = document.getElementById('tabDatabase');
     const tabBackupPane = document.getElementById('tabBackup');
@@ -2738,6 +2776,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabSchedulesBtn) tabSchedulesBtn.classList.add('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.add('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.add('hidden');
+        if (tabAdminDocsBtn) tabAdminDocsBtn.classList.add('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.add('hidden');
         if (tabDatabaseBtn) tabDatabaseBtn.classList.add('hidden');
         if (tabBackupBtn) tabBackupBtn.classList.add('hidden');
@@ -2747,6 +2786,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabSchedulesPane) tabSchedulesPane.classList.add('hidden');
         if (tabStudentsPane) tabStudentsPane.classList.add('hidden');
         if (tabTeachersPane) tabTeachersPane.classList.add('hidden');
+        if (tabAdminDocsPane) tabAdminDocsPane.classList.add('hidden');
         if (tabSettingsPane) tabSettingsPane.classList.add('hidden');
         if (tabDatabasePane) tabDatabasePane.classList.add('hidden');
         if (tabBackupPane) tabBackupPane.classList.add('hidden');
@@ -2758,12 +2798,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabSchedulesBtn) tabSchedulesBtn.classList.add('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.add('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.add('hidden');
+        if (tabAdminDocsBtn) tabAdminDocsBtn.classList.add('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.add('hidden');
         if (tabDatabaseBtn) tabDatabaseBtn.classList.add('hidden');
         if (tabBackupBtn) tabBackupBtn.classList.add('hidden');
         if (tabSchedulesPane) tabSchedulesPane.classList.add('hidden');
         if (tabStudentsPane) tabStudentsPane.classList.add('hidden');
         if (tabTeachersPane) tabTeachersPane.classList.add('hidden');
+        if (tabAdminDocsPane) tabAdminDocsPane.classList.add('hidden');
         if (tabSettingsPane) tabSettingsPane.classList.add('hidden');
         if (tabDatabasePane) tabDatabasePane.classList.add('hidden');
         if (tabBackupPane) tabBackupPane.classList.add('hidden');
@@ -2777,11 +2819,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabSchedulesBtn) tabSchedulesBtn.classList.remove('hidden');
         if (tabStudentsBtn) tabStudentsBtn.classList.remove('hidden');
         if (tabTeachersBtn) tabTeachersBtn.classList.remove('hidden');
+        if (tabAdminDocsBtn) tabAdminDocsBtn.classList.remove('hidden');
         if (tabSettingsBtn) tabSettingsBtn.classList.remove('hidden');
         if (tabDatabaseBtn) tabDatabaseBtn.classList.remove('hidden');
         if (tabBackupBtn) tabBackupBtn.classList.remove('hidden');
         const savedTab = localStorage.getItem('cbt_active_admin_tab') || 'tabDashboard';
-        const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabSettings', 'tabDatabase', 'tabBackup'];
+        const allowedAdminTabs = ['tabDashboard', 'tabResults', 'tabMonitoring', 'tabSchedules', 'tabQuestions', 'tabStudents', 'tabTeachers', 'tabAdministration', 'tabSettings', 'tabDatabase', 'tabBackup'];
         switchAdminTab(allowedAdminTabs.includes(savedTab) ? savedTab : 'tabDashboard', { skipSkeleton: true });
         if (window.supabaseSync && window.supabaseSync.lastCloudRestrictionMessage) {
           const warnBanner = document.getElementById('adminEgressEarlyWarningBanner');
@@ -3319,6 +3362,74 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
     }
+  }
+
+  function collectDashboardSummarySnapshot() {
+    if (!window.cbtAdmin) return {};
+    const currentTeacher = window.cbtAdmin.getCurrentTeacher();
+    const isAdmin = Boolean(currentTeacher && (currentTeacher.role === 'admin' || currentTeacher.id === 'admin'));
+    const scopeSubtitle = isAdmin
+      ? 'Cakupan Administrator Sekolah — Semua Mata Pelajaran & Kelas'
+      : `Cakupan Guru Mapel (${(currentTeacher && currentTeacher.subject) || '-'})`;
+
+    const scopedQuestions = window.cbtAdmin.getQuestionsFiltered('ALL', 'ALL');
+    const preAudit = typeof window.cbtAdmin.auditQuestionsPreExam === 'function'
+      ? window.cbtAdmin.auditQuestionsPreExam(scopedQuestions)
+      : { summary: { totalQuestions: scopedQuestions.length, readyCount: 0, warningCount: 0, errorCount: 0, readyPercent: 0 } };
+
+    let allStudents = window.studentManager ? window.studentManager.getAllStudents() : [];
+    const teacherClasses = (!isAdmin && currentTeacher && currentTeacher.classes)
+      ? window.cbtAdmin.parseTeacherClasses(currentTeacher.classes)
+      : [];
+    if (teacherClasses.length > 0) {
+      allStudents = allStudents.filter(st => {
+        const cls = String(st.class || '').trim();
+        return cls && window.examEngine.matchesClassLevel(teacherClasses.join(', '), cls);
+      });
+    }
+    const uniqueClasses = new Set(allStudents.map(s => String(s.class || '').trim()).filter(Boolean));
+
+    const scopedResults = window.cbtAdmin.getAllResultsSorted('ALL', 'ALL');
+    const analytics = window.cbtAdmin.getExamAnalytics('ALL', 'ALL');
+    const passedTotal = scopedResults.filter(r => Number(r.finalScore || 0) >= 75).length;
+
+    let liveSessions = window.supabaseSync && typeof window.supabaseSync.getLocalStudentSessions === 'function'
+      ? window.supabaseSync.getLocalStudentSessions()
+      : [];
+    if (!isAdmin && currentTeacher) {
+      const tSubs = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
+      liveSessions = liveSessions.filter(sess => {
+        const subOk = tSubs.length > 0 && tSubs.some(ts => window.examEngine.matchesSubject(sess.subject, ts));
+        const cls = String(sess.class_name || '').trim();
+        const clsOk = teacherClasses.length === 0 || (cls && window.examEngine.matchesClassLevel(teacherClasses.join(', '), cls));
+        return subOk && clsOk;
+      });
+    }
+    const activeLiveCount = liveSessions.filter(s => s.status === 'in_progress').length;
+
+    let activeSchedules = window.cbtAdmin.getActiveSchedules();
+    if (!isAdmin && currentTeacher) {
+      const tSubs = window.cbtAdmin.getTeacherSubjectsList(currentTeacher).map(s => s.toLowerCase());
+      if (tSubs.length > 0) {
+        activeSchedules = activeSchedules.filter(sch => tSubs.some(ts => String(sch.subject || '').toLowerCase().includes(ts)));
+      }
+    }
+
+    return {
+      printedBy: currentTeacher ? currentTeacher.name : 'Administrator Sistem',
+      scopeSubtitle,
+      questionSummary: preAudit.summary,
+      studentCount: allStudents.length,
+      classCount: uniqueClasses.size,
+      resultsCount: scopedResults.length,
+      activeLiveCount,
+      analytics,
+      passedTotal,
+      scopedResults,
+      recentResults: scopedResults.slice(0, 5),
+      activeSchedules,
+      manualConfig: window.examEngine ? window.examEngine.config : null
+    };
   }
 
   function refreshVisibleD3Charts() {
@@ -11529,9 +11640,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===================== MODAL STUDIO DAFTAR PESERTA PER RUANGAN, DENAH DUDUK & BERITA ACARA (v3.98) =====================
   const modalRoomDocsStudio = document.getElementById('modalRoomDocsStudio');
   const btnOpenRoomDocsModal = document.getElementById('btnOpenRoomDocsModal');
+  const btnOpenDenahModal = document.getElementById('btnOpenDenahModal');
   const btnOpenRoomDocsFromMonitoring = document.getElementById('btnOpenRoomDocsFromMonitoring');
   const btnOpenBeritaAcaraModal = document.getElementById('btnOpenBeritaAcaraModal');
   const btnOpenBeritaAcaraFromMonitoring = document.getElementById('btnOpenBeritaAcaraFromMonitoring');
+  const btnAdminDocAssignRooms = document.getElementById('btnAdminDocAssignRooms');
+  const btnAdminDocPengawasMatrix = document.getElementById('btnAdminDocPengawasMatrix');
+
+  function renderAdministrationSummary() {
+    const badge = document.getElementById('adminDocSummaryBadge');
+    if (!badge || !window.studentManager) return;
+    const allStudents = window.studentManager.getStudents ? window.studentManager.getStudents() : [];
+    const rooms = window.studentManager.getAllRooms ? window.studentManager.getAllRooms() : [];
+    const assigned = allStudents.filter(s => s && String(s.examRoom || '').trim() !== '').length;
+    if (rooms.length > 0) {
+      badge.textContent = `${rooms.length} Ruang Ujian • ${assigned}/${allStudents.length} Siswa Ditempatkan`;
+    } else {
+      badge.textContent = `${allStudents.length} Siswa Terdaftar (Belum ada pembagian ruang)`;
+    }
+  }
   const btnCloseRoomDocsModal = document.getElementById('btnCloseRoomDocsModal');
   const btnCancelRoomDocsModal = document.getElementById('btnCancelRoomDocsModal');
   const btnRoomDocModeRoster = document.getElementById('btnRoomDocModeRoster');
@@ -11610,6 +11737,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const rosterGrp = document.getElementById('rdRosterFormatGroup');
     const seatingGrp = document.getElementById('rdSeatingFormatGroup');
     const baGrp = document.getElementById('rdBeritaAcaraFormatGroup');
+    const modalIconEl = document.getElementById('roomDocsModalIcon');
+    const modalTitleEl = document.getElementById('roomDocsModalTitle');
+
+    if (modalIconEl && modalTitleEl) {
+      if (activeRoomDocMode === 'seating') {
+        modalIconEl.textContent = '🗺️';
+        modalTitleEl.textContent = 'Denah Posisi Duduk Peserta Ujian';
+      } else if (activeRoomDocMode === 'berita_acara') {
+        modalIconEl.textContent = '📝';
+        modalTitleEl.textContent = 'Berita Acara Pelaksanaan Ujian';
+      } else {
+        modalIconEl.textContent = '👥';
+        modalTitleEl.textContent = 'Daftar Peserta Ujian per Ruangan';
+      }
+    }
 
     const activeBtnCls = 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-violet-600 text-white';
     const inactiveBtnCls = 'px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-slate-600 hover:bg-slate-100';
@@ -11974,6 +12116,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOpenRoomDocsModal) {
     btnOpenRoomDocsModal.addEventListener('click', () => openRoomDocsModal(null, 'roster', false));
   }
+  if (btnOpenDenahModal) {
+    btnOpenDenahModal.addEventListener('click', () => openRoomDocsModal(null, 'seating', false));
+  }
   if (btnOpenRoomDocsFromMonitoring) {
     btnOpenRoomDocsFromMonitoring.addEventListener('click', () => {
       const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
@@ -11987,6 +12132,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenBeritaAcaraFromMonitoring.addEventListener('click', () => {
       const monCls = document.getElementById('filterMonitoringClass')?.value || 'ALL';
       openRoomDocsModal(monCls, 'berita_acara', true);
+    });
+  }
+  if (btnAdminDocAssignRooms) {
+    btnAdminDocAssignRooms.addEventListener('click', () => {
+      const trigger = document.getElementById('btnOpenAssignExamRooms');
+      if (trigger) trigger.click();
     });
   }
   if (btnOpenAssignRoomsFromDocs) {
@@ -12263,8 +12414,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const pengawasCount = allNonAdmin.filter(t => String(t.role || '').toLowerCase() === 'pengawas').length;
       const guruCount = allNonAdmin.length - pengawasCount;
       badge.innerText = pengawasCount > 0
-        ? `Total: ${guruCount} Guru • ${pengawasCount} Pengawas (+ 1 Proktor)`
-        : `Total: ${guruCount} Guru (+ 1 Proktor)`;
+        ? `Total: ${guruCount} Guru • ${pengawasCount} Pengawas (+ 1 Admin)`
+        : `Total: ${guruCount} Guru (+ 1 Admin)`;
     }
 
     if (teachers.length === 0) {
@@ -12298,7 +12449,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const roleBadgeHtml = isSuperAdmin
-        ? '<span class="text-[10px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full inline-block mt-0.5">Proktor Utama / Admin</span>'
+        ? '<span class="text-[10px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full inline-block mt-0.5">Admin Utama</span>'
         : (isPengawas
           ? '<span class="text-[10px] font-black text-teal-800 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded-full inline-block mt-0.5">👀 Pengawas Ruang (Pantau Saja)</span>'
           : '<span class="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full inline-block mt-0.5">👨‍🏫 Guru Mapel</span>');
@@ -12509,7 +12660,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openEditTeacherModal(teacher) {
     if (!modalEditTeacher) return;
     const isSuperAdmin = teacher.role === 'admin' || teacher.id === 'admin';
-    document.getElementById('modalEditTeacherTitle').innerText = isSuperAdmin ? "Edit Akun Proktor / Admin" : "Edit Data & Peran Akun";
+    document.getElementById('modalEditTeacherTitle').innerText = isSuperAdmin ? "Edit Akun Admin" : "Edit Data & Peran Akun";
     document.getElementById('modalEditTeacherSubtitle').innerText = "Perbarui peran (Guru/Pengawas), jadwal ruang Senin–Sabtu, atau PIN akun";
     document.getElementById('btnSubmitEditTeacher').innerText = "Simpan Perubahan";
 
@@ -12658,15 +12809,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   }
 
+  function openPengawasWeeklyModal() {
+    renderPengawasWeeklyMatrix();
+    if (modalPengawasWeekly) modalPengawasWeekly.classList.remove('hidden');
+  }
+
   function closePengawasWeeklyModal() {
     if (modalPengawasWeekly) modalPengawasWeekly.classList.add('hidden');
   }
 
   if (btnOpenPengawasWeekly) {
-    btnOpenPengawasWeekly.addEventListener('click', () => {
-      renderPengawasWeeklyMatrix();
-      if (modalPengawasWeekly) modalPengawasWeekly.classList.remove('hidden');
-    });
+    btnOpenPengawasWeekly.addEventListener('click', openPengawasWeeklyModal);
+  }
+  if (btnAdminDocPengawasMatrix) {
+    btnAdminDocPengawasMatrix.addEventListener('click', openPengawasWeeklyModal);
   }
   if (btnClosePengawasWeekly) btnClosePengawasWeekly.addEventListener('click', closePengawasWeeklyModal);
   if (btnCancelPengawasWeekly) btnCancelPengawasWeekly.addEventListener('click', closePengawasWeeklyModal);
@@ -12785,7 +12941,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const guruOnlyList = allTeachers.filter(t => t && t.role !== 'admin' && t.id !== 'admin');
       teacherCardFilter.innerHTML = `
         <option value="GURU_ONLY">Semua Guru &amp; Pengawas (${guruOnlyList.length} Akun)</option>
-        <option value="ALL">Semua Akun (+ Proktor/Admin: ${allTeachers.length})</option>
+        <option value="ALL">Semua Akun (+ Admin: ${allTeachers.length})</option>
       `;
       allTeachers.forEach(t => {
         const opt = document.createElement('option');
@@ -13927,6 +14083,16 @@ document.addEventListener('DOMContentLoaded', () => {
         btnRefreshDashboardOverview.disabled = false;
         btnRefreshDashboardOverview.innerHTML = origHtml;
       }
+    });
+  }
+
+  const btnDownloadDashboardPdf = document.getElementById('btnDownloadDashboardPdf');
+  if (btnDownloadDashboardPdf) {
+    btnDownloadDashboardPdf.addEventListener('click', async () => {
+      if (!window.cbtAdmin || typeof window.cbtAdmin.exportDashboardSummaryPDF !== 'function') return;
+      renderAdminOverviewDashboard();
+      const snapshot = collectDashboardSummarySnapshot();
+      await window.cbtAdmin.exportDashboardSummaryPDF(snapshot);
     });
   }
 

@@ -1,11 +1,11 @@
-// Data 13 Guru Mata Pelajaran + 1 Proktor / Admin Utama
+// Data 13 Guru Mata Pelajaran + 1 Admin Utama
 // Sekolah: SMP NEGERI 2 PACET - Ujian Sekolah Berbasis Komputer (CBT)
 
 const DEFAULT_TEACHERS = [
   {
     id: "admin",
     nip: "198501012010011001",
-    name: "Proktor Utama / Admin",
+    name: "Admin Utama",
     subject: "Semua Mata Pelajaran (Super Admin)",
     role: "admin",
     pin: "admin123"
