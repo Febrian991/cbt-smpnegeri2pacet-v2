@@ -63,7 +63,7 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css?v=4.06">
+  <link rel="stylesheet" href="css/styles.css?v=4.11">
 </head>
 <body class="bg-gradient-to-br from-[#b8c7dc] via-[#c6d3e6] to-[#aec0d8] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none pb-safe transition-colors duration-200">
 
@@ -2023,6 +2023,25 @@
               </button>
             </div>
           </div>
+
+          <!-- 7. Kartu Peserta Ujian (Tempel Meja 7 x 4 cm) -->
+          <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between gap-4 shadow-xs md:col-span-2">
+            <div class="flex items-start gap-3.5">
+              <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center text-xl shrink-0">🏷️</div>
+              <div>
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-700">Administrasi 7</span>
+                <h4 class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 mt-0.5">7. Kartu Peserta (Tempel Meja 7 &times; 4 cm)</h4>
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                  Format kartu tempel meja ukuran presisi lebar 7 cm &times; tinggi 4 cm (Nama Peserta, Tempat/Tgl Lahir, Kelas, Nomor Peserta tebal besar, &amp; Ruang) dalam tata letak 2 kolom siap potong (Word / PDF / Cetak).
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button id="btnPrintDeskCards" type="button" class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+                <span>🏷️ Buka &amp; Cetak Kartu Tempel Meja</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3728,6 +3747,66 @@
     </div>
   </div>
 
+  <!-- MODAL: PRATINJAU, WORD, PDF, & CETAK KARTU PESERTA TEMPEL MEJA (7,0 x 4,0 CM) -->
+  <div id="modalDeskCardsPreview" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 no-print">
+    <div class="bg-white rounded-3xl max-w-5xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+
+      <div class="shrink-0 p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl">🏷️</div>
+          <div>
+            <h3 class="font-bold text-base text-slate-900">Kartu Peserta Ujian (Tempel Meja)</h3>
+            <p class="text-xs text-slate-500">Ukuran Presisi Lebar 7 cm &times; Panjang 4 cm &bull; 2 Kolom Siap Tempel di Meja</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold text-slate-600">Ruang / Kelas:</span>
+            <select id="deskCardClassFilter" class="px-2.5 py-1.5 rounded-xl border border-slate-300 font-bold text-xs bg-white text-blue-700 outline-none max-w-[230px]">
+              <option value="ALL">Semua Peserta</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold text-slate-600">Kertas:</span>
+            <select id="deskCardPaperSize" class="px-2.5 py-1.5 rounded-xl border border-slate-300 font-bold text-xs bg-white text-slate-700 outline-none">
+              <option value="F4">F4 (21 &times; 33 cm)</option>
+              <option value="A4">A4 (21 &times; 29,7 cm)</option>
+            </select>
+          </div>
+          <button id="btnCloseDeskCardPreview" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-lg cursor-pointer">✕</button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-auto p-3 sm:p-5 bg-slate-200/80" id="deskCardPreviewContainer"></div>
+
+      <div class="shrink-0 p-4 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 rounded-b-3xl">
+        <div class="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap">
+          <span>Total kartu: <span id="deskCardPreviewCountBadge" class="font-bold text-amber-700">0 Kartu</span></span>
+          <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold text-[11px]">7,0 &times; 4,0 cm</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnCancelDeskCardPreview" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+            Tutup
+          </button>
+          <button id="btnDownloadDeskCardsDoc" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
+            <span>📝 Download Word (.doc)</span>
+          </button>
+          <button id="btnDownloadDeskCardsPerGroupPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF Per Ruang</span>
+          </button>
+          <button id="btnDownloadDeskCardsPdf" type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer flex items-center gap-1.5">
+            <span>📥 Download PDF Semua</span>
+          </button>
+          <button id="btnExecuteDirectPrintDeskCards" type="button" class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-600/20 transition cursor-pointer flex items-center gap-1.5">
+            <span>🖨️ Cetak Sekarang</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- MODAL: PRATINJAU, DOWNLOAD PDF / WORD, & CETAK NASKAH SOAL (SESUAI TEMPLATE SEKOLAH) -->
   <div id="modalPrintQuestionsPreview" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
     <div class="bg-white rounded-3xl max-w-5xl w-full max-h-[94vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200">
@@ -4362,25 +4441,9 @@
           </div>
 
           <div class="p-2.5 rounded-2xl border border-indigo-200 bg-white/95">
-            <div class="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider mb-2">🏫 Bagian 1: Identitas Server, Ruang, Sesi &amp; Jumlah Peserta</div>
+            <div class="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider mb-2">🏫 Bagian 1: Ruang &amp; Jumlah Peserta</div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaUsername">Username</label>
-                <input type="text" id="rdBaUsername" placeholder="P02151031" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaIdServer">ID Server</label>
-                <input type="text" id="rdBaIdServer" placeholder="P02151031-AM8P" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
               <div class="sm:col-span-2">
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaSchoolName">Sekolah / Madrasah</label>
-                <input type="text" id="rdBaSchoolName" placeholder="SMP NEGERI 2 PACET" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div>
-                <label class="block font-bold text-slate-700 mb-1" for="rdBaSession">Sesi</label>
-                <input type="text" id="rdBaSession" placeholder="1" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-              </div>
-              <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaRoomOverride">Nama Ruang (Kosong = Per Ruang)</label>
                 <input type="text" id="rdBaRoomOverride" placeholder="Otomatis mengikuti Ruang" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold outline-none focus:ring-2 focus:ring-sky-500">
               </div>
@@ -4452,7 +4515,7 @@
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaBottomNotes">Kotak Catatan Bawah</label>
-                <textarea id="rdBaBottomNotes" rows="2" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-normal outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+                <textarea id="rdBaBottomNotes" rows="3" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-normal outline-none focus:ring-2 focus:ring-sky-500"></textarea>
               </div>
               <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 mb-1" for="rdBaIntroSignLabel">Kalimat Pengantar TTD</label>
@@ -4513,11 +4576,11 @@
   <!-- ======================== SCRIPTS ======================== -->
   <script src="js/default-questions.js?v=3.51"></script>
   <script src="js/default-teachers.js?v=4.07"></script>
-  <script src="js/default-students.js?v=4.07"></script>
+  <script src="js/default-students.js?v=4.11"></script>
   <script src="js/supabase-config.js?v=4.07"></script>
   <script src="js/exam-engine.js?v=4.06"></script>
-  <script src="js/admin.js?v=4.08"></script>
-  <script src="js/app.js?v=4.08"></script>
+  <script src="js/admin.js?v=4.11"></script>
+  <script src="js/app.js?v=4.11"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

@@ -10946,6 +10946,242 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPrintStudentCards = document.getElementById('btnPrintStudentCards');
   if (btnPrintStudentCards) btnPrintStudentCards.addEventListener('click', openCardPreviewModal);
 
+  // Modal Preview, Word, PDF, & Cetak Kartu Peserta (Tempel Meja 7 x 4 cm)
+  const modalDeskCardsPreview = document.getElementById('modalDeskCardsPreview');
+  const deskCardPreviewContainer = document.getElementById('deskCardPreviewContainer');
+  const deskCardClassFilter = document.getElementById('deskCardClassFilter');
+  const deskCardPaperSize = document.getElementById('deskCardPaperSize');
+  const deskCardPreviewCountBadge = document.getElementById('deskCardPreviewCountBadge');
+  const btnCloseDeskCardPreview = document.getElementById('btnCloseDeskCardPreview');
+  const btnCancelDeskCardPreview = document.getElementById('btnCancelDeskCardPreview');
+  const btnDownloadDeskCardsDoc = document.getElementById('btnDownloadDeskCardsDoc');
+  const btnDownloadDeskCardsPerGroupPdf = document.getElementById('btnDownloadDeskCardsPerGroupPdf');
+  const btnDownloadDeskCardsPdf = document.getElementById('btnDownloadDeskCardsPdf');
+  const btnExecuteDirectPrintDeskCards = document.getElementById('btnExecuteDirectPrintDeskCards');
+  const btnPrintDeskCards = document.getElementById('btnPrintDeskCards');
+
+  function getFilteredDeskCardStudents() {
+    const selectedFilter = deskCardClassFilter ? deskCardClassFilter.value : "ALL";
+    let students = window.studentManager.getAllStudents();
+    if (selectedFilter.startsWith("ROOM:")) {
+      const targetRoom = selectedFilter.slice(5);
+      students = window.studentManager.getStudentsByRoom(targetRoom);
+    } else if (selectedFilter !== "ALL") {
+      students = students.filter(s => String(s.class).trim().toUpperCase() === String(selectedFilter).trim().toUpperCase());
+    }
+    return students;
+  }
+
+  function getDeskCardPrintOptions() {
+    const selectedFilter = deskCardClassFilter ? deskCardClassFilter.value : "ALL";
+    const paperSize = deskCardPaperSize && deskCardPaperSize.value === 'A4' ? 'A4' : 'F4';
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+    if (selectedFilter.startsWith("ROOM:")) {
+      return {
+        paperSize,
+        roomLabel: selectedFilter.slice(5),
+        groupByClass: false,
+        groupByRoom: false
+      };
+    }
+    return {
+      paperSize,
+      classLabel: selectedFilter === "ALL" ? "" : selectedFilter,
+      groupByRoom: selectedFilter === "ALL" && rooms.length > 0,
+      groupByClass: selectedFilter === "ALL" && rooms.length === 0
+    };
+  }
+
+  function updateDeskCardModalButtonLabels(selectedFilter = "ALL") {
+    const rooms = (window.studentManager && typeof window.studentManager.getAllRooms === 'function')
+      ? window.studentManager.getAllRooms()
+      : [];
+    if (btnDownloadDeskCardsPerGroupPdf) {
+      if (selectedFilter === "ALL") {
+        btnDownloadDeskCardsPerGroupPdf.innerHTML = rooms.length > 0
+          ? '<span>📥 Download PDF Per Ruang</span>'
+          : '<span>📥 Download PDF Per Kelas</span>';
+      } else if (selectedFilter.startsWith("ROOM:")) {
+        btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>📥 Download PDF ${escapeHtmlSafe(selectedFilter.slice(5))}</span>`;
+      } else {
+        btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>📥 Download PDF Kelas ${escapeHtmlSafe(selectedFilter)}</span>`;
+      }
+    }
+  }
+
+  function renderDeskCardPreviewContent() {
+    if (!deskCardPreviewContainer || !window.studentManager) return;
+    const selectedFilter = deskCardClassFilter ? deskCardClassFilter.value : "ALL";
+    const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+    const students = getFilteredDeskCardStudents();
+    const opts = getDeskCardPrintOptions();
+
+    updateDeskCardModalButtonLabels(selectedFilter);
+
+    if (deskCardPreviewCountBadge) {
+      const scopeText = selectedFilter === "ALL"
+        ? (rooms.length > 0 ? "Semua Ruang" : "Semua Kelas")
+        : (selectedFilter.startsWith("ROOM:") ? selectedFilter.slice(5) : "Kelas " + selectedFilter);
+      deskCardPreviewCountBadge.innerText = `${students.length} Kartu (${scopeText})`;
+    }
+
+    const pagesHtml = window.studentManager.buildPaginatedDeskCardsPagesHtml(students, opts);
+    deskCardPreviewContainer.innerHTML = pagesHtml.join('');
+  }
+
+  function openDeskCardPreviewModal() {
+    if (!modalDeskCardsPreview || !window.studentManager) return;
+    const students = window.studentManager.getAllStudents();
+    if (students.length === 0) {
+      alert("Belum ada data siswa. Silakan impor data siswa terlebih dahulu.");
+      return;
+    }
+
+    if (deskCardClassFilter) {
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+      const classes = window.studentManager.getAllClasses();
+      let filterHtml = `<option value="ALL">${rooms.length > 0 ? 'Semua Ruang &amp; Kelas' : 'Semua Kelas'} (${students.length} Siswa)</option>`;
+      if (rooms.length > 0) {
+        filterHtml += '<optgroup label="🏫 Berdasarkan Ruang Ujian">';
+        rooms.forEach(rm => {
+          const members = window.studentManager.getStudentsByRoom(rm);
+          filterHtml += `<option value="ROOM:${escapeHtmlSafe(rm)}">🏫 ${escapeHtmlSafe(rm)} (${members.length} Siswa)</option>`;
+        });
+        filterHtml += '</optgroup>';
+      }
+      if (classes.length > 0) {
+        filterHtml += (rooms.length > 0 ? '<optgroup label="🎓 Berdasarkan Kelas Asli">' : '');
+        classes.forEach(c => {
+          const count = students.filter(s => String(s.class).trim().toUpperCase() === String(c).trim().toUpperCase()).length;
+          filterHtml += `<option value="${escapeHtmlSafe(c)}">Kelas ${escapeHtmlSafe(c)} (${count} Siswa)</option>`;
+        });
+        filterHtml += (rooms.length > 0 ? '</optgroup>' : '');
+      }
+      deskCardClassFilter.innerHTML = filterHtml;
+      deskCardClassFilter.value = "ALL";
+    }
+
+    renderDeskCardPreviewContent();
+    modalDeskCardsPreview.classList.remove('hidden');
+  }
+
+  function closeDeskCardPreviewModal() {
+    if (modalDeskCardsPreview) modalDeskCardsPreview.classList.add('hidden');
+  }
+
+  if (deskCardClassFilter) {
+    deskCardClassFilter.addEventListener('change', renderDeskCardPreviewContent);
+  }
+  if (deskCardPaperSize) {
+    deskCardPaperSize.addEventListener('change', renderDeskCardPreviewContent);
+  }
+  if (btnCloseDeskCardPreview) btnCloseDeskCardPreview.addEventListener('click', closeDeskCardPreviewModal);
+  if (btnCancelDeskCardPreview) btnCancelDeskCardPreview.addEventListener('click', closeDeskCardPreviewModal);
+
+  if (btnDownloadDeskCardsDoc) {
+    btnDownloadDeskCardsDoc.addEventListener('click', () => {
+      const students = getFilteredDeskCardStudents();
+      const opts = getDeskCardPrintOptions();
+      window.studentManager.downloadDeskCardsDoc(students, opts);
+    });
+  }
+
+  if (btnExecuteDirectPrintDeskCards) {
+    btnExecuteDirectPrintDeskCards.addEventListener('click', () => {
+      const students = getFilteredDeskCardStudents();
+      const opts = getDeskCardPrintOptions();
+      closeDeskCardPreviewModal();
+      window.studentManager.printDeskCards(students, opts);
+    });
+  }
+
+  if (btnDownloadDeskCardsPerGroupPdf) {
+    btnDownloadDeskCardsPerGroupPdf.addEventListener('click', async () => {
+      const selectedFilter = deskCardClassFilter ? deskCardClassFilter.value : "ALL";
+      const paperSize = deskCardPaperSize && deskCardPaperSize.value === 'A4' ? 'A4' : 'F4';
+      const allStudents = window.studentManager.getAllStudents();
+      const rooms = typeof window.studentManager.getAllRooms === 'function' ? window.studentManager.getAllRooms() : [];
+      const classes = window.studentManager.getAllClasses();
+
+      if (selectedFilter === "ALL" && rooms.length > 1) {
+        if (!confirm(`Akan mengunduh ${rooms.length} file PDF terpisah (1 file PDF untuk setiap ruang: ${rooms.join(', ')}). Lanjutkan?`)) {
+          return;
+        }
+      } else if (selectedFilter === "ALL" && rooms.length === 0 && classes.length > 1) {
+        if (!confirm(`Akan mengunduh ${classes.length} file PDF terpisah (1 file PDF untuk setiap kelas: ${classes.join(', ')}). Lanjutkan?`)) {
+          return;
+        }
+      }
+
+      btnDownloadDeskCardsPerGroupPdf.disabled = true;
+      if (btnDownloadDeskCardsPdf) btnDownloadDeskCardsPdf.disabled = true;
+      try {
+        if (selectedFilter.startsWith("ROOM:")) {
+          const rm = selectedFilter.slice(5);
+          btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(rm)}...</span>`;
+          const students = getFilteredDeskCardStudents();
+          await window.studentManager.downloadDeskCardsPdf(students, {
+            paperSize,
+            roomLabel: rm,
+            groupByClass: false,
+            groupByRoom: false
+          });
+        } else if (selectedFilter !== "ALL") {
+          btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>⏳ Membuat PDF ${escapeHtmlSafe(selectedFilter)}...</span>`;
+          const students = getFilteredDeskCardStudents();
+          await window.studentManager.downloadDeskCardsPdf(students, {
+            paperSize,
+            classLabel: selectedFilter,
+            groupByClass: false,
+            groupByRoom: false
+          });
+        } else if (rooms.length > 0 && typeof window.studentManager.downloadDeskCardsPerRoomSeparatePdfs === 'function') {
+          await window.studentManager.downloadDeskCardsPerRoomSeparatePdfs(
+            allStudents,
+            { paperSize },
+            (done, total, rm) => {
+              btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>⏳ PDF ${done}/${total} (${escapeHtmlSafe(rm)})...</span>`;
+            }
+          );
+        } else {
+          await window.studentManager.downloadDeskCardsPerClassSeparatePdfs(
+            allStudents,
+            { paperSize },
+            (done, total, cls) => {
+              btnDownloadDeskCardsPerGroupPdf.innerHTML = `<span>⏳ PDF ${done}/${total} (${escapeHtmlSafe(cls)})...</span>`;
+            }
+          );
+        }
+        closeDeskCardPreviewModal();
+      } finally {
+        btnDownloadDeskCardsPerGroupPdf.disabled = false;
+        if (btnDownloadDeskCardsPdf) btnDownloadDeskCardsPdf.disabled = false;
+        updateDeskCardModalButtonLabels(deskCardClassFilter ? deskCardClassFilter.value : "ALL");
+      }
+    });
+  }
+
+  if (btnDownloadDeskCardsPdf) {
+    btnDownloadDeskCardsPdf.addEventListener('click', async () => {
+      const students = getFilteredDeskCardStudents();
+      const opts = getDeskCardPrintOptions();
+      const prevHtml = btnDownloadDeskCardsPdf.innerHTML;
+      btnDownloadDeskCardsPdf.disabled = true;
+      if (btnDownloadDeskCardsPerGroupPdf) btnDownloadDeskCardsPerGroupPdf.disabled = true;
+      btnDownloadDeskCardsPdf.innerHTML = '<span>⏳ Membuat PDF...</span>';
+      try {
+        await window.studentManager.downloadDeskCardsPdf(students, opts);
+        closeDeskCardPreviewModal();
+      } finally {
+        btnDownloadDeskCardsPdf.disabled = false;
+        if (btnDownloadDeskCardsPerGroupPdf) btnDownloadDeskCardsPerGroupPdf.disabled = false;
+        btnDownloadDeskCardsPdf.innerHTML = prevHtml;
+      }
+    });
+  }
+
+  if (btnPrintDeskCards) btnPrintDeskCards.addEventListener('click', openDeskCardPreviewModal);
+
   // ===================== MODAL DAFTAR HADIR PESERTA RESMI (ADMIN + EDIT IDENTITAS) =====================
   const modalAttendanceSheet = document.getElementById('modalAttendanceSheet');
   const btnOpenAttendanceSheet = document.getElementById('btnOpenAttendanceSheet');
@@ -11750,6 +11986,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (baGrp) {
       baGrp.classList.toggle('hidden', activeRoomDocMode !== 'berita_acara');
     }
+    if (btnAddStudentFromRoomDocs) {
+      btnAddStudentFromRoomDocs.classList.toggle('hidden', activeRoomDocMode === 'berita_acara');
+    }
     refreshRoomDocsPreview();
   }
 
@@ -11802,10 +12041,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('rdBaExamDesc', fmt.baExamDesc !== undefined ? fmt.baExamDesc : '');
     setVal('rdBaTimeStart', fmt.baTimeStart !== undefined ? fmt.baTimeStart : '07:30');
     setVal('rdBaTimeEnd', fmt.baTimeEnd !== undefined ? fmt.baTimeEnd : '09:30');
-    setVal('rdBaUsername', fmt.baUsername !== undefined ? fmt.baUsername : '');
-    setVal('rdBaSchoolName', fmt.baSchoolName !== undefined ? fmt.baSchoolName : '');
-    setVal('rdBaIdServer', fmt.baIdServer !== undefined ? fmt.baIdServer : '');
-    setVal('rdBaSession', fmt.baSession !== undefined ? fmt.baSession : '1');
     setVal('rdBaRoomOverride', fmt.baRoomOverride !== undefined ? fmt.baRoomOverride : '');
     setVal('rdBaTotalExpected', fmt.baTotalExpected !== undefined ? fmt.baTotalExpected : '');
     setVal('rdBaPresentCount', fmt.baPresentCount !== undefined ? fmt.baPresentCount : '');
@@ -11878,10 +12113,6 @@ document.addEventListener('DOMContentLoaded', () => {
       baExamDesc: String(getVal('rdBaExamDesc', base.baExamDesc) ?? '').trim(),
       baTimeStart: String(getVal('rdBaTimeStart', base.baTimeStart) ?? '').trim(),
       baTimeEnd: String(getVal('rdBaTimeEnd', base.baTimeEnd) ?? '').trim(),
-      baUsername: String(getVal('rdBaUsername', base.baUsername) ?? '').trim(),
-      baSchoolName: String(getVal('rdBaSchoolName', base.baSchoolName) ?? '').trim(),
-      baIdServer: String(getVal('rdBaIdServer', base.baIdServer) ?? '').trim(),
-      baSession: String(getVal('rdBaSession', base.baSession) ?? '').trim(),
       baRoomOverride: String(getVal('rdBaRoomOverride', '') ?? '').trim(),
       baTotalExpected: String(getVal('rdBaTotalExpected', '') ?? '').trim(),
       baPresentCount: String(getVal('rdBaPresentCount', '') ?? '').trim(),
@@ -12213,7 +12444,6 @@ document.addEventListener('DOMContentLoaded', () => {
     'rdBaLogoMode', 'rdBaTitle1', 'rdBaTitle2', 'rdBaTitle3',
     'rdBaDayName', 'rdBaDateNum', 'rdBaMonthName', 'rdBaYearNum',
     'rdBaLocationText', 'rdBaExamDesc', 'rdBaTimeStart', 'rdBaTimeEnd',
-    'rdBaUsername', 'rdBaSchoolName', 'rdBaIdServer', 'rdBaSession',
     'rdBaRoomOverride', 'rdBaTotalExpected', 'rdBaPresentCount', 'rdBaAbsentCount',
     'rdBaAbsentUsernames', 'rdBaAutoSyncPengawas',
     'rdBaRole2Label', 'rdBaRole2Name', 'rdBaRole2Nip',

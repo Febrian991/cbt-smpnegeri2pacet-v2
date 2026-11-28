@@ -1961,6 +1961,420 @@ class StudentManager {
       }
     }
   }
+
+  // ===================== KARTU PESERTA UJIAN TEMPEL MEJA (7,0 x 4,0 CM) =====================
+  _formatDeskCardTtl(s) {
+    const split = splitBirthPlaceDate(s && s.birthPlaceDate);
+    const rawPlace = s && s.birthPlace && String(s.birthPlace).trim() !== '-'
+      ? String(s.birthPlace).trim()
+      : (split.birthPlace && split.birthPlace !== '-' ? split.birthPlace : '');
+    const rawDate = s && s.birthDate && String(s.birthDate).trim() !== '-'
+      ? String(s.birthDate).trim()
+      : (split.birthDate && split.birthDate !== '-' ? split.birthDate : '');
+    const placeUpper = rawPlace ? rawPlace.toUpperCase() : '';
+    if (placeUpper && rawDate) return `${placeUpper}, ${rawDate}`;
+    if (placeUpper) return placeUpper;
+    if (rawDate) return rawDate;
+    const fb = s && s.birthPlaceDate ? String(s.birthPlaceDate).trim() : '';
+    return fb && fb !== '-' ? fb : '-';
+  }
+
+  _formatDeskCardRoom(s) {
+    const rm = normalizeExamRoomDisplay(s && (s.examRoom || s.room || ''));
+    if (!rm) return '-';
+    const stripped = rm.replace(/^ruang(?:an)?\s+/i, '').trim();
+    return stripped || rm;
+  }
+
+  generateDeskCardsHtml(list = this.students) {
+    if (!list || list.length === 0) {
+      return '<div class="p-8 text-center text-slate-400 font-semibold">Belum ada data siswa untuk ditampilkan.</div>';
+    }
+
+    const renderSingleCard = (s) => {
+      const rawName = String(s?.name || '-').trim() || '-';
+      const safeName = this.escapeHtml(rawName.toUpperCase());
+      const safeTtl = this.escapeHtml(this._formatDeskCardTtl(s));
+      const safeClass = this.escapeHtml(String(s?.class || '-').trim() || '-');
+      const rawNum = String(s?.examNumber || s?.participantNumber || s?.nisn || '-').trim() || '-';
+      const safeNumber = this.escapeHtml(rawNum);
+      const rawRoom = this._formatDeskCardRoom(s);
+      const safeRoom = this.escapeHtml(rawRoom);
+
+      const nameFontSize = rawName.length > 28 ? '8.5px' : '9.5px';
+      const numFontSize = rawNum.length > 17 ? '14px' : (rawNum.length > 13 ? '16.5px' : '20px');
+      const roomFontSize = rawRoom.length > 12 ? '11.5px' : '14px';
+
+      return `
+        <div class="desk-card-7x4 cbt-light-paper" style="width:7.0cm; height:4.0cm; max-width:7.0cm; max-height:4.0cm; border:2px solid #000000; border-radius:0; padding:2.5mm 3.2mm; background:#ffffff; color:#000000; box-sizing:border-box; font-family:Arial, Helvetica, sans-serif; overflow:hidden; display:flex; align-items:center; page-break-inside:avoid; break-inside:avoid;">
+          <table class="cbt-light-paper" style="width:100%; border-collapse:collapse; background:#ffffff; color:#000000;">
+            <tbody>
+              <tr>
+                <td style="width:82px; font-size:9.5px; font-weight:400; color:#000000; padding:1.5px 0; white-space:nowrap; vertical-align:top; line-height:1.2;">Nama Peserta</td>
+                <td style="width:10px; font-size:9.5px; font-weight:700; color:#000000; padding:1.5px 2px; text-align:center; vertical-align:top; line-height:1.2;">:</td>
+                <td style="font-size:${nameFontSize}; font-weight:700; color:#000000; padding:1.5px 0; vertical-align:top; line-height:1.2; word-break:break-word;">${safeName}</td>
+              </tr>
+              <tr>
+                <td style="font-size:9.5px; font-weight:400; color:#000000; padding:1.5px 0; white-space:nowrap; vertical-align:top; line-height:1.2;">Tempat, Tgl. Lahir</td>
+                <td style="font-size:9.5px; font-weight:700; color:#000000; padding:1.5px 2px; text-align:center; vertical-align:top; line-height:1.2;">:</td>
+                <td style="font-size:9.5px; font-weight:400; color:#000000; padding:1.5px 0; vertical-align:top; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:148px;">${safeTtl}</td>
+              </tr>
+              <tr>
+                <td style="font-size:9.5px; font-weight:400; color:#000000; padding:1.5px 0; white-space:nowrap; vertical-align:top; line-height:1.2;">Kelas</td>
+                <td style="font-size:9.5px; font-weight:700; color:#000000; padding:1.5px 2px; text-align:center; vertical-align:top; line-height:1.2;">:</td>
+                <td style="font-size:9.5px; font-weight:700; color:#000000; padding:1.5px 0; vertical-align:top; line-height:1.2;">${safeClass}</td>
+              </tr>
+              <tr>
+                <td style="font-size:9.5px; font-weight:400; color:#000000; padding:3.5px 0 2px 0; white-space:nowrap; vertical-align:middle; line-height:1.1;">Nomor Peserta</td>
+                <td style="font-size:11px; font-weight:700; color:#000000; padding:3.5px 2px 2px 2px; text-align:center; vertical-align:middle; line-height:1.1;">:</td>
+                <td style="font-size:${numFontSize}; font-weight:900; color:#000000; padding:3.5px 0 2px 0; vertical-align:middle; line-height:1.05; letter-spacing:0.2px; white-space:nowrap;">${safeNumber}</td>
+              </tr>
+              <tr>
+                <td style="font-size:10px; font-weight:700; color:#000000; padding:2px 0 0 0; white-space:nowrap; vertical-align:middle; line-height:1.15;">Ruang</td>
+                <td style="font-size:11px; font-weight:700; color:#000000; padding:2px 2px 0 2px; text-align:center; vertical-align:middle; line-height:1.15;">:</td>
+                <td style="font-size:${roomFontSize}; font-weight:800; color:#000000; padding:2px 0 0 0; vertical-align:middle; line-height:1.15; white-space:nowrap;">${safeRoom}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    };
+
+    const rowsHtml = [];
+    for (let i = 0; i < list.length; i += 2) {
+      const leftCard = renderSingleCard(list[i]);
+      const rightCard = list[i + 1] ? renderSingleCard(list[i + 1]) : '<div style="width:7.0cm; height:4.0cm;"></div>';
+      rowsHtml.push(`
+        <tr>
+          <td style="padding:0; vertical-align:top; background:#ffffff;">${leftCard}</td>
+          <td style="padding:0; vertical-align:top; background:#ffffff;">${rightCard}</td>
+        </tr>
+      `);
+    }
+
+    return `
+      <table class="desk-cards-table-print cbt-light-paper" style="margin:0 auto; border-collapse:separate; border-spacing:6mm 3.2mm; background:#ffffff;">
+        <tbody>
+          ${rowsHtml.join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  buildPaginatedDeskCardsPagesHtml(list, options = {}) {
+    const items = Array.isArray(list) ? list : [];
+    const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const perPage = paperSize === 'A4' ? 12 : 14; // 2 kolom x 6 baris (A4) atau 7 baris (F4)
+    const sheetMinH = paperSize === 'A4' ? '297mm' : '330mm';
+
+    const explicitClass = options && options.classLabel ? String(options.classLabel).trim() : '';
+    const explicitRoom = options && options.roomLabel ? String(options.roomLabel).trim() : '';
+    const shouldGroupByRoom = Boolean(!explicitClass && !explicitRoom && options && options.groupByRoom && items.length > 0);
+    const shouldGroupByClass = Boolean(!explicitClass && !explicitRoom && !shouldGroupByRoom && options && options.groupByClass !== false && items.length > 0);
+
+    let sections = [];
+    if (shouldGroupByRoom) {
+      const grouped = new Map();
+      items.forEach(s => {
+        const rm = normalizeExamRoomDisplay(s.examRoom) || 'Belum Diatur Ruang';
+        if (!grouped.has(rm)) grouped.set(rm, []);
+        grouped.get(rm).push(s);
+      });
+      const sortedRoomKeys = Array.from(grouped.keys()).sort((a, b) => this.compareRoomNames(a, b));
+      sections = sortedRoomKeys.map(rm => ({
+        students: this.sortRoomStudents(grouped.get(rm))
+      }));
+    } else if (shouldGroupByClass) {
+      const grouped = new Map();
+      items.forEach(s => {
+        const cls = String(s.class || 'Umum').trim() || 'Umum';
+        if (!grouped.has(cls)) grouped.set(cls, []);
+        grouped.get(cls).push(s);
+      });
+      const sortedClassKeys = Array.from(grouped.keys()).sort((a, b) => this.compareClassNames(a, b));
+      sections = sortedClassKeys.map(cls => ({
+        students: grouped.get(cls)
+      }));
+    } else {
+      sections = [{
+        students: explicitRoom ? this.sortRoomStudents(items) : items
+      }];
+    }
+
+    const totalPagesAll = sections.reduce((sum, sec) => sum + Math.max(1, Math.ceil(sec.students.length / perPage)), 0);
+    const pages = [];
+    let globalPageIndex = 0;
+
+    sections.forEach(sec => {
+      const secItems = sec.students;
+      const secPages = Math.max(1, Math.ceil(secItems.length / perPage));
+
+      for (let p = 0; p < secPages; p++) {
+        const startIndex = p * perPage;
+        const chunk = secItems.slice(startIndex, startIndex + perPage);
+        const tableHtml = this.generateDeskCardsHtml(chunk);
+        const isLastPageOverall = globalPageIndex === totalPagesAll - 1;
+        const breakStyle = !isLastPageOverall ? 'page-break-after:always; break-after:page;' : '';
+
+        pages.push(`
+          <div class="cbt-desk-cards-page-sheet cbt-light-paper" style="width:210mm; min-height:${sheetMinH}; margin:0 auto 14px auto; padding:6mm 10mm; box-sizing:border-box; font-family:Arial, Helvetica, sans-serif; background:#ffffff; color:#000000; box-shadow:0 4px 16px rgba(15,23,42,0.12); ${breakStyle}">
+            ${tableHtml}
+          </div>
+        `);
+        globalPageIndex++;
+      }
+    });
+
+    return pages;
+  }
+
+  printDeskCards(studentsToPrint, options = {}) {
+    const printArea = document.getElementById('printableCardsArea');
+    if (!printArea) return;
+
+    const list = studentsToPrint || this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk dicetak kartu tempel mejanya.");
+      return;
+    }
+
+    const pagesHtml = this.buildPaginatedDeskCardsPagesHtml(list, options);
+    printArea.innerHTML = pagesHtml.join('');
+
+    document.body.classList.add('printing-cards');
+    printArea.classList.remove('hidden');
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove('printing-cards');
+        printArea.classList.add('hidden');
+      }, 1000);
+    }, 250);
+  }
+
+  async downloadDeskCardsPdf(studentsToPrint, options = {}) {
+    const list = studentsToPrint || this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk di-download kartu tempel mejanya.");
+      return;
+    }
+
+    if (typeof html2pdf === 'undefined') {
+      this.printDeskCards(list, options);
+      return;
+    }
+
+    const cfg = this.getSchoolConfig();
+    const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const pdfHeightMm = paperSize === 'A4' ? 297 : 330;
+    const pagesHtml = this.buildPaginatedDeskCardsPagesHtml(list, { ...options, paperSize });
+    const schoolSlug = (cfg.schoolName || 'SMPN2Pacet').replace(/\s+/g, '_');
+    const classLabel = options && options.classLabel ? String(options.classLabel).trim() : '';
+    const roomLabel = options && options.roomLabel ? String(options.roomLabel).trim() : '';
+    const scopeSlug = roomLabel
+      ? `Ruang_${roomLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+      : (classLabel
+        ? `Kelas_${classLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+        : 'Semua_Peserta');
+    const filename = `Kartu_Tempel_Meja_7x4cm_${scopeSlug}_${schoolSlug}_${Date.now()}.pdf`;
+    const prevScrollX = window.scrollX || window.pageXOffset || 0;
+    const prevScrollY = window.scrollY || window.pageYOffset || 0;
+
+    try {
+      const sheetOpt = {
+        margin: [0, 0, 0, 0],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            clonedDoc.documentElement.classList.remove('dark');
+            if (clonedDoc.body) {
+              clonedDoc.body.classList.remove('dark');
+              clonedDoc.body.style.background = '#ffffff';
+              clonedDoc.body.style.backgroundImage = 'none';
+            }
+            const container = clonedDoc.querySelector('.html2pdf__container');
+            if (container) {
+              container.style.left = '0px';
+              container.style.right = 'auto';
+              container.style.top = '0px';
+              container.style.margin = '0px';
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: [210, pdfHeightMm], orientation: 'portrait' }
+      };
+
+      const seedHtml = '<div style="width:10px;height:10px;background:#ffffff;"></div>';
+      const pdfDoc = await html2pdf().set(sheetOpt).from(seedHtml).toPdf().get('pdf');
+
+      for (let i = 0; i < pagesHtml.length; i++) {
+        const cleanPageHtml = pagesHtml[i]
+          .replace(/page-break-after:\s*always;\s*/gi, '')
+          .replace(/break-after:\s*page;\s*/gi, '')
+          .replace(/box-shadow:[^;"]+;?/gi, '')
+          .replace(/min-height:[^;"]+;?/gi, '');
+        const canvas = await html2pdf().set(sheetOpt).from(cleanPageHtml).toCanvas().get('canvas');
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+        if (i > 0) {
+          pdfDoc.addPage([210, pdfHeightMm], 'portrait');
+        }
+
+        const pageW = 210;
+        const maxPageH = pdfHeightMm - 2;
+        const naturalH = (canvas.height * pageW) / canvas.width;
+        if (naturalH > maxPageH) {
+          const ratio = maxPageH / naturalH;
+          const fitW = pageW * ratio;
+          const offsetX = (pageW - fitW) / 2;
+          pdfDoc.addImage(imgData, 'JPEG', offsetX, 0, fitW, maxPageH);
+        } else {
+          pdfDoc.addImage(imgData, 'JPEG', 0, 0, pageW, naturalH);
+        }
+      }
+
+      pdfDoc.save(filename);
+    } catch (err) {
+      console.error("Gagal download PDF kartu tempel meja:", err);
+      this.printDeskCards(list, options);
+    } finally {
+      window.scrollTo(prevScrollX, prevScrollY);
+    }
+  }
+
+  async downloadDeskCardsPerClassSeparatePdfs(studentsList, options = {}, onProgress) {
+    const list = Array.isArray(studentsList) && studentsList.length > 0 ? studentsList : this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk di-download kartu tempel mejanya.");
+      return;
+    }
+
+    const grouped = new Map();
+    list.forEach(s => {
+      const cls = String(s.class || 'Umum').trim() || 'Umum';
+      if (!grouped.has(cls)) grouped.set(cls, []);
+      grouped.get(cls).push(s);
+    });
+    const sortedClasses = Array.from(grouped.keys()).sort((a, b) => this.compareClassNames(a, b));
+
+    for (let i = 0; i < sortedClasses.length; i++) {
+      const cls = sortedClasses[i];
+      if (typeof onProgress === 'function') {
+        onProgress(i + 1, sortedClasses.length, cls);
+      }
+      await this.downloadDeskCardsPdf(grouped.get(cls), { ...options, classLabel: cls, groupByClass: false, groupByRoom: false });
+      if (i < sortedClasses.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 450));
+      }
+    }
+  }
+
+  async downloadDeskCardsPerRoomSeparatePdfs(studentsList, options = {}, onProgress) {
+    const list = Array.isArray(studentsList) && studentsList.length > 0 ? studentsList : this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk di-download kartu tempel mejanya.");
+      return;
+    }
+
+    const grouped = new Map();
+    const displayMap = new Map();
+    list.forEach(s => {
+      const rm = normalizeExamRoomDisplay(s.examRoom) || 'Belum_Diatur_Ruang';
+      const k = normalizeExamRoomKey(rm) || rm;
+      if (!grouped.has(k)) {
+        grouped.set(k, []);
+        displayMap.set(k, rm);
+      }
+      grouped.get(k).push(s);
+    });
+    const sortedKeys = Array.from(grouped.keys()).sort((a, b) => this.compareRoomNames(displayMap.get(a), displayMap.get(b)));
+
+    for (let i = 0; i < sortedKeys.length; i++) {
+      const key = sortedKeys[i];
+      const disp = displayMap.get(key);
+      if (typeof onProgress === 'function') {
+        onProgress(i + 1, sortedKeys.length, disp);
+      }
+      await this.downloadDeskCardsPdf(grouped.get(key), { ...options, roomLabel: disp, groupByClass: false, groupByRoom: false });
+      if (i < sortedKeys.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 450));
+      }
+    }
+  }
+
+  downloadDeskCardsDoc(studentsToPrint, options = {}) {
+    const list = studentsToPrint || this.students;
+    if (list.length === 0) {
+      alert("Belum ada data siswa untuk di-download kartu tempel mejanya.");
+      return;
+    }
+
+    const cfg = this.getSchoolConfig();
+    const paperSize = String(options.paperSize || 'F4').toUpperCase() === 'A4' ? 'A4' : 'F4';
+    const sizeCss = paperSize === 'A4' ? '21.0cm 29.7cm' : '21.0cm 33.0cm';
+    const pagesHtml = this.buildPaginatedDeskCardsPagesHtml(list, { ...options, paperSize })
+      .map((pageHtml, idx) => {
+        let cleaned = pageHtml
+          .replace(/box-shadow:[^;"]+;?/gi, '')
+          .replace(/min-height:[^;"]+;?/gi, '')
+          .replace(/width:210mm;/gi, 'width:100%;')
+          .replace(/margin:0 auto 14px auto;/gi, 'margin:0;')
+          .replace(/padding:6mm 10mm;/gi, 'padding:0;');
+        if (idx > 0) {
+          cleaned = `<div style="page-break-before:always; break-before:page;"></div>${cleaned}`;
+        }
+        return cleaned;
+      })
+      .join('');
+
+    const wordHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:w="urn:schemas-microsoft-com:office:word"
+            xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8">
+        <title>Kartu Peserta Ujian (Tempel Meja 7x4 cm)</title>
+        <style>
+          @page Section1 {
+            size: ${sizeCss};
+            mso-page-orientation: portrait;
+            margin: 0.8cm 1.0cm 0.8cm 1.0cm;
+          }
+          div.Section1 { page: Section1; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #000000; background: #ffffff !important; margin: 0; padding: 0; }
+        </style>
+      </head>
+      <body><div class="Section1">${pagesHtml}</div></body>
+      </html>
+    `;
+
+    const schoolSlug = (cfg.schoolName || 'SMPN2Pacet').replace(/\s+/g, '_');
+    const classLabel = options && options.classLabel ? String(options.classLabel).trim() : '';
+    const roomLabel = options && options.roomLabel ? String(options.roomLabel).trim() : '';
+    const scopeSlug = roomLabel
+      ? `Ruang_${roomLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+      : (classLabel
+        ? `Kelas_${classLabel.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+        : 'Semua_Peserta');
+
+    const blob = new Blob(['\ufeff', wordHtml], { type: 'application/msword;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Kartu_Tempel_Meja_7x4cm_${scopeSlug}_${schoolSlug}_${Date.now()}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 if (typeof window !== 'undefined') {

@@ -2877,6 +2877,7 @@ class CBTAdmin {
         { key: 'admin_btn_delete_teacher', group: 'Data Guru Admin', label: 'Tombol Tabel: 🗑️ Hapus Guru', selector: '.btn-delete-teacher' },
         { key: 'admin_btn_import_export_teachers', group: 'Data Guru Admin', label: 'Tombol: 📄 Template Guru/Pengawas & 📥 Impor Excel', selector: '#btnDownloadTeacherTemplate, #btnDownloadPengawasTemplate, #btnTriggerImportTeachers' },
         { key: 'admin_btn_print_teacher_cards', group: 'Administrasi Ujian Admin', label: 'Tombol: 🪪 6. Kartu Login Guru & Pengawas', selector: '#btnPrintTeacherCards' },
+        { key: 'admin_btn_print_desk_cards', group: 'Administrasi Ujian Admin', label: 'Tombol: 🏷️ 7. Kartu Peserta (Tempel Meja)', selector: '#btnPrintDeskCards' },
         { key: 'admin_btn_reset_teacher_passwords', group: 'Data Guru Admin', label: 'Tombol: 🔄 Reset Password Guru (guru123)', selector: '#btnResetAllTeacherPasswords' },
         { key: 'admin_btn_pull_cloud', group: 'Database & Backup Admin', label: 'Tombol: ⬇️ Ambil Data dari Cloud', selector: '#btnPullFromCloud' },
         { key: 'admin_btn_push_cloud', group: 'Database & Backup Admin', label: 'Tombol: ☁️ Kirim Semua Data ke Cloud', selector: '#btnPushAllToCloud' },
@@ -2995,11 +2996,7 @@ class CBTAdmin {
       baExamDesc: 'ASESMEN NASIONAL SMP/MTS',
       baTimeStart: '07:30',
       baTimeEnd: '09:30',
-      baUsername: 'P02151031',
-      baSchoolName: String(cfg.schoolName || 'SMP NEGERI 2 PACET').trim().toUpperCase(),
-      baIdServer: 'P02151031-AM8P',
       baRoomOverride: '',
-      baSession: att.session || '1',
       baAutoCounts: true,
       baTotalExpected: '',
       baPresentCount: '',
@@ -3014,9 +3011,17 @@ class CBTAdmin {
       baRole3Label: 'Kepala Sekolah',
       baRole3Name: cfg.headmasterName || 'Drs. H. Mulyono, M.Pd.',
       baRole3Nip: cfg.headmasterNip || '19680512 199403 1 004',
-      baBottomNotes: '- Dibuat rangkap 3 (tiga), masing-masing untuk Sekolah, Kota/Kabupaten dan Provinsi\n- Untuk pusat di upload melalui web ANBK',
+      baBottomNotes: '- Berita acara dibuat rangkap 2 (dua), masing-masing untuk arsip sekolah dan panitia penyelenggara Ujian Sekolah.\n- Berita acara dan dokumen pendukung disimpan sebagai arsip sekolah dan dapat digunakan sebagai bahan pelaporan serta pertanggungjawaban pelaksanaan Ujian Sekolah.',
       baFooterText: ''
     };
+  }
+
+  _normalizeBeritaAcaraBottomNotes(rawNotes, fallbackNotes) {
+    const str = rawNotes !== undefined && rawNotes !== null ? String(rawNotes) : '';
+    if (/web ANBK/i.test(str) || /rangkap\s*3\s*\(tiga\)/i.test(str)) {
+      return fallbackNotes;
+    }
+    return str;
   }
 
   getSchoolConfig() {
@@ -3044,9 +3049,18 @@ class CBTAdmin {
           ? { ...defAtt, ...parsed.attendanceIdentity }
           : defAtt;
         const defRoomDocs = this.getDefaultRoomDocsFormat(baseCfg);
-        baseCfg.roomDocsFormat = (parsed.roomDocsFormat && typeof parsed.roomDocsFormat === 'object')
-          ? { ...defRoomDocs, ...parsed.roomDocsFormat }
-          : defRoomDocs;
+        if (parsed.roomDocsFormat && typeof parsed.roomDocsFormat === 'object') {
+          const mergedRoomDocs = { ...defRoomDocs, ...parsed.roomDocsFormat };
+          if (parsed.roomDocsFormat.baBottomNotes !== undefined) {
+            mergedRoomDocs.baBottomNotes = this._normalizeBeritaAcaraBottomNotes(
+              parsed.roomDocsFormat.baBottomNotes,
+              defRoomDocs.baBottomNotes
+            );
+          }
+          baseCfg.roomDocsFormat = mergedRoomDocs;
+        } else {
+          baseCfg.roomDocsFormat = defRoomDocs;
+        }
         return baseCfg;
       }
     } catch (e) {}
@@ -7450,16 +7464,12 @@ class CBTAdmin {
     const dateNum = String(fmt.baDateNum || '').trim() || '....';
     const monthName = String(fmt.baMonthName || '').trim() || '..........';
     const yearNum = String(fmt.baYearNum || '').trim() || '......';
-    const locationText = String(fmt.baLocationText || fmt.baSchoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
+    const locationText = String(fmt.baLocationText || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
     const examDesc = String(fmt.baExamDesc || title2 || 'ASESMEN NASIONAL SMP/MTS').trim();
     const timeStart = String(fmt.baTimeStart || '07:30').trim();
     const timeEnd = String(fmt.baTimeEnd || '09:30').trim();
 
-    const usernameVal = String(fmt.baUsername || '').trim();
-    const schoolVal = String(fmt.baSchoolName || fmt.schoolName || cfg.schoolName || 'SMP NEGERI 2 PACET').trim();
-    const idServerVal = String(fmt.baIdServer || '').trim();
     const roomOverride = String(fmt.baRoomOverride || '').trim();
-    const sessionVal = String(fmt.baSession !== undefined ? fmt.baSession : '1').trim();
 
     const autoCounts = fmt.baAutoCounts !== false;
     const rawExpectedManual = String(fmt.baTotalExpected || '').trim();
@@ -7477,7 +7487,11 @@ class CBTAdmin {
     const role3Name = String(fmt.baRole3Name || cfg.headmasterName || '').trim();
     const role3Nip = String(fmt.baRole3Nip !== undefined ? fmt.baRole3Nip : (cfg.headmasterNip || '-')).trim();
 
-    const bottomNotesRaw = String(fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : '').trim();
+    const defRoomDocsForNotes = this.getDefaultRoomDocsFormat(cfg);
+    const bottomNotesRaw = this._normalizeBeritaAcaraBottomNotes(
+      fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : defRoomDocsForNotes.baBottomNotes,
+      defRoomDocsForNotes.baBottomNotes
+    ).trim();
 
     const pagesHtml = groups.map((grp, gIdx) => {
       const students = Array.isArray(grp.students) ? grp.students : [];
@@ -7581,37 +7595,9 @@ class CBTAdmin {
             <tbody>
               <tr>
                 <td style="width:24px; padding:4px 0 3px 0; vertical-align:bottom;">1.</td>
-                <td style="width:170px; padding:4px 6px 3px 0; vertical-align:bottom;">Username</td>
+                <td style="width:170px; padding:4px 6px 3px 0; vertical-align:bottom;">Ruang</td>
                 <td style="width:12px; padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
-                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(usernameVal)}</td>
-              </tr>
-              <tr>
-                <td style="padding:4px 0 3px 0;">&nbsp;</td>
-                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Sekolah/Madrasah</td>
-                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
-                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(schoolVal)}</td>
-              </tr>
-              <tr>
-                <td style="padding:4px 0 3px 0;">&nbsp;</td>
-                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">ID Server</td>
-                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
-                <td style="padding:0; vertical-align:bottom;">
-                  <table style="width:100%; border-collapse:collapse;">
-                    <tbody>
-                      <tr>
-                        <td style="width:36%; padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(idServerVal)}</td>
-                        <td style="width:52px; padding:4px 6px 3px 8px; vertical-align:bottom; white-space:nowrap;">Ruang :</td>
-                        <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(roomLabel)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:4px 0 3px 0;">&nbsp;</td>
-                <td style="padding:4px 6px 3px 0; vertical-align:bottom;">Sesi</td>
-                <td style="padding:4px 3px 3px 3px; vertical-align:bottom; text-align:center;">:</td>
-                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(sessionVal)}</td>
+                <td style="padding:4px 4px 3px 4px; border-bottom:1px solid #000000; vertical-align:bottom;">${valOrNbsp(roomLabel)}</td>
               </tr>
               <tr>
                 <td style="padding:4px 0 3px 0;">&nbsp;</td>
