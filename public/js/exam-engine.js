@@ -211,6 +211,85 @@ function _hydrateOfflineFallbackKeys() {
   } catch (e) {}
 }
 
+function _openCbtQuestionsIdb() {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') {
+        resolve(null);
+        return;
+      }
+      const req = indexedDB.open('cbt_local_cache_v1', 1);
+      req.onupgradeneeded = () => {
+        try {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('kv')) {
+            db.createObjectStore('kv');
+          }
+        } catch (e) {}
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function _idbPutValue(key, val) {
+  return _openCbtQuestionsIdb().then((db) => {
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('kv', 'readwrite');
+        const store = tx.objectStore('kv');
+        store.put(val, key);
+        tx.oncomplete = () => { try { db.close(); } catch (e) {} resolve(true); };
+        tx.onerror = () => { try { db.close(); } catch (e) {} resolve(false); };
+        tx.onabort = () => { try { db.close(); } catch (e) {} resolve(false); };
+      } catch (e) {
+        try { db.close(); } catch (e2) {}
+        resolve(false);
+      }
+    });
+  });
+}
+
+function _idbGetValue(key) {
+  return _openCbtQuestionsIdb().then((db) => {
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('kv', 'readonly');
+        const store = tx.objectStore('kv');
+        const req = store.get(key);
+        req.onsuccess = () => { try { db.close(); } catch (e) {} resolve(req.result ?? null); };
+        req.onerror = () => { try { db.close(); } catch (e) {} resolve(null); };
+      } catch (e) {
+        try { db.close(); } catch (e2) {}
+        resolve(null);
+      }
+    });
+  });
+}
+
+function _idbDeleteValue(key) {
+  return _openCbtQuestionsIdb().then((db) => {
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('kv', 'readwrite');
+        const store = tx.objectStore('kv');
+        store.delete(key);
+        tx.oncomplete = () => { try { db.close(); } catch (e) {} resolve(true); };
+        tx.onerror = () => { try { db.close(); } catch (e) {} resolve(false); };
+      } catch (e) {
+        try { db.close(); } catch (e2) {}
+        resolve(false);
+      }
+    });
+  });
+}
+
 class ExamEngine {
   constructor() {
     this.config = this.loadConfig();
@@ -276,6 +355,7 @@ class ExamEngine {
       _questionKeyVault.clear();
       _clearKvSeal();
     }
+    _idbDeleteValue('cbt_questions_full');
     if (Array.isArray(this.questions)) {
       this.questions = this.questions.map(q => this.stripQuestionKeys(q));
       const activeSub = (this.activeExamConfig && this.activeExamConfig.subject) || (this.config && this.config.subject) || '';
@@ -516,33 +596,78 @@ class ExamEngine {
     return stripped;
   }
 
+  _compactQuestionsForLocalStorage(arr) {
+    const stripLargeDataUri = (val) => (typeof val === 'string' && val.startsWith('data:') && val.length > 1024 ? '' : val);
+    return (Array.isArray(arr) ? arr : []).map(q => {
+      if (!q || typeof q !== 'object') return q;
+      const copy = { ...q, _mediaInIdb: true };
+      if (copy.image) copy.image = stripLargeDataUri(copy.image);
+      if (copy.passageImage) copy.passageImage = stripLargeDataUri(copy.passageImage);
+      if (Array.isArray(copy.options)) {
+        copy.options = copy.options.map(o => (o && o.image ? { ...o, image: stripLargeDataUri(o.image) } : o));
+      }
+      return copy;
+    });
+  }
+
   _persistQuestionsSafe(list, prioritySubject = '') {
     const arr = Array.isArray(list) ? list : [];
+    const isStaff = this.isPrivilegedStaffMode();
+    const idbKey = isStaff ? 'cbt_questions_full' : 'cbt_questions_stripped';
+    const hasIdb = typeof indexedDB !== 'undefined';
+    if (hasIdb) {
+      this._idbPersistPromise = _idbPutValue(idbKey, arr);
+      if (!isStaff) {
+        _idbDeleteValue('cbt_questions_full');
+      }
+    }
+
+    const freeDuplicatePendingCache = () => {
+      try {
+        const rawPending = localStorage.getItem('cbt_pending_question_sync');
+        if (!rawPending) return false;
+        const parsed = JSON.parse(rawPending);
+        const upKeys = parsed && parsed.upserts ? Object.keys(parsed.upserts) : [];
+        if (upKeys.length > 0 && !localStorage.getItem('cbt_pending_question_ids_v1')) {
+          localStorage.setItem('cbt_pending_question_ids_v1', JSON.stringify(upKeys));
+        }
+        const dels = parsed && parsed.deletes ? parsed.deletes : {};
+        if (Object.keys(dels).length > 0) {
+          localStorage.setItem('cbt_pending_question_sync', JSON.stringify({ upserts: {}, deletes: dels }));
+        } else {
+          localStorage.removeItem('cbt_pending_question_sync');
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+
     try {
       localStorage.setItem('cbt_questions', JSON.stringify(arr));
+      localStorage.removeItem('cbt_questions_in_idb');
       this.lastQuestionsPersistOk = true;
       return true;
     } catch (e) {
-      // Bebaskan duplikat cache antrean soal terlebih dahulu (daftar ID tetap aman di cbt_pending_question_ids_v1)
-      try {
-        const rawPending = localStorage.getItem('cbt_pending_question_sync');
-        if (rawPending) {
-          const parsed = JSON.parse(rawPending);
-          const upKeys = parsed && parsed.upserts ? Object.keys(parsed.upserts) : [];
-          if (upKeys.length > 0 && !localStorage.getItem('cbt_pending_question_ids_v1')) {
-            localStorage.setItem('cbt_pending_question_ids_v1', JSON.stringify(upKeys));
-          }
-          const dels = parsed && parsed.deletes ? parsed.deletes : {};
-          if (Object.keys(dels).length > 0) {
-            localStorage.setItem('cbt_pending_question_sync', JSON.stringify({ upserts: {}, deletes: dels }));
-          } else {
-            localStorage.removeItem('cbt_pending_question_sync');
-          }
+      if (freeDuplicatePendingCache()) {
+        try {
           localStorage.setItem('cbt_questions', JSON.stringify(arr));
+          localStorage.removeItem('cbt_questions_in_idb');
           this.lastQuestionsPersistOk = true;
           return true;
-        }
-      } catch (eFree) {}
+        } catch (eRetry) {}
+      }
+
+      // Jika gambar/media soal menyebabkan total > 5MB di localStorage:
+      // 1) IndexedDB sudah menyimpan seluruh soal + gambar penuh
+      // 2) Simpan salinan teks ringkas di localStorage agar jumlah & isi soal langsung tersedia saat boot
+      try {
+        const compactAll = this._compactQuestionsForLocalStorage(arr);
+        localStorage.setItem('cbt_questions', JSON.stringify(compactAll));
+        if (hasIdb) localStorage.setItem('cbt_questions_in_idb', '1');
+        this.lastQuestionsPersistOk = true;
+        return true;
+      } catch (eCompact) {}
 
       try {
         const cleanPri = String(prioritySubject || '').trim();
@@ -570,7 +695,41 @@ class ExamEngine {
           }
         }
       } catch (e3) {}
+
+      if (hasIdb) {
+        try {
+          localStorage.setItem('cbt_questions_in_idb', '1');
+        } catch (eFlag) {}
+        this.lastQuestionsPersistOk = true;
+        return true;
+      }
       this.lastQuestionsPersistOk = false;
+      return false;
+    }
+  }
+
+  async hydrateQuestionsFromIdb() {
+    if (typeof indexedDB === 'undefined') return false;
+    try {
+      const isStaff = this.isPrivilegedStaffMode();
+      const idbKey = isStaff ? 'cbt_questions_full' : 'cbt_questions_stripped';
+      const idbRows = await _idbGetValue(idbKey);
+      if (!Array.isArray(idbRows) || idbRows.length === 0) return false;
+
+      const cur = Array.isArray(this.questions) ? this.questions : [];
+      const localHadMediaStripped = cur.some(q => q && q._mediaInIdb);
+      const localInIdbMode = (() => {
+        try { return localStorage.getItem('cbt_questions_in_idb') === '1'; } catch (e) { return false; }
+      })();
+
+      if (localHadMediaStripped || localInIdbMode || idbRows.length > cur.length) {
+        const normalized = this.normalizeQuestionsList(idbRows);
+        normalized.forEach(q => _stashQuestionKey(q));
+        this.questions = isStaff ? normalized : normalized.map(q => this.stripQuestionKeys(q));
+        return true;
+      }
+      return false;
+    } catch (e) {
       return false;
     }
   }

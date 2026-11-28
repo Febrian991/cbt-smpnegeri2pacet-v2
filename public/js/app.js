@@ -57,6 +57,18 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAdminLoginHelpers();
     updateCloudBadge();
 
+    if (window.examEngine && typeof window.examEngine.hydrateQuestionsFromIdb === 'function') {
+      window.examEngine.hydrateQuestionsFromIdb().then((hydrated) => {
+        if (!hydrated) return;
+        if (viewAdmin && !viewAdmin.classList.contains('hidden')) {
+          setupQuestionBankFilters();
+          renderAdminQuestionList();
+          renderAdminTeacherQuestionProgress();
+          renderAdminOverviewDashboard();
+        }
+      }).catch(() => {});
+    }
+
     // 1. Jika ada sesi ujian siswa aktif saat refresh, langsung lanjutkan tanpa logout
     const active = window.examEngine.checkActiveSession();
     if (active) {
@@ -11693,7 +11705,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('rdBaTestNotes', fmt.baTestNotes !== undefined ? fmt.baTestNotes : '');
     setVal('rdBaBottomNotes', fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : '');
     setVal('rdBaIntroSignLabel', fmt.baIntroSignLabel !== undefined ? fmt.baIntroSignLabel : 'Yang membuat berita acara :');
-    setVal('rdBaFooterText', fmt.baFooterText !== undefined ? fmt.baFooterText : '');
     syncBeritaAcaraAutoCountInputState();
   }
 
@@ -11770,7 +11781,7 @@ document.addEventListener('DOMContentLoaded', () => {
       baTestNotes: String(getVal('rdBaTestNotes', '') ?? ''),
       baBottomNotes: String(getVal('rdBaBottomNotes', base.baBottomNotes) ?? ''),
       baIntroSignLabel: String(getVal('rdBaIntroSignLabel', base.baIntroSignLabel) ?? '').trim(),
-      baFooterText: String(getVal('rdBaFooterText', base.baFooterText) ?? '').trim()
+      baFooterText: ''
     };
   }
 
@@ -12093,7 +12104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'rdBaAbsentUsernames', 'rdBaAutoSyncPengawas',
     'rdBaRole2Label', 'rdBaRole2Name', 'rdBaRole2Nip',
     'rdBaRole3Label', 'rdBaRole3Name', 'rdBaRole3Nip',
-    'rdBaTestNotes', 'rdBaBottomNotes', 'rdBaIntroSignLabel', 'rdBaFooterText'
+    'rdBaTestNotes', 'rdBaBottomNotes', 'rdBaIntroSignLabel'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -13815,6 +13826,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (typeof refreshSupabaseTablesHealthUI === 'function') {
             refreshSupabaseTablesHealthUI();
           }
+
+          btnTriggerImportFullBackup.disabled = false;
+          btnTriggerImportFullBackup.innerHTML = origBtnHtml;
 
           const localWarn = res.localQuestionsPersisted === false
             ? '\n⚠️ Peringatan: Ukuran soal terlalu besar untuk cache browser lokal, pastikan Cloud tersinkron hijau!'

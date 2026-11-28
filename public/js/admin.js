@@ -3005,7 +3005,7 @@ class CBTAdmin {
       baRole3Name: cfg.headmasterName || 'Drs. H. Mulyono, M.Pd.',
       baRole3Nip: cfg.headmasterNip || '19680512 199403 1 004',
       baBottomNotes: '- Dibuat rangkap 3 (tiga), masing-masing untuk Sekolah, Kota/Kabupaten dan Provinsi\n- Untuk pusat di upload melalui web ANBK',
-      baFooterText: 'PUSMENDIK - BSKAP - KEMENDIKBUDRISTEK'
+      baFooterText: ''
     };
   }
 
@@ -7468,7 +7468,6 @@ class CBTAdmin {
     const role3Nip = String(fmt.baRole3Nip !== undefined ? fmt.baRole3Nip : (cfg.headmasterNip || '-')).trim();
 
     const bottomNotesRaw = String(fmt.baBottomNotes !== undefined ? fmt.baBottomNotes : '').trim();
-    const footerText = String(fmt.baFooterText !== undefined ? fmt.baFooterText : '').trim();
 
     const pagesHtml = groups.map((grp, gIdx) => {
       const students = Array.isArray(grp.students) ? grp.students : [];
@@ -7532,22 +7531,6 @@ class CBTAdmin {
           <td></td>
         </tr>
       `).join('');
-
-      const footerStripHtml = footerText
-        ? `
-          <table style="width:100%; border-collapse:collapse; margin-top:26px; break-inside:avoid; page-break-inside:avoid;">
-            <tbody>
-              <tr>
-                <td style="width:22px; height:22px; border:1px solid #000000;">&nbsp;</td>
-                <td style="width:16px;">&nbsp;</td>
-                <td style="border:1px solid #000000; text-align:center; font-size:10.5px; font-weight:700; letter-spacing:0.3px; padding:3px 8px;">${this.escapePrintHtml(footerText)}</td>
-                <td style="width:16px;">&nbsp;</td>
-                <td style="width:22px; height:22px; border:1px solid #000000;">&nbsp;</td>
-              </tr>
-            </tbody>
-          </table>
-        `
-        : '';
 
       const headerHtml = useBannerKop
         ? `
@@ -7689,7 +7672,6 @@ class CBTAdmin {
             : ''
           }
 
-          ${footerStripHtml}
           ${this.getPrintFooterNoteHtml('margin-top:8px; font-size:8px;')}
         </div>
       `;

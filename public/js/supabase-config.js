@@ -1415,12 +1415,16 @@ class SupabaseSyncManager {
       this.savePendingQuestionOps({ upserts: {}, deletes: {} });
       this.setLocalQuestionsAuthoritative(false);
 
-      // Cerminan legacy di cbt_school_state (opsional, jangan gagalkan jika payload gambar besar)
+      // Cerminan legacy di cbt_school_state (hanya jika ukuran ringkas < 700KB agar hemat egress & tidak melebihi batas baris D1)
       try {
         const legacyMirror = !this.securityRpcMissing
           ? validList.map(q => this.stripQuestionKeys(q))
           : validList;
-        await this.pushStateKey('cbt_questions', legacyMirror);
+        if (JSON.stringify(legacyMirror).length < 700000) {
+          await this.pushStateKey('cbt_questions', legacyMirror);
+        } else {
+          await this.pushStateKey('cbt_questions', []);
+        }
       } catch (mirrorErr) {}
 
       await this.markQuestionsMigrationDoneRemote();
@@ -1888,7 +1892,11 @@ class SupabaseSyncManager {
         const legacyMirror = !this.securityRpcMissing
           ? mergedQuestions.map(q => this.stripQuestionKeys(q))
           : mergedQuestions;
-        await this.pushStateKey('cbt_questions', legacyMirror);
+        if (JSON.stringify(legacyMirror).length < 700000) {
+          await this.pushStateKey('cbt_questions', legacyMirror);
+        } else {
+          await this.pushStateKey('cbt_questions', []);
+        }
       } catch (mirrorErr) {}
       await this.markQuestionsMigrationDoneRemote();
       if (qPush && qPush.success) {
